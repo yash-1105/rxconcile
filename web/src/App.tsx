@@ -77,7 +77,10 @@ export default function App() {
               prescription / pharmacy bill reconciliation
             </span>
           </div>
-          <span className="font-mono text-xs text-ink-400">proof of concept</span>
+          <div className="flex items-center gap-5">
+            <RunsToggle runs={runs} onChange={setRuns} />
+            <span className="font-mono text-xs text-ink-400">proof of concept</span>
+          </div>
         </div>
       </header>
 
@@ -95,7 +98,7 @@ export default function App() {
         ) : null}
 
         {stage === 'upload' ? (
-          <div className="space-y-6">
+          <div className="space-y-8">
             <div className="grid gap-6 md:grid-cols-2">
               <DropZone
                 label="Prescription"
@@ -111,20 +114,18 @@ export default function App() {
               />
             </div>
 
-            <RunsToggle runs={runs} onChange={setRuns} />
-
             <div>
               <button
                 type="button"
                 onClick={onReconcile}
                 disabled={!prescriptionFile || !billFile}
-                className="rounded bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-ink-300"
+                className="rounded bg-accent px-8 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-ink-300"
               >
                 Reconcile
               </button>
               {!prescriptionFile || !billFile ? (
-                <span className="ml-3 text-sm text-ink-500">
-                  Both documents are required.
+                <span className="ml-3 text-sm text-ink-400">
+                  Add both documents to continue.
                 </span>
               ) : null}
             </div>

@@ -49,10 +49,10 @@ const WARNING_CODES = new Set([
   'DUPLICATE_THERAPY',
 ])
 
-const STATUS_MARK: Record<RowStatus, { glyph: string; className: string; label: string }> = {
-  ok: { glyph: '✓', className: 'text-emerald-700', label: 'No discrepancy' },
-  warning: { glyph: '▲', className: 'text-amber-700', label: 'Warning' },
-  critical: { glyph: '✕', className: 'text-red-700', label: 'Critical' },
+const STATUS: Record<RowStatus, { label: string; dot: string; text: string }> = {
+  ok: { label: 'Matches', dot: 'bg-emerald-500', text: 'text-ink-500' },
+  warning: { label: 'Check', dot: 'bg-amber-500', text: 'text-amber-800' },
+  critical: { label: 'Problem', dot: 'bg-red-600', text: 'text-red-800' },
 }
 
 function buildRows(result: ReconciliationResult): Row[] {
@@ -114,31 +114,35 @@ function Cell({ item }: { item: PrescribedItem | BilledItem | null }) {
 export function ComparisonTable({
   result,
   onHover,
+  technical = false,
 }: {
   result: ReconciliationResult
   onHover?: (row: { prescribedId: string | null; billedId: string | null } | null) => void
+  /** Ids and similarity are diagnostics; they belong behind the toggle. */
+  technical?: boolean
 }) {
   const rows = buildRows(result)
+  const headings = technical
+    ? ['Status', 'Rx', 'Bill', 'Drug', 'Strength', 'Form', 'Qty', 'Match']
+    : ['Status', 'Drug', 'Strength', 'Form', 'Qty']
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[52rem] border-collapse text-sm">
+      <table className="w-full min-w-[38rem] border-collapse text-sm">
         <thead>
           <tr className="border-b border-ink-300 text-left">
-            {['', 'Prescribed', 'Billed', 'Drug', 'Strength', 'Form', 'Qty', 'Similarity'].map(
-              (heading) => (
-                <th
-                  key={heading}
-                  className="px-3 py-2 text-xs font-semibold tracking-wide text-ink-500 uppercase"
-                >
-                  {heading}
-                </th>
-              ),
-            )}
+            {headings.map((heading) => (
+              <th
+                key={heading}
+                className="px-3 py-2 text-xs font-semibold tracking-wide text-ink-500 uppercase"
+              >
+                {heading}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
-            const mark = STATUS_MARK[row.status]
+            const mark = STATUS[row.status]
             const drugMismatch =
               row.prescribed && row.billed
                 ? (row.prescribed.drug_name ?? '').toLowerCase() !==
@@ -156,17 +160,26 @@ export function ComparisonTable({
                   })
                 }
                 onMouseLeave={() => onHover?.(null)}
-                className="border-b border-ink-200 align-top hover:bg-ink-50"
+                className={`border-b border-ink-200 align-top hover:bg-ink-50 ${
+                  row.status === 'ok' ? 'text-ink-400' : ''
+                }`}
               >
-                <td className={`px-3 py-2 text-center ${mark.className}`} title={mark.label}>
-                  {mark.glyph}
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <span className="inline-flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${mark.dot}`} />
+                    <span className={`text-xs ${mark.text}`}>{mark.label}</span>
+                  </span>
                 </td>
-                <td className="px-3 py-2">
-                  <Cell item={row.prescribed} />
-                </td>
-                <td className="px-3 py-2">
-                  <Cell item={row.billed} />
-                </td>
+                {technical ? (
+                  <>
+                    <td className="px-3 py-2">
+                      <Cell item={row.prescribed} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <Cell item={row.billed} />
+                    </td>
+                  </>
+                ) : null}
                 <td className="px-3 py-2">
                   <div className={drugMismatch ? 'rounded bg-amber-50 px-1' : ''}>
                     <Value>{row.prescribed?.drug_name}</Value>
@@ -203,23 +216,25 @@ export function ComparisonTable({
                 <td className="px-3 py-2">
                   <Value>{qtyOf(row.billed)}</Value>
                 </td>
-                <td className="px-3 py-2">
-                  {row.similarity === null ? (
-                    <span className="font-mono text-xs text-ink-300">—</span>
-                  ) : (
-                    <span className="font-mono text-xs text-ink-600">
-                      {row.similarity.toFixed(2)}
-                    </span>
-                  )}
-                </td>
+                {technical ? (
+                  <td className="px-3 py-2">
+                    {row.similarity === null ? (
+                      <span className="font-mono text-xs text-ink-300">—</span>
+                    ) : (
+                      <span className="font-mono text-xs text-ink-600">
+                        {row.similarity.toFixed(2)}
+                      </span>
+                    )}
+                  </td>
+                ) : null}
               </tr>
             )
           })}
         </tbody>
       </table>
       <p className="mt-3 text-xs text-ink-500">
-        Paired rows show prescribed / billed side by side. Cells are highlighted where a rule
-        fired, not merely where the strings differ.
+        Each row shows the prescribed value and the billed value side by side. Cells are
+        highlighted only where a rule fired, not merely where the text differs.
       </p>
     </div>
   )

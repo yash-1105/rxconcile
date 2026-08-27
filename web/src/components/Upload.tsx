@@ -125,43 +125,29 @@ export function DropZone({
 
 export function RunsToggle({ runs, onChange }: { runs: number; onChange: (n: number) => void }) {
   return (
-    <div className="rounded border border-ink-200 bg-white px-5 py-4">
-      <div className="flex flex-wrap items-center gap-4">
-        <span className="text-xs tracking-wide text-ink-500 uppercase">Extraction runs</span>
-        <div className="flex overflow-hidden rounded border border-ink-300">
-          {[1, 3].map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => onChange(option)}
-              className={`px-4 py-1.5 font-mono text-sm ${
-                runs === option
-                  ? 'bg-accent text-white'
-                  : 'bg-white text-ink-600 hover:bg-ink-100'
-              }`}
-            >
-              N={option}
-            </button>
-          ))}
-        </div>
+    <div
+      className="flex items-center gap-2"
+      title={
+        runs === 1
+          ? 'N=1 extracts each document once. Agreement cannot be measured from a single run, so it is reported as not measured rather than as perfect. For cheap iteration only.'
+          : 'N=3 extracts each document three times and resolves each field by agreement across the runs. This is the reliability signal; the model\'s own confidence score carries no information.'
+      }
+    >
+      <span className="text-xs text-ink-400">Runs</span>
+      <div className="flex overflow-hidden rounded border border-ink-300">
+        {[1, 3].map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onChange(option)}
+            className={`px-2.5 py-1 font-mono text-xs ${
+              runs === option ? 'bg-accent text-white' : 'bg-white text-ink-500 hover:bg-ink-100'
+            }`}
+          >
+            {option}
+          </button>
+        ))}
       </div>
-      <p className="mt-3 max-w-2xl text-sm text-ink-500">
-        {runs === 1 ? (
-          <>
-            <span className="font-semibold text-amber-700">
-              N=1 disables agreement measurement.
-            </span>{' '}
-            A single run cannot show whether a field is reproducible, so agreement is reported
-            as not measured rather than as perfect. For cheap iteration only.
-          </>
-        ) : (
-          <>
-            Each document is extracted three times and resolved by per-field agreement. This is
-            the only reliability signal available — the model&rsquo;s own confidence score was
-            measured to carry no information.
-          </>
-        )}
-      </p>
     </div>
   )
 }
@@ -175,10 +161,31 @@ export function SamplePicker({
   onPick: (sample: SampleSummary) => void
   disabled: boolean
 }) {
+  const [open, setOpen] = useState(false)
   if (samples.length === 0) return null
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-sm text-ink-500 underline decoration-ink-300 underline-offset-4 hover:text-ink-800"
+      >
+        Or try a bundled sample
+      </button>
+    )
+  }
   return (
     <div className="rounded border border-ink-200 bg-white px-5 py-4">
-      <p className="text-xs tracking-wide text-ink-500 uppercase">Bundled samples</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs tracking-wide text-ink-500 uppercase">Bundled samples</p>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs text-ink-400 hover:text-ink-700"
+        >
+          Hide
+        </button>
+      </div>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {samples.map((sample) => (
           <button
