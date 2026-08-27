@@ -27,7 +27,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 Severity = Literal["critical", "warning", "info"]
 """Severity of a :class:`Finding`. Fixed vocabulary; callers may branch on it."""
@@ -282,6 +282,72 @@ class MatchedPair(_Base):
     similarity: float = Field(ge=0.0, le=1.0, description="Composite pairing score, 0-1.")
 
 
+class ReviewSummary(_Base):
+    """Headline counts, so a caller can lead with numbers rather than a wall of findings.
+
+    Derived from the documents rather than supplied by the engine: these are
+    pure counts over data already present, and computing them here means they
+    cannot drift from the findings or be forgotten.
+
+    An item whose ``agreement`` is None (a single-run extraction) is not counted
+    as needing review -- there is no evidence either way, and counting it would
+    overstate what was measured.
+    """
+
+    items_needing_review: int = Field(
+        default=0,
+        ge=0,
+        description="Items with at least one field below full agreement across runs.",
+    )
+    fields_nulled_by_disagreement: int = Field(
+        default=0,
+        ge=0,
+        description="Fields resolved to null because the runs did not agree.",
+    )
+    unstable_line_count: int = Field(
+        default=0,
+        ge=0,
+        description="Lines present in some extraction runs but not all, across both documents.",
+    )
+
+    @property
+    def needs_attention(self) -> bool:
+        return bool(
+            self.items_needing_review
+            or self.fields_nulled_by_disagreement
+            or self.unstable_line_count
+        )
+
+
+def _summarise_items(items: Sequence[PrescribedItem | BilledItem]) -> tuple[int, int]:
+    """(items needing review, fields nulled by disagreement) for one document."""
+    needing = 0
+    nulled = 0
+    for item in items:
+        agreement = item.agreement
+        if not agreement:
+            continue
+        if min(agreement.values()) < 1.0:
+            needing += 1
+        for field, ratio in agreement.items():
+            if ratio < 1.0 and getattr(item, field, None) is None:
+                nulled += 1
+    return needing, nulled
+
+
+def build_review_summary(
+    prescription: Prescription, bill: PharmacyBill
+) -> ReviewSummary:
+    """Derive the headline counts from both documents."""
+    rx_needing, rx_nulled = _summarise_items(prescription.items)
+    bill_needing, bill_nulled = _summarise_items(bill.items)
+    return ReviewSummary(
+        items_needing_review=rx_needing + bill_needing,
+        fields_nulled_by_disagreement=rx_nulled + bill_nulled,
+        unstable_line_count=len(prescription.unstable_lines) + len(bill.unstable_lines),
+    )
+
+
 class ReconciliationResult(_Base):
     """The complete outcome of reconciling one prescription against one bill."""
 
@@ -298,6 +364,40 @@ class ReconciliationResult(_Base):
     prescription: Prescription
     bill: PharmacyBill
     processing_ms: int = Field(ge=0)
+    review_summary: ReviewSummary = Field(
+        default_factory=ReviewSummary,
+        description="Headline counts for the UI. Always recomputed from the "
+        "documents during validation, so a supplied value cannot drift.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_review_summary(cls, data: Any) -> Any:  # noqa: ANN401
+        # Any is pydantic's contract for a mode='before' validator: the input
+        # is whatever the caller passed, before any coercion has happened.
+        """Recompute review_summary from the documents, overriding any input.
+
+        Done in ``before`` rather than ``after`` because the model is frozen.
+        Overriding rather than validating a supplied value keeps the count
+        honest without making every caller compute it.
+        """
+        if not isinstance(data, dict):
+            return data
+        prescription = data.get("prescription")
+        bill = data.get("bill")
+        if prescription is None or bill is None:
+            return data
+        try:
+            rx = (
+                prescription
+                if isinstance(prescription, Prescription)
+                else Prescription.model_validate(prescription)
+            )
+            ph = bill if isinstance(bill, PharmacyBill) else PharmacyBill.model_validate(bill)
+        except ValidationError:
+            # Let the normal field validation report the real problem.
+            return data
+        return {**data, "review_summary": build_review_summary(rx, ph)}
 
     @model_validator(mode="after")
     def _references_resolve(self) -> Self:

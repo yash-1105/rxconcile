@@ -8,6 +8,7 @@ from rxconcile.models.schema import (
     PrescribedItem,
     Prescription,
     ReconciliationResult,
+    ReviewSummary,
     Severity,
     Verdict,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "PrescribedItem",
     "Prescription",
     "ReconciliationResult",
+    "ReviewSummary",
     "Severity",
     "Verdict",
 ]

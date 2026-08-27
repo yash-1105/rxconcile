@@ -282,3 +282,91 @@ def test_unknown_field_is_rejected() -> None:
 def test_empty_item_id_is_rejected() -> None:
     with pytest.raises(ValidationError):
         PrescribedItem.model_validate(prescribed(""))
+
+
+# --------------------------------------------------------------------------
+# ReviewSummary
+# --------------------------------------------------------------------------
+
+
+def with_agreement(item: dict[str, Any], agreement: dict[str, float]) -> dict[str, Any]:
+    return {**item, "agreement": agreement}
+
+
+def test_review_summary_defaults_to_zero_when_nothing_is_shaky() -> None:
+    result = build_result(load_fixture("01_clean_match"))
+    assert result.review_summary.items_needing_review == 0
+    assert result.review_summary.fields_nulled_by_disagreement == 0
+    assert result.review_summary.unstable_line_count == 0
+    assert result.review_summary.needs_attention is False
+
+
+def test_review_summary_counts_items_not_fields() -> None:
+    """An item with three shaky fields is one item needing review."""
+    fixture = load_fixture("01_clean_match")
+    fixture["prescription"]["items"][0]["agreement"] = {
+        "drug_name": 0.67,
+        "strength_value": 0.67,
+        "frequency_raw": 0.33,
+    }
+    result = build_result(fixture)
+    assert result.review_summary.items_needing_review == 1
+
+
+def test_review_summary_counts_fields_nulled_by_disagreement() -> None:
+    fixture = load_fixture("01_clean_match")
+    item = fixture["prescription"]["items"][0]
+    item["agreement"] = {"drug_name": 0.33, "salt": 0.33, "strength_value": 1.0}
+    item["drug_name"] = None
+    item["salt"] = None
+    result = build_result(fixture)
+    assert result.review_summary.fields_nulled_by_disagreement == 2
+    assert result.review_summary.items_needing_review == 1
+
+
+def test_review_summary_counts_unstable_lines_from_both_documents() -> None:
+    fixture = load_fixture("01_clean_match")
+    fixture["prescription"]["unstable_lines"] = ["- 6# (P+H)"]
+    fixture["bill"]["unstable_lines"] = ["DELIVERY CHARGE", "MASK"]
+    result = build_result(fixture)
+    assert result.review_summary.unstable_line_count == 3
+    assert result.review_summary.needs_attention is True
+
+
+def test_full_agreement_is_not_flagged() -> None:
+    fixture = load_fixture("01_clean_match")
+    fixture["prescription"]["items"][0]["agreement"] = {"drug_name": 1.0, "salt": 1.0}
+    assert build_result(fixture).review_summary.items_needing_review == 0
+
+
+def test_single_run_agreement_is_not_counted_as_needing_review() -> None:
+    """agreement=None means one run: no evidence either way, so no claim."""
+    fixture = load_fixture("01_clean_match")
+    fixture["prescription"]["items"][0]["agreement"] = None
+    assert build_result(fixture).review_summary.items_needing_review == 0
+
+
+def test_supplied_review_summary_is_overridden_not_trusted() -> None:
+    """A caller cannot make the counts say something the documents do not."""
+    fixture = load_fixture("01_clean_match")
+    fixture["prescription"]["unstable_lines"] = ["one unstable line"]
+    result = build_result(
+        fixture,
+        review_summary={
+            "items_needing_review": 999,
+            "fields_nulled_by_disagreement": 999,
+            "unstable_line_count": 0,
+        },
+    )
+    assert result.review_summary.items_needing_review == 0
+    assert result.review_summary.unstable_line_count == 1
+
+
+def test_review_summary_survives_json_round_trip() -> None:
+    fixture = load_fixture("01_clean_match")
+    fixture["prescription"]["items"][0]["agreement"] = {"drug_name": 0.67}
+    fixture["prescription"]["unstable_lines"] = ["a line"]
+    result = build_result(fixture)
+    restored = ReconciliationResult.model_validate_json(result.model_dump_json())
+    assert restored.review_summary == result.review_summary
+    assert restored == result
