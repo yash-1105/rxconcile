@@ -52,6 +52,15 @@ import analysis alone** — verify with `make smoke`, which exercises real crede
 
 ---
 
+## DEFAULT: commit and push at the end of every prompt
+
+Commit at the end of every prompt with a conventional-commit message, and push. **Do not ask first.**
+
+**Exception:** if the tree contains changes that were not asked for, or work you consider incomplete
+or unverified, **stop and say so instead of committing.** Report what is uncommitted and why.
+
+---
+
 ## SCOPE RULE
 
 **Do not add features that were not asked for.** No auth, no database, no user accounts, no deployment
