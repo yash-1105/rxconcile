@@ -7,18 +7,26 @@ name = "rxconcile"
 version = "0.1.0"
 description = "POC: reconcile a handwritten prescription against a pharmacy bill via Gemini extraction + deterministic matching."
 requires-python = ">=3.11"
+
+# Pinned exactly. Resolved and verified against the live Vertex API on 2026-08-27.
+# Bump deliberately, then re-run: make smoke
 dependencies = [
-    "pydantic>=2.9",
-    "pydantic-settings>=2.5",
-    "google-auth>=2.35",
-    "requests>=2.32",
+    "google-genai==2.20.0",
+    "google-auth==2.57.0",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.15.0",
+    # Not imported by rxconcile directly, but google-auth's ADC token-refresh
+    # transport imports it at runtime. Removing it breaks credential refresh
+    # with "The requests library is not installed". Keep it pinned.
+    "requests==2.34.2",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3",
-    "mypy>=1.11",
-    "ruff>=0.6",
+    "mypy==2.3.1",
+    "pillow==12.3.0",
+    "pytest==9.1.1",
+    "ruff==0.16.4",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -34,3 +42,6 @@ strict = true
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ANN"]

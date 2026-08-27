@@ -8,10 +8,12 @@ help: ## Show available targets
 
 setup: setup-api setup-web ## Install all dependencies
 
-setup-api: ## Create the Python venv and install the api package
-	python3 -m venv $(VENV)
-	$(PY) -m pip install --upgrade pip
-	$(PY) -m pip install -e "api[dev]"
+setup-api: ## Create the Python venv and install the api package (uses uv when available)
+	@if command -v uv >/dev/null 2>&1; then \
+	  uv venv $(VENV) && VIRTUAL_ENV=$(VENV) uv pip install -e "api[dev]"; \
+	else \
+	  python3 -m venv $(VENV) && $(PY) -m pip install --upgrade pip && $(PY) -m pip install -e "api[dev]"; \
+	fi
 
 setup-web: ## Install web dependencies
 	cd web && npm install
@@ -20,7 +22,7 @@ test: ## Run Python tests
 	$(PY) -m pytest api/tests -q
 
 typecheck: ## mypy (strict) + tsc
-	$(PY) -m mypy api/rxconcile
+	$(PY) -m mypy api/rxconcile api/scripts api/tests
 	cd web && npx tsc -b --noEmit
 
 lint: ## ruff + oxlint
@@ -33,7 +35,10 @@ dev: ## Run the web dev server
 list-models: ## List Gemini models actually available to this project
 	./api/scripts/list_models.sh
 
-verify: ## Prove the Vertex chain works (text + multimodal)
+verify: ## Prove the Vertex chain works via curl (text + multimodal)
 	./api/scripts/verify_vertex.sh
 
-.PHONY: help setup setup-api setup-web test typecheck lint dev list-models verify
+smoke: ## Prove the Vertex chain works via the google-genai SDK
+	$(PY) api/scripts/smoke_gcp.py
+
+.PHONY: help setup setup-api setup-web test typecheck lint dev list-models verify smoke
