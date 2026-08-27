@@ -105,6 +105,32 @@ def normalize_frequency(raw: str | None) -> str | None:
     return text or None
 
 
+def is_positional(raw: str | None) -> bool:
+    """True when a frequency is written as positional slots, e.g. ``1-0-1``.
+
+    The distinction matters for quantity. Positional notation states the number of
+    units taken at each time of day, so :func:`doses_per_day` sums the slots and
+    the result is already **units per day** -- the dose per administration is
+    encoded in the notation itself.
+
+    A Latin code carries no such information: ``BD`` says twice daily and nothing
+    about how many units each time, so a missing dose genuinely blocks the
+    calculation rather than merely being unstated.
+    """
+    text = normalize_frequency(raw)
+    if text is None:
+        return False
+    words = set(re.split(r"[\s,]+", text))
+    if words & _AS_NEEDED:
+        return False
+    for separator in _POSITIONAL_SEPARATORS:
+        if separator in text:
+            slots = [_token_to_dose(slot.strip()) for slot in text.split(separator)]
+            if len(slots) >= 2 and all(slot is not None for slot in slots):
+                return True
+    return False
+
+
 def doses_per_day(raw: str | None) -> float | None:
     """Administrations per day implied by a frequency string.
 

@@ -75,6 +75,7 @@ function VerdictBanner({ result }: { result: ReconciliationResult }) {
 function ReviewSummaryPanel({ result }: { result: ReconciliationResult }) {
   const summary = result.review_summary
   const measured = summary.agreement_measured
+  const unavailable = summary.checks_unavailable
   const cells: { label: string; value: number | null; hint: string }[] = [
     {
       label: 'Items needing review',
@@ -94,7 +95,20 @@ function ReviewSummaryPanel({ result }: { result: ReconciliationResult }) {
   ]
   return (
     <Panel title="Review summary">
-      <dl className="grid gap-6 sm:grid-cols-3">
+      <dl className="grid gap-6 sm:grid-cols-4">
+        <div>
+          <dt className="text-xs tracking-wide text-ink-500 uppercase">Checks not run</dt>
+          <dd
+            className={`mt-1 font-mono text-2xl ${
+              unavailable > 0 ? 'text-amber-700' : 'text-ink-900'
+            }`}
+          >
+            {unavailable}
+          </dd>
+          <p className="mt-1 text-xs text-ink-500">
+            Rules that could not run because a value was absent from the documents
+          </p>
+        </div>
         {cells.map(({ label, value, hint }) => (
           <div key={label}>
             <dt className="text-xs tracking-wide text-ink-500 uppercase">{label}</dt>
@@ -109,6 +123,17 @@ function ReviewSummaryPanel({ result }: { result: ReconciliationResult }) {
           </div>
         ))}
       </dl>
+      {unavailable > 0 ? (
+        <p className="mt-4 border-t border-ink-200 pt-3 text-sm text-amber-800">
+          <span className="font-semibold">
+            {unavailable} check{unavailable > 1 ? 's' : ''} could not run.
+          </span>{' '}
+          A verdict of &ldquo;match&rdquo; means no discrepancy was found among the checks
+          that <em>did</em> run. It does not mean these ones passed — they were never
+          performed. They are listed under Findings as{' '}
+          <span className="font-mono text-xs">CHECK_UNAVAILABLE</span>.
+        </p>
+      ) : null}
       {!measured ? (
         <p className="mt-4 border-t border-ink-200 pt-3 text-sm text-amber-800">
           This run used a single extraction pass, so agreement could not be measured. These are

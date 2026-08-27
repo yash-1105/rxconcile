@@ -245,7 +245,8 @@ def test_form_mismatch() -> None:
 
 def test_quantity_short() -> None:
     result = engine.reconcile(
-        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5,
+                dose_per_administration=1.0)),
         bill(bill_item("bill-01", quantity=1.0, pack_size="5'S")),
     )
     assert "QUANTITY_SHORT" in codes(result)
@@ -255,12 +256,14 @@ def test_quantity_excess_needs_more_than_twenty_percent() -> None:
     """Boundary test. The basis is declared so this exercises the tolerance,
     not the pack/unit ambiguity."""
     within = engine.reconcile(
-        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5,
+                dose_per_administration=1.0)),
         bill(bill_item("bill-01", quantity=1.0, pack_size="11'S", units_basis="pack")),
     )
     assert "QUANTITY_EXCESS" not in codes(within)
     beyond = engine.reconcile(
-        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5,
+                dose_per_administration=1.0)),
         bill(bill_item("bill-01", quantity=1.0, pack_size="20'S", units_basis="pack")),
     )
     assert "QUANTITY_EXCESS" in codes(beyond)
@@ -278,7 +281,8 @@ def test_quantity_rules_skip_silently_without_an_expectation() -> None:
 
 def test_quantity_rules_skip_when_the_pack_is_unparseable() -> None:
     result = engine.reconcile(
-        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5,
+                dose_per_administration=1.0)),
         bill(bill_item("bill-01", quantity=1.0, pack_size="MYSTERY BOX")),
     )
     assert "QUANTITY_SHORT" not in codes(result)
@@ -568,7 +572,12 @@ def test_result_is_deterministic() -> None:
 def qty_case(**bill_kwargs: object) -> ReconciliationResult:
     """A 1-0-1 x 5 day prescription (expects 10 units) against one billed line."""
     return engine.reconcile(
-        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
+        rx(
+            rx_item(
+                "rx-01", frequency_raw="1-0-1", duration_raw="x 5 days",
+                duration_days=5, dose_per_administration=1.0,
+            )
+        ),
         bill(bill_item("bill-01", **bill_kwargs)),
     )
 
@@ -630,7 +639,8 @@ def test_ambiguous_basis_with_disagreeing_readings_asserts_nothing() -> None:
 def test_discrepancy_holding_under_both_readings_is_emitted() -> None:
     """A 30-day course expects 60; 2 units and 2 packs of 10 are both short."""
     result = engine.reconcile(
-        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 30 days", duration_days=30)),
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 30 days", duration_days=30,
+                dose_per_administration=1.0)),
         bill(bill_item("bill-01", quantity=2.0, pack_size="10'S")),
     )
     finding = next(f for f in result.findings if f.rule_code == "QUANTITY_SHORT")

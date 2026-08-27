@@ -42,16 +42,19 @@ from rxconcile.models import (
     Severity,
     Verdict,
 )
+from rxconcile.models.schema import CHECK_UNAVAILABLE_CODE
 from rxconcile.normalize import (
     CanonicalDrug,
     Strength,
     doses_per_day,
     duration_to_days,
     expected_quantity,
+    is_positional,
     normalize_strength,
     parse_pack_size,
     resolve,
 )
+from rxconcile.normalize.drug_dictionary import DrugEntry, entries_for_salt
 from rxconcile.normalize.matcher import entry_for
 from rxconcile.normalize.units import strengths_equal
 
@@ -270,6 +273,52 @@ def _finding(
     )
 
 
+def _unavailable(
+    check: str,
+    missing: list[str],
+    *,
+    prescribed_ref: str | None = None,
+    billed_ref: str | None = None,
+    note: str = "",
+) -> Finding:
+    """Record that a named check could not run.
+
+    The engine previously had no way to say this: a rule either fired or was
+    absent, and absence rendered identically to "checked, nothing found". Every
+    silent skip in docs/NULL_MATRIX.md was that same gap.
+    """
+    joined = ", ".join(missing)
+    return _finding(
+        CHECK_UNAVAILABLE_CODE, "info",
+        f"The {check} check could not run: {joined} {'is' if len(missing) == 1 else 'are'} "
+        f"not present on the document{'.' if not note else '. ' + note}",
+        prescribed_ref=prescribed_ref,
+        billed_ref=billed_ref,
+        detail={"check": check, "missing": missing, "note": note or None},
+    )
+
+
+def _schedule_entry(drug: CanonicalDrug) -> DrugEntry | None:
+    """Dictionary entry behind a match, resolving through the salt if need be.
+
+    A salt-level match carries no ``source`` brand, so ``entry_for`` returns None
+    and SCHEDULE_H_UNBACKED was silently inert whenever a bill printed a generic
+    name. Falling back to the salt keeps the rule alive; the most restrictive
+    schedule among the matching brands is used, since dispensing rules follow the
+    molecule rather than the brand.
+    """
+    entry = entry_for(drug)
+    if entry is not None:
+        return entry
+    if drug.salt is None:
+        return None
+    candidates = entries_for_salt(drug.salt)
+    if not candidates:
+        return None
+    order = {"X": 0, "H1": 1, "H": 2, "OTC": 3}
+    return min(candidates, key=lambda item: order.get(item.schedule, 9))
+
+
 def _is_non_medicine(item: BilledItem, drug: CanonicalDrug) -> bool:
     form = _norm_form(item.form)
     return form in _NON_MEDICINE_FORMS or (not drug.resolved and form is None)
@@ -286,6 +335,17 @@ def _pair_rules(
 
     rx_strength, bill_strength = _strength_of(prescribed), _strength_of(billed)
     strengths_match = False
+    strength_known = rx_strength is not None and bill_strength is not None
+    if not strength_known:
+        missing = [
+            side
+            for side, value in (
+                ("prescribed strength", rx_strength),
+                ("billed strength", bill_strength),
+            )
+            if value is None
+        ]
+        findings.append(_unavailable("strength", missing, **refs))
     if rx_strength is not None and bill_strength is not None:
         detail = {
             "expected": {"value": rx_strength.value, "unit": rx_strength.unit},
@@ -332,6 +392,18 @@ def _pair_rules(
             )
 
     rx_form, bill_form = _norm_form(prescribed.form), _norm_form(billed.form)
+    if rx_form is None or bill_form is None:
+        findings.append(
+            _unavailable(
+                "dosage form",
+                [
+                    side
+                    for side, value in (("prescribed form", rx_form), ("billed form", bill_form))
+                    if value is None
+                ],
+                **refs,
+            )
+        )
     if rx_form is not None and bill_form is not None and rx_form != bill_form:
         findings.append(
             _finding(
@@ -341,24 +413,36 @@ def _pair_rules(
             )
         )
 
-    # Different brand, same salt and strength: legal substitution in India.
+    # Different brand, same salt: legal substitution in India.
+    #
+    # Deliberately NOT gated on strengths_match. Requiring a verified strength
+    # meant an illegible strength silently suppressed the finding entirely, so a
+    # substitution went unreported and unreported reads as nothing to see. Whether
+    # the strength could be checked is recorded instead.
+    strength_contradicts = any(f.rule_code == "STRENGTH_MISMATCH" for f in findings)
     if (
         rx_drug.resolved
         and bill_drug.resolved
         and rx_drug.name != bill_drug.name
         and rx_drug.salt == bill_drug.salt
-        and strengths_match
+        and not strength_contradicts
     ):
         findings.append(
             _finding(
                 "BRAND_SUBSTITUTION", "info",
                 f"Billed brand {bill_drug.name} differs from prescribed "
-                f"{rx_drug.name}; same salt and strength.",
+                f"{rx_drug.name}; same salt."
+                + (
+                    " Strength matches."
+                    if strengths_match
+                    else " The strength could not be verified on both documents."
+                ),
                 **refs,
                 detail={
                     "prescribed_brand": rx_drug.name,
                     "billed_brand": bill_drug.name,
                     "salt": rx_drug.salt,
+                    "strength_verified": strengths_match,
                 },
             )
         )
@@ -469,15 +553,50 @@ def _quantity_rules(
     days = prescribed.duration_days
     if days is None:
         days = duration_to_days(prescribed.duration_raw)
-    expected = expected_quantity(
-        doses_per_day(prescribed.frequency_raw), days, prescribed.dose_per_administration or 1.0
-    )
-    if expected is None or billed.quantity is None:
-        return []
+    per_day = doses_per_day(prescribed.frequency_raw)
+
+    # dose_per_administration is NOT blanket-defaulted to 1.0. Substituting a dose
+    # the page does not state is the fabrication these rules exist to catch: with a
+    # true dose of 2, the old default silently turned a real QUANTITY_SHORT into a
+    # clean pass.
+    #
+    # Positional notation is the one exception, and it is not an assumption. In
+    # "1 - 0 - 1" the slots state the units taken at each time of day, and
+    # doses_per_day already sums them to units per day, so the dose is carried by
+    # the notation. Requiring a separate value there would both block the check
+    # and double-count when one was supplied. A Latin code such as BD says nothing
+    # about units per administration, so a missing dose really does block it.
+    dose = prescribed.dose_per_administration
+    if dose is None and is_positional(prescribed.frequency_raw):
+        dose = 1.0
+    expected = expected_quantity(per_day, days, dose)
+
+    missing: list[str] = []
+    if per_day is None:
+        missing.append("a readable dosing frequency")
+    if days is None:
+        missing.append("a course duration in days")
+    if dose is None:
+        missing.append("the dose per administration (frequency is not positional)")
+    if billed.quantity is None:
+        missing.append("a billed quantity")
 
     pack = parse_pack_size(billed.pack_size)
     units_per_pack = pack.units_per_pack if pack is not None else None
     resolution = resolve_units_basis(billed, units_per_pack)
+    if units_per_pack is None and resolution.basis != "unit":
+        missing.append("a parseable pack size")
+
+    if missing or expected is None or billed.quantity is None:
+        return [
+            _unavailable(
+                "quantity",
+                missing or ["a computable expected quantity"],
+                **refs,
+                note="Quantity was not compared, which is not the same as finding "
+                "it correct.",
+            )
+        ]
 
     detail: dict[str, Any] = {
         "expected_units": expected,
@@ -493,13 +612,13 @@ def _quantity_rules(
         billed_units = billed.quantity
     elif resolution.basis == "pack":
         if units_per_pack is None:
-            return []
+            return [_unavailable("quantity", ["a parseable pack size"], **refs)]
         billed_units = billed.quantity * units_per_pack
     else:
         # Unresolved: compare under both readings and only assert what holds
         # under each.
         if units_per_pack is None:
-            return []
+            return [_unavailable("quantity", ["a parseable pack size"], **refs)]
         as_units = billed.quantity
         as_packs = billed.quantity * units_per_pack
         outcome_unit = _quantity_outcome(as_units, expected)
@@ -559,26 +678,73 @@ def _unmatched_rules(
     rx_by_id = {item.item_id: item for item in prescription.items}
     bill_by_id = {item.item_id: item for item in bill.items}
 
+    # An unmatched line on the other document that nobody could identify might be
+    # the missing counterpart. While one exists, "this was not dispensed" is not
+    # a claim the data supports, however clearly this side was read.
+    unknown_bill = [i for i in unmatched_bill if not bill_drugs[i].resolved]
+    unknown_rx = [i for i in unmatched_rx if not rx_drugs[i].resolved]
+
     for item_id in unmatched_rx:
         rx_line = rx_by_id[item_id]
+        identified = rx_drugs[item_id].resolved
+        confident = identified and not unknown_bill
+        # An unidentifiable line cannot support the claim that it was not
+        # dispensed -- only that nobody could tell. Critical is reserved for a
+        # drug we actually recognised.
+        if confident:
+            message = (
+                f"Prescribed item {rx_line.drug_name or rx_line.raw_text!r} has no "
+                "corresponding line on the bill."
+            )
+        elif not identified:
+            message = (
+                f"Prescribed line {rx_line.raw_text!r} could not be identified, so "
+                "whether it was dispensed could not be determined."
+            )
+        else:
+            message = (
+                f"Prescribed item {rx_line.drug_name!r} was not matched to any billed "
+                f"line, but {len(unknown_bill)} billed line(s) could not be identified "
+                "and one of them may be it."
+            )
         findings.append(
             _finding(
-                "RX_NOT_BILLED", "critical",
-                f"Prescribed item {rx_line.drug_name or rx_line.raw_text!r} has no "
-                "corresponding line on the bill.",
+                "RX_NOT_BILLED",
+                "critical" if confident else "warning",
+                message,
                 prescribed_ref=item_id,
-                detail={"drug_name": rx_line.drug_name, "raw_text": rx_line.raw_text},
+                detail={
+                    "drug_name": rx_line.drug_name,
+                    "raw_text": rx_line.raw_text,
+                    "identified": identified,
+                    "unidentified_billed_lines": list(unknown_bill),
+                },
             )
         )
+        if not confident:
+            findings.append(
+                _unavailable(
+                    "billed-counterpart",
+                    ["an identifiable drug name on the prescription line"]
+                    if not identified
+                    else [f"identifiable drug names on {len(unknown_bill)} billed line(s)"],
+                    prescribed_ref=item_id,
+                )
+            )
 
     for item_id in unmatched_bill:
         bill_line = bill_by_id[item_id]
         drug = bill_drugs[item_id]
         non_medicine = _is_non_medicine(bill_line, drug)
+        identified = drug.resolved
+        confident_bill = identified and not unknown_rx
+        severity: Severity = (
+            "info" if non_medicine else ("critical" if confident_bill else "warning")
+        )
         findings.append(
             _finding(
                 "BILL_NOT_PRESCRIBED",
-                "info" if non_medicine else "critical",
+                severity,
                 f"Billed line {bill_line.drug_name or bill_line.raw_text!r} has no "
                 "corresponding line on the prescription."
                 + (" Recorded as a non-medicine line." if non_medicine else ""),
@@ -588,14 +754,26 @@ def _unmatched_rules(
                     "raw_text": bill_line.raw_text,
                     "form": bill_line.form,
                     "non_medicine": non_medicine,
+                    "identified": identified,
+                    "unidentified_prescribed_lines": list(unknown_rx),
                     "line_total": (
                         str(bill_line.line_total) if bill_line.line_total is not None else None
                     ),
                 },
             )
         )
+        if not confident_bill and not non_medicine:
+            findings.append(
+                _unavailable(
+                    "prescription-counterpart",
+                    ["an identifiable drug name on the billed line"]
+                    if not identified
+                    else [f"identifiable drug names on {len(unknown_rx)} prescribed line(s)"],
+                    billed_ref=item_id,
+                )
+            )
 
-        entry = entry_for(drug)
+        entry = _schedule_entry(drug)
         if entry is not None and entry.requires_prescription:
             findings.append(
                 _finding(
@@ -637,6 +815,33 @@ def _document_rules(
                 )
             )
 
+    unresolved_bill_lines = [
+        item.item_id for item in bill.items if not bill_drugs[item.item_id].resolved
+    ]
+    if unresolved_bill_lines:
+        findings.append(
+            _unavailable(
+                "duplicate-therapy",
+                [f"{len(unresolved_bill_lines)} billed line(s) that could not be identified"],
+                note="Duplicate detection compares salts, so unidentified lines are "
+                "excluded from it.",
+            )
+        )
+
+    if not prescription.patient_name or not bill.patient_name:
+        findings.append(
+            _unavailable(
+                "patient name",
+                [
+                    side
+                    for side, value in (
+                        ("a patient name on the prescription", prescription.patient_name),
+                        ("a patient name on the bill", bill.patient_name),
+                    )
+                    if not value
+                ],
+            )
+        )
     if prescription.patient_name and bill.patient_name:
         score = float(fuzz.token_set_ratio(prescription.patient_name, bill.patient_name))
         if score < NAME_SIMILARITY_THRESHOLD:
@@ -653,6 +858,24 @@ def _document_rules(
                 )
             )
 
+    if not prescription.date_issued or not bill.bill_date:
+        # Handwritten dates are designed to come back null when ambiguous, so on
+        # most real prescriptions this check has never once run.
+        findings.append(
+            _unavailable(
+                "document date",
+                [
+                    side
+                    for side, value in (
+                        ("a resolvable prescription date", prescription.date_issued),
+                        ("a resolvable bill date", bill.bill_date),
+                    )
+                    if not value
+                ],
+                note="An ambiguous handwritten date is deliberately left null rather "
+                "than guessed, so this check is often unavailable.",
+            )
+        )
     if prescription.date_issued and bill.bill_date:
         delta = (bill.bill_date - prescription.date_issued).days
         if delta < 0 or delta > MAX_BILL_LAG_DAYS:
@@ -673,6 +896,15 @@ def _document_rules(
 
     for document, label in ((prescription, "prescription"), (bill, "bill")):
         counts = document.run_item_counts
+        if len(counts) < 2:
+            findings.append(
+                _unavailable(
+                    f"{label} item-count stability",
+                    ["more than one extraction run"],
+                    note="A single run cannot reveal whether a line appears "
+                    "intermittently.",
+                )
+            )
         if len(set(counts)) > 1:
             findings.append(
                 _finding(

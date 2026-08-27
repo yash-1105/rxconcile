@@ -116,9 +116,13 @@ export function FindingsList({
 }) {
   const [showInfo, setShowInfo] = useState(false)
   const ambiguous = findings.filter((f) => f.rule_code === 'QUANTITY_AMBIGUOUS')
+  const unavailable = findings.filter((f) => f.rule_code === 'CHECK_UNAVAILABLE')
   // ITEM_COUNT_UNSTABLE gets its own prominent panel; do not repeat it here.
   const rest = findings.filter(
-    (f) => f.rule_code !== 'QUANTITY_AMBIGUOUS' && f.rule_code !== 'ITEM_COUNT_UNSTABLE',
+    (f) =>
+      f.rule_code !== 'QUANTITY_AMBIGUOUS' &&
+      f.rule_code !== 'ITEM_COUNT_UNSTABLE' &&
+      f.rule_code !== 'CHECK_UNAVAILABLE',
   )
   const info = rest.filter((f) => f.severity === 'info')
   const provisional = verdict === 'inconclusive'
@@ -163,6 +167,37 @@ export function FindingsList({
           <div className="space-y-2">
             {ambiguous.map((finding, index) => (
               <QuantityAmbiguousCard key={`qa-${index}`} finding={finding} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {unavailable.length > 0 ? (
+        <div>
+          <h3 className="mb-2 text-xs tracking-wide text-ink-500 uppercase">
+            Checks that could not run · {unavailable.length}
+          </h3>
+          <p className="mb-2 max-w-3xl text-sm text-ink-500">
+            These were not performed, because the documents did not carry the values they
+            need. They are not passes.
+          </p>
+          <div className="space-y-2">
+            {unavailable.map((finding, index) => (
+              <div
+                key={`cu-${index}`}
+                className="rounded border border-amber-200 bg-amber-50/50 px-4 py-2"
+              >
+                <div className="flex flex-wrap items-baseline gap-3">
+                  <span className="font-mono text-xs text-amber-900">
+                    {String((finding.detail as { check?: string }).check ?? 'check')}
+                  </span>
+                  <span className="flex-1 text-sm text-ink-700">{finding.message}</span>
+                  <span className="font-mono text-xs text-ink-400">
+                    {[finding.prescribed_ref, finding.billed_ref].filter(Boolean).join(' · ') ||
+                      'document'}
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
         </div>

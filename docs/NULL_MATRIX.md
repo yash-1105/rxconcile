@@ -1,0 +1,174 @@
+# Null-input audit
+
+Three times a *correct* never-guess null produced wrong engine behaviour, and
+each was found by accident. This is the deliberate sweep.
+
+Method: build a prescription/bill pair that reconciles cleanly (`match`, score
+100, zero findings), null one field at a time, and record what changes. Probe
+script preserved in the commit that added this document.
+
+## Result, before fixes
+
+**23 null cases probed. 16 changed nothing at all** — verdict stayed `match`,
+score stayed 100, no finding was emitted. The caller sees a clean pass for checks
+that never ran.
+
+| Outcome | Count | Meaning |
+| --- | --- | --- |
+| (a) correct skip, finding emitted | 2 | `STRENGTH_UNIT_UNSTATED`, `QUANTITY_AMBIGUOUS` |
+| **(b) silent skip, no finding** | **16** | a check the caller believes ran, and did not |
+| **(c) false positive** | **2 clusters** | absent data asserted as a discrepancy |
+| **(d) suppression of a dependent rule** | **2** | one rule's silence disables another |
+
+## (c) False positives — absent data asserted as discrepancy
+
+**An unidentifiable drug name becomes two critical findings.**
+
+| Input | Result |
+| --- | --- |
+| `rx.drug_name = null` | pairing fails → `RX_NOT_BILLED` **critical** + `BILL_NOT_PRESCRIBED` **critical**, verdict `inconclusive` |
+| both drug names unresolvable | same two criticals, verdict **`mismatch`** |
+
+An illegible line cannot pair, so the prescribed item is reported as *not
+dispensed* and the billed item as *not prescribed* — two confident accusations
+generated from one unreadable line. The truthful statement is "this line could
+not be identified, so whether it was dispensed is unknown". The second row is the
+worse one: a wholly unreadable pair reports `mismatch`, which reads as a positive
+finding of discrepancy.
+
+**`dose_per_administration = null` silently defaults to 1.0.**
+`expected_quantity(..., prescribed.dose_per_administration or 1.0)` substitutes a
+value the page does not state. With a true dose of 2, `QUANTITY_SHORT` fires
+correctly; with the dose nulled, the same bill passes silently. An assumption
+inside a rule that exists to catch fabricated numbers.
+
+## (d) Suppression — one rule's silence disables another
+
+| Nulled | Suppressed | Why |
+| --- | --- | --- |
+| `rx.strength_value` | `BRAND_SUBSTITUTION` | requires `strengths_match`, which is False when unknown |
+| `bill.strength_value` | `BRAND_SUBSTITUTION` | same |
+
+This is the sample-03 failure class, still live for a null *value* even after the
+null *unit* case was fixed. A legal generic substitution goes unreported whenever
+either strength is illegible — and unreported reads as "nothing to see".
+
+Two further dependency failures, found by probing the dictionary path rather than
+the field:
+
+| Condition | Suppressed | Why |
+| --- | --- | --- |
+| billed drug matched by **salt only** | `SCHEDULE_H_UNBACKED` | `entry_for()` needs `source`, which is null for a salt match |
+| billed drug **unresolved** | `SCHEDULE_H_UNBACKED`, `DUPLICATE_THERAPY` | both require a resolved dictionary entry |
+
+`SCHEDULE_H_UNBACKED` is the most serious of these. Its entire purpose is
+catching prescription-only medicine dispensed with nothing behind it, and it is
+silently inert whenever the bill prints a generic name — `Alprazolam` instead of
+`Alprax` produces no finding at all.
+
+## (b) Silent skips — the bulk of the problem
+
+Every row below leaves the verdict at `match`, the score at 100, and emits
+nothing.
+
+| Nulled field | Check that silently did not run |
+| --- | --- |
+| `strength_value` (either side) | `STRENGTH_MISMATCH` |
+| `form` (either side) | `FORM_MISMATCH` |
+| `frequency_raw` | `QUANTITY_SHORT` / `QUANTITY_EXCESS` |
+| `duration_raw` **and** `duration_days` | `QUANTITY_SHORT` / `QUANTITY_EXCESS` |
+| `dose_per_administration` | quantity, via the 1.0 default above |
+| `bill.quantity` | all quantity rules |
+| `bill.pack_size` | all quantity rules |
+| `bill.unit_price` / `line_total` | pack-basis resolution → quantity rules |
+| `patient_name` (either side) | `PATIENT_NAME_MISMATCH` |
+| `date_issued` / `bill_date` | `DATE_ANOMALY` |
+| `agreement` (N=1) | `LOW_CONFIDENCE_FIELD`, and the agreement route to `inconclusive` |
+| `run_item_counts` length 1 (N=1) | `ITEM_COUNT_UNSTABLE` |
+| `bill.drug_name` (raw_text still resolves) | nothing — resolution fell back correctly |
+
+`DATE_ANOMALY` deserves particular note: handwritten dates are *designed* to come
+back null when ambiguous, so on three of the four real sample photographs this
+check has never once run, and nothing in the output says so.
+
+## The shape of the problem
+
+The engine has no concept of "could not check". A rule either fires or is absent,
+and absence is rendered identically to "checked, nothing found". Every (b) row is
+the same bug repeated: `if x is not None and y is not None: ...` with no `else`.
+
+Confirmed by construction: nulling `frequency_raw` on an otherwise perfect pair
+yields `match`, score 100, zero findings — indistinguishable from a bill verified
+correct down to the tablet.
+
+## Fixes applied
+
+1. **`CHECK_UNAVAILABLE`** (info) — a first-class finding emitted whenever a
+   named check cannot run, carrying the check name, the missing inputs and which
+   document they were missing from. Every (b) row above now produces one.
+2. **`ReviewSummary.checks_unavailable`** — a count of those, surfaced in the UI
+   beside `items_needing_review`, so "we checked and found nothing" and "we could
+   not check" never render identically.
+3. **`RX_NOT_BILLED` / `BILL_NOT_PRESCRIBED` severity depends on identification.**
+   An unidentifiable line drops to `warning` with a message saying the absence
+   could not be confirmed. Only an identified drug supports a critical claim.
+4. **`BRAND_SUBSTITUTION` no longer requires known strengths.** It fires when the
+   salts match and the brands differ, provided no strength mismatch was found,
+   and records whether the strength could be verified.
+5. **`SCHEDULE_H_UNBACKED` resolves through the salt** when no brand matched, so
+   generic-name billing is no longer invisible.
+6. **`dose_per_administration = null` no longer defaults to 1.0.** The quantity
+   check reports itself unavailable instead of assuming a dose the page does not
+   state.
+
+7. **Positional frequency notation is exempt from the dose requirement**, and
+   this is not an assumption. In `1 - 0 - 1` the slots state the units taken at
+   each time of day and `doses_per_day` already sums them to units per day, so
+   requiring a separate `dose_per_administration` would both block the check and
+   double-count when one was supplied. A Latin code such as `BD` carries no such
+   information, so a missing dose there genuinely blocks the calculation. Removing
+   the blanket 1.0 default without this distinction made quantity unavailable on
+   every real line.
+
+Held by `api/tests/test_null_matrix.py`, including hypothesis property tests that
+null arbitrary subsets of fields and assert the engine never raises, never emits a
+critical from absent data alone, never skips a check without saying so, and keeps
+`checks_unavailable` equal to the findings it summarises.
+
+## Result, after fixes
+
+Re-probing the same 23 cases:
+
+| Outcome | Before | After |
+| --- | --- | --- |
+| (a) correct skip, finding emitted | 2 | **21** |
+| (b) silent skip | **16** | **2** |
+| (c) false positive | 2 clusters | **0** |
+| (d) suppression | 2 | **0** |
+
+The two remaining silent cases are correct: nulling `bill.drug_name` still
+resolves through `raw_text`, and the price fields are not needed when
+`units_basis` is declared. Neither is a check that failed to run.
+
+The property test also found a case the hand-written probe missed. An identified
+prescription line paired with an *unidentifiable billed line* still raised a
+critical `RX_NOT_BILLED` — but that unreadable line may be the counterpart, so the
+absence could not be confirmed. Both counterpart rules now require that the other
+document has no unidentified unmatched lines before they will claim critical.
+
+### Effect on the corpus
+
+Verdicts and scores are unchanged across all four samples — `p3-dental` 17,
+`sample-01` 100, `sample-02` 25, `sample-03` 92 — so nothing regressed. What
+changed is what the caller can see:
+
+| Sample | Checks that could not run |
+| --- | --- |
+| `p3-dental` | 2 — a strength, and the document date |
+| `sample-01` | 1 — the document date |
+| `sample-02` | 1 — the document date |
+| `sample-03` | 1 — the document date |
+
+Every one of those was previously invisible. `sample-01` in particular still
+reports `match` at score 100, and now says alongside it that one check never
+ran — which is the distinction the whole audit exists to preserve.

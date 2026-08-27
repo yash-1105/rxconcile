@@ -12,6 +12,7 @@ from rxconcile.normalize.sig import (
     doses_per_day,
     duration_to_days,
     expected_quantity,
+    is_positional,
 )
 from rxconcile.normalize.units import (
     ParsedPack,
@@ -34,6 +35,7 @@ __all__ = [
     "doses_per_day",
     "duration_to_days",
     "expected_quantity",
+    "is_positional",
     "find_brand",
     "load_entries",
     "normalize_strength",

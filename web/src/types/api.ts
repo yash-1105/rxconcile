@@ -120,6 +120,12 @@ export interface ReviewSummary {
   items_needing_review: number | null
   fields_nulled_by_disagreement: number | null
   unstable_line_count: number | null
+  /**
+   * Rules that could not run because an input was absent. Not nullable: zero
+   * genuinely means every check ran. "We checked and found nothing" and "we
+   * could not check" are different results and must never render alike.
+   */
+  checks_unavailable: number
 }
 
 export interface ReconciliationResult {
@@ -163,6 +169,13 @@ export interface QuantityAmbiguousDetail {
     as_units: { billed_units: number; outcome: string | null }
     as_packs: { billed_units: number; outcome: string | null }
   }
+}
+
+/** Shape of CHECK_UNAVAILABLE.detail. */
+export interface CheckUnavailableDetail {
+  check: string
+  missing: string[]
+  note: string | null
 }
 
 /** Shape of ITEM_COUNT_UNSTABLE.detail. */

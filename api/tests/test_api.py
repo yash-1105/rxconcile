@@ -393,7 +393,8 @@ def test_quantity_ambiguous_detail_reaches_the_wire(
                 item_id="rx-01", raw_text="TAB DOLO 650", drug_name="Dolo",
                 strength_value=650.0, strength_unit="mg", form="tablet",
                 frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5,
-                confidence=0.9, agreement={"drug_name": 1.0},
+                dose_per_administration=1.0, confidence=0.9,
+                agreement={"drug_name": 1.0},
             )
         ],
     )

@@ -25,7 +25,7 @@ from collections import Counter
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
-from typing import Any, Literal, Self
+from typing import Any, Final, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -324,10 +324,19 @@ class ReviewSummary(_Base):
         description="Lines present in some extraction runs but not all, across both "
         "documents. None when a single run made instability undetectable.",
     )
+    checks_unavailable: int = Field(
+        default=0,
+        ge=0,
+        description="Rules that could not run because an input was absent. "
+        "**'We checked and found nothing' and 'we could not check' are different "
+        "results**, and this is what keeps them distinguishable.",
+    )
 
     @property
     def needs_attention(self) -> bool:
-        """True only when something measured actually warrants review."""
+        """True when something measured warrants review, or a check could not run."""
+        if self.checks_unavailable:
+            return True
         if not self.agreement_measured:
             return False
         return bool(
@@ -353,8 +362,14 @@ def _summarise_items(items: Sequence[PrescribedItem | BilledItem]) -> tuple[int,
     return needing, nulled
 
 
+#: Rule code emitted when a check could not run for want of an input.
+CHECK_UNAVAILABLE_CODE: Final[str] = "CHECK_UNAVAILABLE"
+
+
 def build_review_summary(
-    prescription: Prescription, bill: PharmacyBill
+    prescription: Prescription,
+    bill: PharmacyBill,
+    findings: Sequence[Finding] = (),
 ) -> ReviewSummary:
     """Derive the headline counts from both documents.
 
@@ -362,6 +377,9 @@ def build_review_summary(
     is None rather than 0. Zero would claim that nothing needs review, which a
     single run cannot establish.
     """
+    unavailable = sum(
+        1 for finding in findings if finding.rule_code == CHECK_UNAVAILABLE_CODE
+    )
     measured = (
         any(item.agreement for item in prescription.items)
         or any(item.agreement for item in bill.items)
@@ -369,7 +387,7 @@ def build_review_summary(
         or len(bill.run_item_counts) > 1
     )
     if not measured:
-        return ReviewSummary(agreement_measured=False)
+        return ReviewSummary(agreement_measured=False, checks_unavailable=unavailable)
 
     rx_needing, rx_nulled = _summarise_items(prescription.items)
     bill_needing, bill_nulled = _summarise_items(bill.items)
@@ -378,6 +396,7 @@ def build_review_summary(
         items_needing_review=rx_needing + bill_needing,
         fields_nulled_by_disagreement=rx_nulled + bill_nulled,
         unstable_line_count=len(prescription.unstable_lines) + len(bill.unstable_lines),
+        checks_unavailable=unavailable,
     )
 
 
@@ -437,7 +456,17 @@ class ReconciliationResult(_Base):
         except ValidationError:
             # Let the normal field validation report the real problem.
             return data
-        return {**data, "review_summary": build_review_summary(rx, ph)}
+        raw_findings = data.get("findings") or []
+        findings: list[Finding] = []
+        for entry in raw_findings:
+            if isinstance(entry, Finding):
+                findings.append(entry)
+            else:
+                try:
+                    findings.append(Finding.model_validate(entry))
+                except ValidationError:
+                    return data
+        return {**data, "review_summary": build_review_summary(rx, ph, findings)}
 
     @model_validator(mode="after")
     def _score_matches_verdict(self) -> Self:

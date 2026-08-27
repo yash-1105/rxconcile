@@ -486,3 +486,20 @@ def test_dash_variants_do_not_break_duration() -> None:
     """Duration text with a long dash before the count still parses."""
     assert sig.duration_to_days("x 5 days") == 5
     assert sig.duration_to_days("— x 5 days") == 5
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("1-0-1", True), ("1 — 0 — 1", True), ("0-0-1", True), ("1+0+1", True),
+        ("BD", False), ("TDS", False), ("OD", False), ("SOS", False),
+        ("1-0-1 SOS", False), (None, False), ("", False),
+    ],
+)
+def test_is_positional(raw: str | None, expected: bool) -> None:
+    """Positional slots state units per administration; Latin codes do not.
+
+    doses_per_day already sums the slots to units per day, so a positional
+    frequency needs no separate dose. BD carries no such information.
+    """
+    assert sig.is_positional(raw) is expected
