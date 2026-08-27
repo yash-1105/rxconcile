@@ -37,6 +37,19 @@ what the two documents say and where they differ — nothing more.
 Do not add Cloud Vision or Document AI. This build uses Gemini multimodal exclusively and passes image
 bytes inline. Those APIs are deliberately not enabled on the GCP project.
 
+### 6. No model ID is ever hardcoded in Python
+All three runtime models — `GEMINI_MODEL`, `GEMINI_MODEL_FALLBACK`, `GEMINI_MODEL_QUOTA_FALLBACK` —
+come from config only. If a model ID is given inline in a prompt, put it in `.env` as a default and
+say so; **do not bake it into a module.** A model ID buried in a module is invisible when it is
+withdrawn, and Preview IDs are withdrawn without notice.
+
+### 7. Runtime-only transitive dependencies stay pinned
+Dependencies required at runtime by transitive libraries stay pinned in `api/pyproject.toml` with a
+comment naming why, **even when nothing in this codebase imports them.** `requests` is one such:
+`google-auth`'s ADC token refresh imports it at runtime, and removing it breaks credential refresh
+with `The requests library is not installed`. **Do not prune the dependency list based on static
+import analysis alone** — verify with `make smoke`, which exercises real credential refresh.
+
 ---
 
 ## SCOPE RULE
@@ -44,6 +57,9 @@ bytes inline. Those APIs are deliberately not enabled on the GCP project.
 **Do not add features that were not asked for.** No auth, no database, no user accounts, no deployment
 config, no Docker — unless explicitly requested. When a task is ambiguous, implement the smaller thing
 and ask.
+
+**`/health` is not an endpoint yet.** `health_snapshot()` in `api/rxconcile/gcp/health.py` returns the
+data; prompt 6 wraps it in a route. **Do not add an HTTP layer before then.**
 
 ---
 

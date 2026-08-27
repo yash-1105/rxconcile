@@ -3,6 +3,11 @@
 Settings are validated and frozen at import time. Importing this module raises
 immediately if the environment is unusable, so a misconfigured deployment dies
 at boot rather than at first request.
+
+No model ID is hardcoded here. All three runtime models are required keys with
+no Python default, so the only place a model ID lives is ``.env``. A default
+baked into this module would be invisible when the ID is withdrawn, and Preview
+IDs are withdrawn without notice.
 """
 
 from __future__ import annotations
@@ -62,12 +67,12 @@ class Settings(BaseSettings):
         description="Primary extraction model.",
     )
     gemini_model_fallback: str = Field(
-        default="gemini-3.1-pro-preview",
+        ...,
         min_length=1,
         description="Pro-tier escalation model for hard documents. Not used for quota retries.",
     )
     gemini_model_quota_fallback: str = Field(
-        default="gemini-3.6-flash",
+        ...,
         min_length=1,
         description=(
             "Flash-tier model used only when the primary model is exhausted "

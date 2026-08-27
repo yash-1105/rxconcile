@@ -9,9 +9,13 @@ from rxconcile.config import Settings, settings
 
 
 def make(**overrides: object) -> Settings:
+    # All three model keys are required: config.py deliberately has no
+    # Python-side model defaults (CLAUDE.md hard rule 6).
     base: dict[str, object] = {
         "gcp_project_id": "proj-1234",
         "gemini_model": "gemini-3.7-flash",
+        "gemini_model_fallback": "gemini-3.1-pro-preview",
+        "gemini_model_quota_fallback": "gemini-3.6-flash",
     }
     base.update(overrides)
     return Settings(**base)  # type: ignore[arg-type]
@@ -28,6 +32,23 @@ def test_defaults_applied() -> None:
     assert cfg.gcp_location == "global"
     assert cfg.max_upload_mb == 15
     assert cfg.max_upload_bytes == 15 * 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["gemini_model", "gemini_model_fallback", "gemini_model_quota_fallback"],
+)
+def test_every_runtime_model_is_required(key: str) -> None:
+    """No model ID may default from Python; .env is the only source."""
+    base = {
+        "gcp_project_id": "proj-1234",
+        "gemini_model": "gemini-3.7-flash",
+        "gemini_model_fallback": "gemini-3.1-pro-preview",
+        "gemini_model_quota_fallback": "gemini-3.6-flash",
+    }
+    del base[key]
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **base)  # type: ignore[call-arg,arg-type]
 
 
 def test_regional_location_rejected() -> None:
