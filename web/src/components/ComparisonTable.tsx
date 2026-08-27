@@ -111,7 +111,13 @@ function Cell({ item }: { item: PrescribedItem | BilledItem | null }) {
   )
 }
 
-export function ComparisonTable({ result }: { result: ReconciliationResult }) {
+export function ComparisonTable({
+  result,
+  onHover,
+}: {
+  result: ReconciliationResult
+  onHover?: (row: { prescribedId: string | null; billedId: string | null } | null) => void
+}) {
   const rows = buildRows(result)
   return (
     <div className="overflow-x-auto">
@@ -141,7 +147,17 @@ export function ComparisonTable({ result }: { result: ReconciliationResult }) {
             const strengthMismatch = row.codes.includes('STRENGTH_MISMATCH')
             const formMismatch = row.codes.includes('FORM_MISMATCH')
             return (
-              <tr key={row.key} className="border-b border-ink-200 align-top hover:bg-ink-50">
+              <tr
+                key={row.key}
+                onMouseEnter={() =>
+                  onHover?.({
+                    prescribedId: row.prescribed?.item_id ?? null,
+                    billedId: row.billed?.item_id ?? null,
+                  })
+                }
+                onMouseLeave={() => onHover?.(null)}
+                className="border-b border-ink-200 align-top hover:bg-ink-50"
+              >
                 <td className={`px-3 py-2 text-center ${mark.className}`} title={mark.label}>
                   {mark.glyph}
                 </td>

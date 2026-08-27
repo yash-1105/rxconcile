@@ -53,6 +53,18 @@ LINE_MATCH_THRESHOLD: Final[float] = 85.0
 #: Float fields are compared at this precision, so 500.0 and 500.0000001 agree.
 _FLOAT_PRECISION: Final[int] = 6
 
+#: Intersection-over-union above which two runs are considered to have located
+#: the same line.
+#:
+#: Exact equality is meaningless for coordinates -- three runs will never return
+#: identical floats -- so agreement is judged by overlap. 0.5 is the conventional
+#: detection threshold and is deliberately not loose: at 0.5 two boxes share more
+#: area than either holds alone, which for single-line regions on a page means
+#: they cannot be pointing at different lines. A looser value would let adjacent
+#: lines count as agreement, which is exactly the failure a provenance highlight
+#: must not make.
+IOU_AGREEMENT_THRESHOLD: Final[float] = 0.5
+
 
 class FieldResolution(BaseModel):
     """One field's resolved value and how much the runs agreed on it."""
@@ -232,3 +244,76 @@ def split_clusters(
             "item-count instability: %d line(s) present in some runs only", len(unstable)
         )
     return kept, unstable
+
+
+Box = tuple[float, float, float, float]
+
+
+def _as_box(value: object) -> Box | None:
+    """Coerce a model-supplied box, rejecting anything unusable."""
+    if not isinstance(value, list | tuple) or len(value) != 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(v) for v in value)
+    except (TypeError, ValueError):
+        return None
+    if not all(0.0 <= v <= 1.0 for v in (x0, y0, x1, y1)):
+        return None
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return (x0, y0, x1, y1)
+
+
+def iou(left: Box, right: Box) -> float:
+    """Intersection over union of two normalised boxes."""
+    ax0, ay0, ax1, ay1 = left
+    bx0, by0, bx1, by1 = right
+    inter_w = min(ax1, bx1) - max(ax0, bx0)
+    inter_h = min(ay1, by1) - max(ay0, by0)
+    if inter_w <= 0 or inter_h <= 0:
+        return 0.0
+    intersection = inter_w * inter_h
+    union = (ax1 - ax0) * (ay1 - ay0) + (bx1 - bx0) * (by1 - by0) - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _mean_box(boxes: Sequence[Box]) -> Box:
+    count = len(boxes)
+    return (
+        sum(b[0] for b in boxes) / count,
+        sum(b[1] for b in boxes) / count,
+        sum(b[2] for b in boxes) / count,
+        sum(b[3] for b in boxes) / count,
+    )
+
+
+def resolve_bbox(values: Sequence[object], *, run_count: int) -> FieldResolution:
+    """Resolve bounding boxes across runs by overlap rather than equality.
+
+    A box is kept only when a majority of the runs that produced one placed it in
+    substantially the same place (IoU >= :data:`IOU_AGREEMENT_THRESHOLD`); the
+    mean of that agreeing group is returned. Boxes that scatter resolve to None:
+    a location the model cannot reproduce is a guess, and a provenance highlight
+    pointing at the wrong line is worse than no highlight.
+
+    Agreement is scored against ``run_count``, so a box found by only one of three
+    runs scores 0.33 and is discarded, exactly as a field read three different
+    ways is.
+    """
+    boxes = [box for box in (_as_box(value) for value in values) if box is not None]
+    if not boxes:
+        return FieldResolution(value=None, agreement=None if run_count <= 1 else 0.0)
+    if run_count <= 1:
+        return FieldResolution(value=list(boxes[0]), agreement=None)
+
+    best: list[Box] = []
+    for candidate in boxes:
+        group = [other for other in boxes if iou(candidate, other) >= IOU_AGREEMENT_THRESHOLD]
+        if len(group) > len(best):
+            best = group
+
+    ratio = round(len(best) / run_count, 2)
+    if len(best) < 2:
+        # No two runs agreed on where this line is.
+        return FieldResolution(value=None, agreement=ratio)
+    return FieldResolution(value=list(_mean_box(best)), agreement=ratio)

@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type {
+  DocSide,
+  Finding,
   ItemCountUnstableDetail,
   ReconciliationResult,
   Verdict,
 } from '../types/api'
 import { AuditPanel } from './Audit'
 import { ComparisonTable } from './ComparisonTable'
-import { FindingsList } from './Findings'
+import { FindingsList, type LocateResult } from './Findings'
 import { MetaStat, Panel } from './primitives'
 
 const VERDICT_STYLE: Record<Verdict, { band: string; label: string; copy: string }> = {
@@ -206,6 +208,57 @@ export function Result({
   onReset: () => void
 }) {
   const [showAudit, setShowAudit] = useState(false)
+  const [highlight, setHighlight] = useState<{ side: DocSide; itemId: string } | null>(null)
+
+  const itemHasBox = useCallback(
+    (side: DocSide, itemId: string): boolean => {
+      const items = side === 'prescription' ? result.prescription.items : result.bill.items
+      return items.find((item) => item.item_id === itemId)?.bbox != null
+    },
+    [result],
+  )
+
+  /** Point the image at a finding's line, and report whether that was possible. */
+  const locate = useCallback(
+    (finding: Finding): LocateResult => {
+      const target: { side: DocSide; itemId: string } | null = finding.prescribed_ref
+        ? { side: 'prescription', itemId: finding.prescribed_ref }
+        : finding.billed_ref
+          ? { side: 'bill', itemId: finding.billed_ref }
+          : null
+      if (!target) {
+        setHighlight(null)
+        return 'no-ref'
+      }
+      if (!itemHasBox(target.side, target.itemId)) {
+        setHighlight(null)
+        return 'not-located'
+      }
+      setShowAudit(true)
+      setHighlight(target)
+      return 'located'
+    },
+    [itemHasBox],
+  )
+
+  const hoverRow = useCallback(
+    (row: { prescribedId: string | null; billedId: string | null } | null) => {
+      if (!showAudit) return
+      if (!row) {
+        setHighlight(null)
+        return
+      }
+      if (row.prescribedId && itemHasBox('prescription', row.prescribedId)) {
+        setHighlight({ side: 'prescription', itemId: row.prescribedId })
+      } else if (row.billedId && itemHasBox('bill', row.billedId)) {
+        setHighlight({ side: 'bill', itemId: row.billedId })
+      } else {
+        setHighlight(null)
+      }
+    },
+    [itemHasBox, showAudit],
+  )
+
   return (
     <div className="space-y-6">
       <VerdictBanner result={result} />
@@ -216,11 +269,15 @@ export function Result({
         title="Comparison"
         subtitle={`${result.matched_pairs.length} paired · ${result.unmatched_prescribed.length} prescribed unmatched · ${result.unmatched_billed.length} billed unmatched`}
       >
-        <ComparisonTable result={result} />
+        <ComparisonTable result={result} onHover={hoverRow} />
       </Panel>
 
       <Panel title="Findings">
-        <FindingsList findings={result.findings} verdict={result.verdict} />
+        <FindingsList
+          findings={result.findings}
+          verdict={result.verdict}
+          onLocate={locate}
+        />
       </Panel>
 
       <div>
@@ -231,6 +288,10 @@ export function Result({
         >
           {showAudit ? 'Hide audit' : 'Show audit'}
         </button>
+        <span className="ml-3 text-sm text-ink-500">
+          Click a finding to highlight its line on the image; hover a comparison row to
+          do the same.
+        </span>
       </div>
       {showAudit ? (
         <AuditPanel
@@ -238,6 +299,7 @@ export function Result({
           bill={result.bill}
           prescriptionImage={prescriptionImage}
           billImage={billImage}
+          highlight={highlight}
         />
       ) : null}
 

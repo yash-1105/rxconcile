@@ -47,6 +47,18 @@ class _Base(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+def valid_bbox(box: Sequence[float] | None) -> bool:
+    """A box is usable only if it is inside the image and not inverted."""
+    if box is None:
+        return False
+    if len(box) != 4:
+        return False
+    x0, y0, x1, y1 = box
+    if not all(0.0 <= value <= 1.0 for value in box):
+        return False
+    return x1 > x0 and y1 > y0
+
+
 def _duplicates(values: Sequence[str]) -> list[str]:
     return sorted(value for value, count in Counter(values).items() if count > 1)
 
@@ -92,6 +104,14 @@ class PrescribedItem(_Base):
     )
     route: str | None = Field(default=None, description="oral, topical, IV, etc.")
     instructions: str | None = Field(default=None, description="Free-text directions.")
+    bbox: tuple[float, float, float, float] | None = Field(
+        default=None,
+        description="Where this line sits on the preprocessed image, as "
+        "[x0, y0, x1, y1] normalised to 0-1. **Null when the model could not "
+        "locate the line** -- never guessed, like every other field. Resolved "
+        "across runs by IoU rather than exact equality; a box that moves between "
+        "runs is not a location.",
+    )
     agreement: dict[str, float] | None = Field(
         default=None,
         description="Per-field agreement ratio across the N extraction runs, e.g. "
@@ -139,6 +159,14 @@ class BilledItem(_Base):
     line_total: Decimal | None = Field(default=None, description="Line amount charged.")
     batch_no: str | None = Field(default=None)
     hsn_code: str | None = Field(default=None)
+    bbox: tuple[float, float, float, float] | None = Field(
+        default=None,
+        description="Where this line sits on the preprocessed image, as "
+        "[x0, y0, x1, y1] normalised to 0-1. **Null when the model could not "
+        "locate the line** -- never guessed, like every other field. Resolved "
+        "across runs by IoU rather than exact equality; a box that moves between "
+        "runs is not a location.",
+    )
     agreement: dict[str, float] | None = Field(
         default=None,
         description="Per-field agreement ratio across the N extraction runs, e.g. "

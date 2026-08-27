@@ -83,6 +83,7 @@ occupied on this machine by an unrelated service.** Use
 | `QUANTITY_AMBIGUOUS` | info | The bill does not say whether its quantity counts packs or units, and the readings disagree |
 | `STRENGTH_UNIT_UNSTATED` | info | The numbers agree but only one document prints a unit |
 | `LOW_CONFIDENCE_FIELD` | info | An item has fields the runs did not agree on (one finding per item) |
+| `CHECK_UNAVAILABLE` | info | A check could not run because an input was absent |
 | `ILLEGIBLE_RX` | info | Accompanies an inconclusive verdict, carrying the reasons |
 
 **Verdict**, in order: `inconclusive` if more than half of prescribed items have a
@@ -151,6 +152,13 @@ a narrow, documented exception.)
 **Real handwriting is materially harder than the synthetic samples.** The
 `sample-0*` pairs render glyphs cleanly and prove only that the pipeline holds
 together. They are regression coverage, not evidence of accuracy.
+
+**Bounding boxes are measured, not assumed.** Every item on the four real
+photographs got a box, all agreed across the three runs at IoU >= 0.5, and a
+spot-check confirmed all 18 land on the correct line — including the Bengali
+scripts and the oncology page. A box the runs place differently resolves to null
+and renders as uncertain rather than precise, and a finding whose line has no box
+says so rather than silently failing to highlight.
 
 **There is no accuracy claim at all.** Ground truth for drug names on the real
 corpus was never confirmed. Everything measured so far is reproducibility. See

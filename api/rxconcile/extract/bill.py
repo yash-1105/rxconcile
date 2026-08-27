@@ -26,12 +26,20 @@ from rxconcile.models import BilledItem, PharmacyBill
 
 logger: Final = logging.getLogger(__name__)
 
+
+def _as_bbox(value: object) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, list | tuple) or len(value) != 4:
+        return None
+    x0, y0, x1, y1 = (float(v) for v in value)
+    return (x0, y0, x1, y1)
+
 DOC_TYPE: Final[str] = "bill"
 ITEM_ID_PREFIX: Final[str] = "bill"
 DEFAULT_CURRENCY: Final[str] = "INR"
 
 ITEM_FIELDS: Final[tuple[str, ...]] = (
     "raw_text",
+    "bbox",
     "drug_name",
     "salt",
     "strength_value",
@@ -68,6 +76,11 @@ def _currency(value: str | None) -> str:
 
 def _build_item(cluster: consensus.ItemCluster, item_id: str) -> BilledItem:
     resolved = {field: consensus.resolve_field(cluster, field) for field in ITEM_FIELDS}
+    # Coordinates never repeat exactly, so boxes are resolved by overlap.
+    resolved["bbox"] = consensus.resolve_bbox(
+        [getattr(item, "bbox", None) for item in cluster.present],
+        run_count=cluster.present_count,
+    )
     agreement = {
         field: outcome.agreement
         for field, outcome in resolved.items()
@@ -81,6 +94,7 @@ def _build_item(cluster: consensus.ItemCluster, item_id: str) -> BilledItem:
     return BilledItem(
         item_id=item_id,
         raw_text=cluster.canonical_raw_text,
+        bbox=_as_bbox(resolved["bbox"].value),
         drug_name=resolved["drug_name"].value,
         salt=resolved["salt"].value,
         strength_value=resolved["strength_value"].value,

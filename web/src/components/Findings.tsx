@@ -1,5 +1,10 @@
 import { useState } from 'react'
-import type { Finding, QuantityAmbiguousDetail, Severity, Verdict } from '../types/api'
+import type {
+  Finding,
+  QuantityAmbiguousDetail,
+  Severity,
+  Verdict,
+} from '../types/api'
 import { RuleChip } from './primitives'
 
 function DetailTable({ detail }: { detail: Record<string, unknown> }) {
@@ -74,14 +79,26 @@ function QuantityAmbiguousCard({ finding }: { finding: Finding }) {
   )
 }
 
-function FindingRow({ finding }: { finding: Finding }) {
+export type LocateResult = 'located' | 'not-located' | 'no-ref'
+
+function FindingRow({
+  finding,
+  onLocate,
+}: {
+  finding: Finding
+  onLocate: (finding: Finding) => LocateResult
+}) {
   const [open, setOpen] = useState(false)
+  const [located, setLocated] = useState<LocateResult | null>(null)
   const refs = [finding.prescribed_ref, finding.billed_ref].filter(Boolean) as string[]
   return (
     <div className="rounded border border-ink-200 bg-white">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setOpen(!open)
+          setLocated(onLocate(finding))
+        }}
         className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-ink-50"
       >
         <RuleChip code={finding.rule_code} severity={finding.severity} />
@@ -95,6 +112,20 @@ function FindingRow({ finding }: { finding: Finding }) {
       </button>
       {open ? (
         <div className="px-4 pb-4">
+          {/* Honesty about provenance: a finding that cannot be pointed at must
+              say so rather than quietly failing to highlight anything. */}
+          {located === 'not-located' ? (
+            <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              This line could not be located on the source image, so there is nothing to
+              highlight. Read it off the page yourself before acting on this finding.
+            </p>
+          ) : null}
+          {located === 'no-ref' ? (
+            <p className="mt-2 rounded border border-ink-200 bg-ink-50 px-3 py-2 text-xs text-ink-600">
+              This is a document-level finding. It does not refer to a single line, so
+              there is no region to highlight.
+            </p>
+          ) : null}
           <DetailTable detail={finding.detail} />
         </div>
       ) : null}
@@ -110,9 +141,11 @@ const GROUPS: { severity: Severity; heading: string }[] = [
 export function FindingsList({
   findings,
   verdict,
+  onLocate,
 }: {
   findings: Finding[]
   verdict: Verdict
+  onLocate: (finding: Finding) => LocateResult
 }) {
   const [showInfo, setShowInfo] = useState(false)
   const ambiguous = findings.filter((f) => f.rule_code === 'QUANTITY_AMBIGUOUS')
@@ -152,7 +185,11 @@ export function FindingsList({
             </h3>
             <div className="space-y-2">
               {group.map((finding, index) => (
-                <FindingRow key={`${finding.rule_code}-${index}`} finding={finding} />
+                <FindingRow
+                  key={`${finding.rule_code}-${index}`}
+                  finding={finding}
+                  onLocate={onLocate}
+                />
               ))}
             </div>
           </div>
@@ -215,7 +252,7 @@ export function FindingsList({
           {showInfo ? (
             <div className="mt-2 space-y-2">
               {info.map((finding, index) => (
-                <FindingRow key={`info-${index}`} finding={finding} />
+                <FindingRow key={`info-${index}`} finding={finding} onLocate={onLocate} />
               ))}
             </div>
           ) : null}

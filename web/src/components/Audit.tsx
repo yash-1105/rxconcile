@@ -1,9 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { BilledItem, PharmacyBill, PrescribedItem, Prescription } from '../types/api'
 import { AgreementBadge } from './primitives'
 
-export function ImageViewer({ src, label }: { src: string | null; label: string }) {
+/** Agreement at or above this renders as a confident box; below it, as uncertain. */
+const CONFIDENT_BBOX_AGREEMENT = 1
+
+export function ImageViewer({
+  src,
+  label,
+  items = [],
+  highlightId = null,
+}: {
+  src: string | null
+  label: string
+  items?: (PrescribedItem | BilledItem)[]
+  highlightId?: string | null
+}) {
   const [zoom, setZoom] = useState(1)
+  const highlightRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    highlightRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [highlightId])
+
   if (!src) {
     return (
       <div className="flex h-64 items-center justify-center rounded border border-ink-200 bg-ink-100 text-sm text-ink-500">
@@ -11,6 +30,8 @@ export function ImageViewer({ src, label }: { src: string | null; label: string 
       </div>
     )
   }
+  const located = items.filter((item) => item.bbox !== null)
+  const unlocated = items.length - located.length
   return (
     <div className="rounded border border-ink-200 bg-white">
       <div className="flex items-center justify-between border-b border-ink-200 px-3 py-2">
@@ -40,15 +61,52 @@ export function ImageViewer({ src, label }: { src: string | null; label: string 
         </div>
       </div>
       <div className="h-[28rem] overflow-auto bg-ink-100 p-2">
-        <img
-          src={src}
-          alt={label}
-          style={{ width: `${zoom * 100}%` }}
-          className="max-w-none origin-top-left"
-        />
+        <div className="relative max-w-none" style={{ width: `${zoom * 100}%` }}>
+          <img src={src} alt={label} className="block w-full" />
+          {located.map((item) => {
+            const [x0, y0, x1, y1] = item.bbox as [number, number, number, number]
+            const ratio = item.agreement?.['bbox'] ?? null
+            // A box the runs did not agree on is not a location. It is drawn
+            // dashed and pale so it never reads as a precise pointer.
+            const confident = ratio === null || ratio >= CONFIDENT_BBOX_AGREEMENT
+            const active = highlightId === item.item_id
+            return (
+              <div
+                key={item.item_id}
+                ref={active ? highlightRef : undefined}
+                title={
+                  confident
+                    ? item.raw_text
+                    : `${item.raw_text}\n\nLocation uncertain: the extraction runs placed this box differently.`
+                }
+                className={[
+                  'pointer-events-none absolute transition-colors',
+                  confident ? 'border-2' : 'border-2 border-dashed',
+                  active
+                    ? 'border-accent bg-accent/20'
+                    : confident
+                      ? 'border-accent/40'
+                      : 'border-amber-500/60 bg-amber-200/10',
+                ].join(' ')}
+                style={{
+                  left: `${x0 * 100}%`,
+                  top: `${y0 * 100}%`,
+                  width: `${(x1 - x0) * 100}%`,
+                  height: `${(y1 - y0) * 100}%`,
+                }}
+              />
+            )
+          })}
+        </div>
       </div>
       <p className="border-t border-ink-200 px-3 py-2 text-xs text-ink-500">
         Zoom in to check a disputed line against the actual handwriting.
+        {unlocated > 0 ? (
+          <span className="ml-1 text-amber-700">
+            {unlocated} line{unlocated > 1 ? 's' : ''} could not be located on this
+            image and {unlocated > 1 ? 'have' : 'has'} no box.
+          </span>
+        ) : null}
       </p>
     </div>
   )
@@ -63,7 +121,7 @@ function ItemAudit({ item }: { item: PrescribedItem | BilledItem }) {
   const agreement = item.agreement
   const fields = Object.entries(item).filter(
     ([key]) =>
-      !['item_id', 'raw_text', 'agreement', 'confidence'].includes(key),
+      !['item_id', 'raw_text', 'agreement', 'confidence', 'bbox'].includes(key),
   ) as [string, unknown][]
   const nulled = fields.filter(
     ([key, value]) => value === null && agreement !== null && (agreement[key] ?? 1) < 1,
@@ -76,6 +134,11 @@ function ItemAudit({ item }: { item: PrescribedItem | BilledItem }) {
         <span className="flex-1 font-mono text-xs break-words text-ink-800">
           {item.raw_text}
         </span>
+        {item.bbox === null ? (
+          <span className="shrink-0 font-mono text-xs text-amber-700" title="No bounding box">
+            not located
+          </span>
+        ) : null}
       </div>
 
       {nulled.length > 0 ? (
@@ -126,11 +189,13 @@ export function AuditPanel({
   bill,
   prescriptionImage,
   billImage,
+  highlight,
 }: {
   prescription: Prescription
   bill: PharmacyBill
   prescriptionImage: string | null
   billImage: string | null
+  highlight?: { side: 'prescription' | 'bill'; itemId: string } | null
 }) {
   const [showJson, setShowJson] = useState(false)
   return (
@@ -146,11 +211,26 @@ export function AuditPanel({
 
       <div className="grid gap-6 lg:grid-cols-2">
         {[
-          { label: 'Prescription', image: prescriptionImage, items: prescription.items },
-          { label: 'Pharmacy bill', image: billImage, items: bill.items },
-        ].map(({ label, image, items }) => (
+          {
+            label: 'Prescription',
+            image: prescriptionImage,
+            items: prescription.items as (PrescribedItem | BilledItem)[],
+            side: 'prescription' as const,
+          },
+          {
+            label: 'Pharmacy bill',
+            image: billImage,
+            items: bill.items as (PrescribedItem | BilledItem)[],
+            side: 'bill' as const,
+          },
+        ].map(({ label, image, items, side }) => (
           <div key={label} className="space-y-4">
-            <ImageViewer src={image} label={label} />
+            <ImageViewer
+              src={image}
+              label={label}
+              items={items}
+              highlightId={highlight?.side === side ? highlight.itemId : null}
+            />
             <div className="rounded border border-ink-200 bg-white px-4 py-2">
               <p className="py-2 text-xs tracking-wide text-ink-500 uppercase">
                 {label} · extracted fields

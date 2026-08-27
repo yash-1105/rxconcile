@@ -71,6 +71,12 @@ class PrescribedItemDTO(_DTO):
     )
     route: str | None = Field(default=None, description="oral, topical, IV, etc. Else null.")
     instructions: str | None = Field(default=None, description="Directions, else null.")
+    bbox: list[float] | None = Field(
+        default=None,
+        description="Bounding box of this line as [x0, y0, x1, y1], each normalised "
+        "0-1 against the image width and height. Null if you cannot locate the "
+        "line on the page. Do not guess a box.",
+    )
     confidence: float = Field(
         default=0.0,
         description="Handwriting legibility for THIS line, 0-1. Legibility only, not plausibility.",
@@ -133,6 +139,12 @@ class BilledItemDTO(_DTO):
     line_total: float | None = Field(default=None, description="Net amount for this line.")
     batch_no: str | None = Field(default=None)
     hsn_code: str | None = Field(default=None)
+    bbox: list[float] | None = Field(
+        default=None,
+        description="Bounding box of this line as [x0, y0, x1, y1], each normalised "
+        "0-1 against the image width and height. Null if you cannot locate the "
+        "line on the page. Do not guess a box.",
+    )
     confidence: float = Field(default=0.0, description="Legibility for THIS line, 0-1.")
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "2026-08-27.3"
+PROMPT_VERSION: Final[str] = "2026-08-27.4"
 
 _NEVER_GUESS: Final[str] = """
 ABSOLUTE RULE — NEVER INVENT A VALUE
@@ -40,6 +40,19 @@ If the page says "PARACETAMOL 500mg", the unit IS written: return "mg".
 
 A correct unit that you inferred rather than read is still a fabrication. Null is
 the correct answer whenever the unit is absent from the page.
+""".strip()
+
+_BBOX: Final[str] = """
+BOUNDING BOX
+For each item return `bbox` as [x0, y0, x1, y1], normalised 0-1 against the image
+width and height, tightly enclosing the WHOLE line as written -- drug name,
+strength, frequency and duration together, not just the drug name. x0,y0 is the
+top-left corner and x1,y1 the bottom-right, so x1 > x0 and y1 > y0.
+
+If you cannot confidently locate the line on the page, return null. **Do not
+guess a box.** A box in the wrong place is worse than no box: it points a
+reviewer at the wrong line and invites them to confirm a reading they never
+actually checked.
 """.strip()
 
 _CONFIDENCE: Final[str] = """
@@ -142,6 +155,8 @@ Specifically for drug names: if you cannot confidently read the drug name, set
 
 {_CONFIDENCE}
 
+{_BBOX}
+
 PATIENT AGE
 Return `patient_age` VERBATIM INCLUDING ITS UNIT: "6 months", "34 years", "45Y",
 "2 1/2 yrs". Never convert to a bare number and never assume years — the
@@ -197,6 +212,8 @@ Set `units_basis` ONLY when the bill states it explicitly:
 Otherwise return null. **Do not guess.** A wrong basis multiplies or divides the
 dispensed quantity by the pack size, which is worse than leaving it unstated --
 software compares both readings when this is null.
+
+{_BBOX}
 
 PACK SIZE
 Return `pack_size` EXACTLY as printed — "10'S", "1x10", "15ML", "STRIP OF 10".

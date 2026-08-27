@@ -228,3 +228,93 @@ def test_confidence_survives_but_agreement_is_the_signal() -> None:
     doc = build_prescription(runs)
     assert doc.items[0].confidence == pytest.approx(0.9)
     assert doc.items[0].agreement is not None
+
+
+# --------------------------------------------------------------------------
+# Bounding boxes -- resolved by overlap, not equality
+# --------------------------------------------------------------------------
+
+
+def test_iou_of_identical_boxes_is_one() -> None:
+    box = [0.1, 0.1, 0.5, 0.2]
+    assert consensus.iou(tuple(box), tuple(box)) == pytest.approx(1.0)  # type: ignore[arg-type]
+
+
+def test_iou_of_disjoint_boxes_is_zero() -> None:
+    assert consensus.iou((0.1, 0.1, 0.4, 0.2), (0.1, 0.5, 0.4, 0.6)) == 0.0
+
+
+def test_jitter_on_the_same_line_clears_the_threshold() -> None:
+    """Three runs never return identical floats; small jitter must still agree."""
+    a = (0.10, 0.100, 0.50, 0.200)
+    b = (0.11, 0.105, 0.51, 0.205)
+    assert consensus.iou(a, b) >= consensus.IOU_AGREEMENT_THRESHOLD
+
+
+def test_adjacent_lines_do_not_clear_the_threshold() -> None:
+    """The failure a provenance highlight must never make.
+
+    Two boxes on neighbouring lines of a prescription must not count as the same
+    location, or the UI would point a reviewer at the wrong scrawl.
+    """
+    line_one = (0.1, 0.40, 0.9, 0.46)
+    line_two = (0.1, 0.47, 0.9, 0.53)
+    assert consensus.iou(line_one, line_two) < consensus.IOU_AGREEMENT_THRESHOLD
+
+
+def test_three_agreeing_boxes_resolve_to_their_mean() -> None:
+    boxes = [[0.1, 0.1, 0.5, 0.2], [0.11, 0.105, 0.51, 0.205], [0.1, 0.1, 0.5, 0.2]]
+    result = consensus.resolve_bbox(boxes, run_count=3)
+    assert result.agreement == 1.0
+    assert result.value is not None
+    assert result.value[0] == pytest.approx(0.1033, abs=1e-3)
+
+
+def test_scattered_boxes_resolve_to_none() -> None:
+    """A location the runs cannot reproduce is a guess, not a location."""
+    boxes = [[0.1, 0.1, 0.3, 0.2], [0.1, 0.5, 0.3, 0.6], [0.6, 0.7, 0.9, 0.8]]
+    result = consensus.resolve_bbox(boxes, run_count=3)
+    assert result.value is None
+    assert result.agreement == 0.33
+
+
+def test_two_of_three_boxes_agree() -> None:
+    boxes = [[0.1, 0.1, 0.5, 0.2], [0.105, 0.1, 0.505, 0.2], [0.1, 0.8, 0.5, 0.9]]
+    result = consensus.resolve_bbox(boxes, run_count=3)
+    assert result.agreement == 0.67
+    assert result.value is not None
+
+
+def test_a_box_found_by_only_one_run_is_discarded() -> None:
+    result = consensus.resolve_bbox([[0.1, 0.1, 0.5, 0.2], None, None], run_count=3)
+    assert result.value is None
+    assert result.agreement == 0.33
+
+
+def test_malformed_boxes_are_rejected() -> None:
+    """Inverted, out-of-range and wrong-length boxes are not locations."""
+    for bad in ([0.5, 0.1, 0.1, 0.2], [0.1, 0.1, 1.5, 0.2], [0.1, 0.1, 0.5], "nope"):
+        assert consensus.resolve_bbox([bad, bad, bad], run_count=3).value is None
+
+
+def test_single_run_bbox_reports_no_agreement() -> None:
+    result = consensus.resolve_bbox([[0.1, 0.1, 0.5, 0.2]], run_count=1)
+    assert result.value is not None
+    assert result.agreement is None
+
+
+def test_bbox_survives_into_the_domain_model() -> None:
+    runs = [
+        run(item("TAB DOLO 650", drug_name="Dolo", bbox=[0.1, 0.1, 0.5, 0.2]))
+        for _ in range(3)
+    ]
+    doc = build_prescription(runs)
+    assert doc.items[0].bbox is not None
+    assert doc.items[0].agreement is not None
+    assert doc.items[0].agreement["bbox"] == 1.0
+
+
+def test_unlocatable_line_keeps_a_null_bbox() -> None:
+    runs = [run(item("TAB DOLO 650", drug_name="Dolo", bbox=None)) for _ in range(3)]
+    doc = build_prescription(runs)
+    assert doc.items[0].bbox is None

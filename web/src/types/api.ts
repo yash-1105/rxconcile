@@ -20,6 +20,12 @@ export type Verdict = 'match' | 'match_with_warnings' | 'mismatch' | 'inconclusi
 
 export type UnitsBasis = 'pack' | 'unit'
 
+/** [x0, y0, x1, y1] normalised 0-1 against the preprocessed image. */
+export type BBox = [number, number, number, number]
+
+/** Which document a highlight refers to. */
+export type DocSide = 'prescription' | 'bill'
+
 /** Per-field agreement ratio across the N extraction runs. Null when N=1. */
 export type Agreement = Record<string, number> | null
 
@@ -38,6 +44,8 @@ export interface PrescribedItem {
   duration_days: number | null
   route: string | null
   instructions: string | null
+  /** Where this line sits on the image. Null when the model could not locate it. */
+  bbox: BBox | null
   agreement: Agreement
   /** The model's own score. Retained for the record; never a reliability signal. */
   confidence: number
@@ -58,6 +66,8 @@ export interface BilledItem {
   line_total: string | null
   batch_no: string | null
   hsn_code: string | null
+  /** Where this line sits on the image. Null when the model could not locate it. */
+  bbox: BBox | null
   agreement: Agreement
   confidence: number
 }
