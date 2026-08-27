@@ -47,6 +47,20 @@ wrote down.
 Date sources are ranked: printed labelled field > header > body text. A date inside
 advice text ("review on 3/3/21") is a future appointment, not the issue date.
 
+### 3b. Agreement is the reliability signal, not model confidence
+Extraction runs `EXTRACTION_RUNS` times (default 3) at temperature 0.3, and per-field
+agreement across those runs is recorded in `PrescribedItem.agreement` /
+`BilledItem.agreement`. **Nothing may gate on `confidence` or `overall_legibility`** —
+those are the model's own scores, measured at 0.75–0.95 across 56 observations and
+sometimes inverted against reproducibility. They are retained for the record only.
+
+Three distinct readings of a field resolve to `null`, never to a plurality of one.
+With `EXTRACTION_RUNS=1`, agreement is `null` rather than 1.0 — one run has no
+agreement, and reporting 1.0 would be a lie.
+
+Temperature is 0.3 and must not be lowered to 0.0: near-deterministic sampling
+manufactures agreement and reproduces the false reassurance confidence already gives.
+
 ### 4. No medical advice, no dosing recommendations, no clinical judgement in any output
 This tool reports document discrepancies only. It never says whether a dose is safe, appropriate,
 excessive, or contraindicated. It never suggests what should have been prescribed. Output describes

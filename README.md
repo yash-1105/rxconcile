@@ -71,11 +71,16 @@ follows from it.
   the model could not reproduce across three runs. Treat `confidence` and
   `overall_legibility` as model-reported numbers, not as reliability signals.
 
-- **Non-Latin script transcription is unreliable.** On Bengali prescriptions the
-  model transcribes legible script but *generates* plausible script where the
-  handwriting is unclear, with no signal distinguishing the two. One duration was
-  read as "2 weeks", "1 week" and "7 days" across runs, each at confidence 0.85.
-  This is invisible to a reviewer who does not read the script.
+- **Scope: English/Latin script only.** Input is assumed to be English-language
+  prescriptions and bills in Latin script. Documents in other scripts may extract
+  with reduced reliability and are **not validated** — this is a deliberate scope
+  exclusion, not a pending fix. Measured on Bengali input, the model transcribes
+  legible script but *generates* plausible script where the handwriting is
+  unclear, with no signal distinguishing the two: one duration was read as
+  "2 weeks", "1 week" and "7 days" across runs, each at confidence 0.85. That is
+  invisible to a reviewer who does not read the script. (Bengali digits and three
+  duration words are handled in the sig parser as a narrow, documented
+  exception.)
 
 - **Item counts can vary between runs.** One document returned 7, 7 and 6 items
   across three extractions, silently dropping a prescribed line. A dropped line

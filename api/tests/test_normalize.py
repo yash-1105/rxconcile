@@ -382,10 +382,38 @@ def test_four_months_uses_the_declared_constant() -> None:
     assert sig.duration_to_days("4 months") == 4 * sig.DAYS_PER_MONTH
 
 
-@pytest.mark.parametrize("raw", [None, "", "চলবে", "৪ মাস", "continue", "10", "as directed"])
+@pytest.mark.parametrize("raw", [None, "", "চলবে", "continue", "10", "as directed"])
 def test_unparseable_duration_is_none_not_a_guess(raw: str | None) -> None:
-    """Includes non-Latin script, which this layer deliberately does not parse."""
+    """Bengali words other than the three duration units stay unparsed."""
     assert sig.duration_to_days(raw) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("৪ মাস", 120),      # 4 months
+        ("৭ সপ্তাহ", 49),     # 7 weeks
+        ("৪৫ দিন", 45),      # 45 days
+        ("১ মাস", 30),       # 1 month
+        ("৬ মাস", 180),      # 6 months
+        ("২ সপ্তাহ", 14),     # 2 weeks
+    ],
+)
+def test_bengali_durations(raw: str, expected: int) -> None:
+    """Narrow, deliberate exception to the English/Latin scope.
+
+    Exists so the quantity rules can be exercised against the real samples,
+    two of which state their course length in Bengali.
+    """
+    assert sig.duration_to_days(raw) == expected
+
+
+def test_bengali_transliteration_is_confined_to_digits_and_duration_words() -> None:
+    convert = sig.transliterate_bengali_duration
+    assert convert("৪ মাস") == "4 MONTHS"
+    assert convert("৪৫ দিন") == "45 DAYS"
+    # Any other Bengali text passes through untouched and stays unparseable.
+    assert sig.duration_to_days("খাওয়ার পর") is None
 
 
 # ==========================================================================

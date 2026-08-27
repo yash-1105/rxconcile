@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--model", default=None, help="Override the configured model.")
     parser.add_argument(
+        "--runs",
+        type=int,
+        default=None,
+        help="Extraction runs to resolve by agreement (default EXTRACTION_RUNS).",
+    )
+    parser.add_argument(
         "--no-cache", action="store_true", help="Bypass the on-disk extraction cache."
     )
     parser.add_argument(
@@ -67,7 +73,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     model = args.model or settings.gemini_model
-    print(f"extracting {args.doc_type} from {args.image} using {model}", file=sys.stderr)
+    runs = args.runs if args.runs is not None else settings.extraction_runs
+    print(
+        f"extracting {args.doc_type} from {args.image} using {model}, {runs} run(s)",
+        file=sys.stderr,
+    )
 
     try:
         image = prepare_image(args.image)
@@ -78,9 +88,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         document: Prescription | PharmacyBill = (
-            extract_prescription(image, model=args.model, use_cache=not args.no_cache)
+            extract_prescription(
+                image, model=args.model, use_cache=not args.no_cache, runs=args.runs
+            )
             if args.doc_type == "prescription"
-            else extract_bill(image, model=args.model, use_cache=not args.no_cache)
+            else extract_bill(
+                image, model=args.model, use_cache=not args.no_cache, runs=args.runs
+            )
         )
     except ExtractionError as exc:
         print(f"extraction failed: {exc}", file=sys.stderr)

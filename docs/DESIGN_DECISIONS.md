@@ -7,8 +7,11 @@ Evidence lives in [BASELINE.md](./BASELINE.md): 12 extractions, 3 runs each over
 4 real photographs, `gemini-3.7-flash`, prompt version `2026-08-27.1`, measured
 **2026-08-27**.
 
-**Status: recorded, not implemented.** Nothing in this document is built yet.
-It exists so the reconciliation engine is designed against evidence.
+**Status.** Sections 1, 2 and 4 are **implemented** in `rxconcile/extract/`
+(see `consensus.py`) and `rxconcile/normalize/sig.py`. Section 3 —
+`ITEM_COUNT_UNSTABLE` — is **recorded, not implemented**: extraction now emits
+`run_item_counts` and `unstable_lines` on the document, and the reconciliation
+engine turns those into the finding.
 
 ---
 
@@ -103,10 +106,17 @@ building it.
 
 ---
 
-## 4. Non-Latin script handling is unresolved
+## 4. Scope: English/Latin-script documents only
 
-**Observed.** Bengali `raw_text` is not byte-stable across runs, and the diffs
-change meaning rather than formatting:
+**Decided, not open.** This system targets **English-language prescriptions and
+bills in Latin script**. Documents in other scripts may extract with reduced
+reliability and are **not validated**. Non-Latin script support is out of scope
+for the proof of concept.
+
+### What the measurement showed
+
+Bengali `raw_text` was not byte-stable across runs, and the diffs changed
+meaning rather than formatting:
 
 ```
 p1 rx-01   run 1: ২ সপ্তাহ   (2 weeks)
@@ -115,29 +125,32 @@ p1 rx-01   run 1: ২ সপ্তাহ   (2 weeks)
   earlier baseline: ৭ দিন    (7 days)
 ```
 
-Three readings of one duration, each reported at confidence 0.85.
+Three readings of one duration, each reported at confidence 0.85. A verbatim
+transcription of a fixed image is a deterministic function of that image;
+content that changes with sampling temperature is being generated, not
+transcribed. The failure is not uniform — several Bengali strings were perfectly
+stable — and nothing in the output distinguishes the two cases.
 
-A verbatim transcription of a fixed image is a deterministic function of that
-image. Content that changes with sampling temperature is being **generated, not
-transcribed**.
+This is more dangerous than an ordinary misread because it is invisible to any
+reviewer who does not read the script.
 
-The failure is not uniform — several Bengali strings are perfectly stable. The
-model appears to transcribe legible Bengali and generate plausible Bengali where
-the script is unclear, **with no signal distinguishing the two**. Latin-script
-fields on the same documents were markedly more stable.
+### Consequence of the scope decision
 
-**Why this is more dangerous than an ordinary misread.** It is invisible to any
-reviewer who does not read the script. An English misreading gets caught by the
-person checking the output; a fabricated Bengali duration does not.
+The evidence above is why the exclusion exists, not an open problem to solve.
+Non-Latin input is not rejected outright — it will extract, and self-consistency
+(section 2) will flag its instability — but its accuracy is unvalidated and no
+claim is made for it.
 
-**Decision.** Recorded as a **known limitation** and surfaced in the README.
-Self-consistency (section 2) detects it, which is currently the only defence.
-Not otherwise resolved.
+### The one deliberate exception
 
-**Corpus note.** p1 and p2 are Bangladeshi prescriptions partly in Bengali, while
-the extraction prompt frames the task as an *Indian* prescription. That mismatch
-is known and deliberately left in place; it is a candidate explanation for the
-instability but has not been tested as one.
+`normalize/sig.py` maps Bengali digits (০–৯) and three duration words
+(দিন / সপ্তাহ / মাস) to their Latin equivalents. Roughly fifteen lines, and
+narrowly motivated: two of the four real sample prescriptions state their course
+length in Bengali, so without it those samples produce no `expected_quantity`
+and the quantity rules would ship untested against real input. **This exception
+is confined to `sig.py` and must not be extended elsewhere.**
+
+The extraction prompt's Indian/English framing is unchanged.
 
 ---
 

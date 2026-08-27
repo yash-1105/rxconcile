@@ -92,8 +92,20 @@ class PrescribedItem(_Base):
     )
     route: str | None = Field(default=None, description="oral, topical, IV, etc.")
     instructions: str | None = Field(default=None, description="Free-text directions.")
+    agreement: dict[str, float] | None = Field(
+        default=None,
+        description="Per-field agreement ratio across the N extraction runs, e.g. "
+        "{'drug_name': 1.0, 'strength_value': 0.67}. **This is the reliability "
+        "signal.** None when N=1: a single run has no agreement, and reporting "
+        "1.0 would be a lie.",
+    )
     confidence: float = Field(
-        ge=0.0, le=1.0, description="Legibility confidence for THIS item, 0-1."
+        ge=0.0,
+        le=1.0,
+        description="The MODEL'S OWN legibility score, retained for the record only. "
+        "Measured uninformative (0.75-0.95 across 56 observations, sometimes "
+        "inverted against reproducibility). **Nothing may gate on this.** Use "
+        "`agreement` instead.",
     )
 
 
@@ -121,8 +133,18 @@ class BilledItem(_Base):
     line_total: Decimal | None = Field(default=None, description="Line amount charged.")
     batch_no: str | None = Field(default=None)
     hsn_code: str | None = Field(default=None)
+    agreement: dict[str, float] | None = Field(
+        default=None,
+        description="Per-field agreement ratio across the N extraction runs, e.g. "
+        "{'drug_name': 1.0, 'strength_value': 0.67}. **This is the reliability "
+        "signal.** None when N=1: a single run has no agreement, and reporting "
+        "1.0 would be a lie.",
+    )
     confidence: float = Field(
-        ge=0.0, le=1.0, description="Legibility confidence for THIS item, 0-1."
+        ge=0.0,
+        le=1.0,
+        description="The MODEL'S OWN legibility score, retained for the record only. "
+        "**Nothing may gate on this.** Use `agreement` instead.",
     )
 
 
@@ -146,7 +168,21 @@ class Prescription(_Base):
     diagnosis_text: str | None = Field(default=None)
     items: list[PrescribedItem] = Field(default_factory=list)
     overall_legibility: float = Field(
-        ge=0.0, le=1.0, description="Whole-document legibility, 0-1."
+        ge=0.0,
+        le=1.0,
+        description="The MODEL'S OWN whole-document legibility score. Retained for "
+        "the record; **nothing may gate on this** (measured 0.75-0.95, never "
+        "below the 0.4 floor even on unreproducible documents).",
+    )
+    run_item_counts: list[int] = Field(
+        default_factory=list,
+        description="Item count returned by each extraction run. Differing counts "
+        "mean a line appeared in some runs and not others, which the engine "
+        "raises as ITEM_COUNT_UNSTABLE.",
+    )
+    unstable_lines: list[str] = Field(
+        default_factory=list,
+        description="raw_text of lines present in some runs but not all.",
     )
     warnings: list[str] = Field(default_factory=list)
 
@@ -181,6 +217,16 @@ class PharmacyBill(_Base):
     tax_total: Decimal | None = Field(default=None)
     grand_total: Decimal | None = Field(default=None)
     currency: str = Field(default="INR", min_length=3, max_length=3)
+    run_item_counts: list[int] = Field(
+        default_factory=list,
+        description="Item count returned by each extraction run. Differing counts "
+        "mean a line appeared in some runs and not others, which the engine "
+        "raises as ITEM_COUNT_UNSTABLE.",
+    )
+    unstable_lines: list[str] = Field(
+        default_factory=list,
+        description="raw_text of lines present in some runs but not all.",
+    )
     warnings: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

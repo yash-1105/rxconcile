@@ -155,6 +155,45 @@ _FRACTION_DENOMINATOR_DAYS: Final[dict[int, int]] = {
     12: DAYS_PER_MONTH,
 }
 
+# --------------------------------------------------------------------------
+# Minimal Bengali duration support
+# --------------------------------------------------------------------------
+#
+# The system targets English/Latin-script documents (see docs/DESIGN_DECISIONS.md
+# section 4). This is a deliberate, narrow exception: two of the four real sample
+# prescriptions write their course length in Bengali, and without these few
+# mappings they yield no expected_quantity at all -- which would ship the
+# quantity rules untested against real input.
+#
+# Scope is strictly Bengali digits and the three duration unit words. Do not
+# extend non-Latin handling beyond this module.
+
+#: Bengali-Assamese digits U+09E6..U+09EF -> ASCII.
+_BENGALI_DIGITS: Final[dict[str, str]] = {
+    "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4",
+    "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9",
+}
+
+#: Bengali duration unit words -> the Latin token the parser already understands.
+_BENGALI_DURATION_UNITS: Final[dict[str, str]] = {
+    "দিন": "DAYS",
+    "সপ্তাহ": "WEEKS",
+    "মাস": "MONTHS",
+}
+
+
+def transliterate_bengali_duration(text: str) -> str:
+    """Rewrite Bengali digits and duration words into their Latin equivalents.
+
+    ``"৪ মাস"`` -> ``"4 MONTHS"``, ``"৭ সপ্তাহ"`` -> ``"7 WEEKS"``,
+    ``"৪৫ দিন"`` -> ``"45 DAYS"``. Text containing neither is returned unchanged.
+    """
+    converted = "".join(_BENGALI_DIGITS.get(char, char) for char in text)
+    for bengali, latin in _BENGALI_DURATION_UNITS.items():
+        converted = converted.replace(bengali, f" {latin} ")
+    return " ".join(converted.split())
+
+
 _DURATION_FRACTION_RE: Final[re.Pattern[str]] = re.compile(r"\b(\d+)\s*/\s*(7|52|12)\b")
 #: No leading \b: "X5D" fuses the multiplier to the digit, so there is no word
 #: boundary before the 5.
@@ -170,14 +209,17 @@ def duration_to_days(raw: str | None) -> int | None:
     seven-day week), ``"2 weeks"`` -> 14, ``"4 months"`` -> 120 via
     :data:`DAYS_PER_MONTH`, ``"1/12"`` -> 30, ``"2/52"`` -> 14.
 
+    Bengali digits and the three Bengali duration words are handled as a narrow
+    exception (see :func:`transliterate_bengali_duration`): ``"৪ মাস"`` -> 120.
+
     Returns None for anything not recognised, including open-ended instructions
-    such as "continue" and any non-Latin script. **A None here is correct**; a
+    such as "continue". **A None here is correct**; a
     fabricated duration propagates into ``expected_quantity`` and surfaces as a
     quantity discrepancy against a number nobody wrote.
     """
     if raw is None:
         return None
-    text = " ".join(raw.upper().split())
+    text = " ".join(transliterate_bengali_duration(raw).upper().split())
     if not text:
         return None
 

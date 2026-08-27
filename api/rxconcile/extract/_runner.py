@@ -32,6 +32,16 @@ DTO = TypeVar("DTO", bound=BaseModel)
 #: One retry after a schema-validation failure, then give up.
 MAX_SCHEMA_ATTEMPTS: Final[int] = 2
 
+#: Sampling temperature for extraction.
+#:
+#: Deliberately NOT 0.0. Self-consistency across N runs is the reliability
+#: signal, and near-deterministic sampling would return N near-identical answers
+#: -- manufacturing the appearance of agreement and reproducing exactly the
+#: false reassurance the model's own confidence score already provides. The
+#: variance is the measurement; it must not be tuned away.
+#: See docs/DESIGN_DECISIONS.md section 2.
+EXTRACTION_TEMPERATURE: Final[float] = 0.3
+
 _ISO_FORMATS: Final[tuple[str, ...]] = ("%Y-%m-%d", "%Y/%m/%d")
 
 
@@ -181,7 +191,7 @@ def run_extraction(
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
         response_schema=dto_type,
-        temperature=0.0,
+        temperature=EXTRACTION_TEMPERATURE,
     )
     prompt = instruction
     last_error: str | None = None
@@ -224,3 +234,35 @@ def run_extraction(
         "No partial object is returned: a half-populated document is "
         "indistinguishable from a real one downstream."
     )
+
+
+def collect_runs(
+    *,
+    dto_type: type[DTO],
+    instruction: str,
+    image: PreparedImage,
+    doc_type: str,
+    runs: int,
+    model: str | None = None,
+) -> list[DTO]:
+    """Extract ``runs`` independent times, for consensus resolution.
+
+    Per-run caching is deliberately bypassed: replaying one cached answer N
+    times would produce perfect agreement from a single observation. The caller
+    caches the resolved document instead.
+
+    Raises:
+        ExtractionError: if any run fails after its retry. A missing run would
+            silently change the agreement denominator.
+    """
+    return [
+        run_extraction(
+            dto_type=dto_type,
+            instruction=instruction,
+            image=image,
+            doc_type=doc_type,
+            model=model,
+            use_cache=False,
+        )
+        for _ in range(runs)
+    ]

@@ -80,6 +80,17 @@ class Settings(BaseSettings):
             "capability downgrade."
         ),
     )
+    extraction_runs: int = Field(
+        default=3,
+        ge=1,
+        le=9,
+        description=(
+            "Number of extraction runs per document. Per-field agreement across "
+            "these runs is the reliability signal, replacing the model's own "
+            "confidence score. N=1 is supported for cheap iteration and reports "
+            "agreement as null rather than 1.0."
+        ),
+    )
     max_upload_mb: int = Field(
         default=15,
         gt=0,

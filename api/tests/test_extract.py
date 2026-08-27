@@ -14,7 +14,7 @@ from google.genai import types
 from PIL import Image
 
 from rxconcile.extract import _runner, cache, preprocess
-from rxconcile.extract.bill import to_domain as bill_to_domain
+from rxconcile.extract.bill import build_bill
 from rxconcile.extract.dto import (
     BilledItemDTO,
     PharmacyBillDTO,
@@ -27,7 +27,7 @@ from rxconcile.extract.errors import (
     UnreadableImageError,
 )
 from rxconcile.extract.preprocess import prepare_image
-from rxconcile.extract.prescription import to_domain as rx_to_domain
+from rxconcile.extract.prescription import build_prescription
 
 
 def png_bytes(size: tuple[int, int] = (120, 80), colour: str = "red") -> bytes:
@@ -163,7 +163,7 @@ def test_python_assigns_ids_over_model_output() -> None:
             ],
         }
     )
-    prescription = rx_to_domain(dto)
+    prescription = build_prescription([dto])
     assert [i.item_id for i in prescription.items] == ["rx-01", "rx-02"]
 
 
@@ -225,7 +225,7 @@ def test_prescription_conversion_preserves_never_guess_nulls() -> None:
             PrescribedItemDTO(raw_text="T. PCM 500", drug_name="Paracetamol", confidence=0.9),
         ],
     )
-    prescription = rx_to_domain(dto)
+    prescription = build_prescription([dto])
     assert prescription.patient_age == "6 months"  # unit preserved, never normalised
     assert prescription.date_issued is None
     assert any("ambiguous" in w for w in prescription.warnings)
@@ -254,7 +254,7 @@ def test_bill_conversion_maps_money_and_pack_size() -> None:
             ),
         ],
     )
-    bill = bill_to_domain(dto)
+    bill = build_bill([dto])
     assert [i.item_id for i in bill.items] == ["bill-01", "bill-02"]
     assert bill.items[0].pack_size == "10'S"  # preserved verbatim, unparsed
     assert bill.items[0].line_total == Decimal("22.0")
