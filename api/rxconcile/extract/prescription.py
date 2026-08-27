@@ -48,6 +48,7 @@ def to_domain(dto: PrescriptionDTO) -> Prescription:
             form=source.form,
             dose_per_administration=source.dose_per_administration,
             frequency_raw=source.frequency_raw,
+            duration_raw=source.duration_raw,
             duration_days=source.duration_days if (source.duration_days or 0) >= 0 else None,
             route=source.route,
             instructions=source.instructions,

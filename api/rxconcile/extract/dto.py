@@ -59,8 +59,15 @@ class PrescribedItemDTO(_DTO):
     frequency_raw: str | None = Field(
         default=None, description="Frequency VERBATIM: '1-0-1', 'BD', 'TDS', 'SOS', 'HS'."
     )
+    duration_raw: str | None = Field(
+        default=None,
+        description="Course length EXACTLY as written on the page, in the original "
+        "script: 'x 5 days', '5/7', '৪ মাস'. Never convert or normalise it.",
+    )
     duration_days: int | None = Field(
-        default=None, description="Course length in days if stated, else null."
+        default=None,
+        description="ONLY when the page states a plain number of days. Null for weeks, "
+        "months, or anything needing conversion — software does that later.",
     )
     route: str | None = Field(default=None, description="oral, topical, IV, etc. Else null.")
     instructions: str | None = Field(default=None, description="Directions, else null.")

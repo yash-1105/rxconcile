@@ -78,7 +78,18 @@ class PrescribedItem(_Base):
         default=None,
         description="Frequency exactly as written, e.g. '1-0-1', 'BD', 'TDS', 'SOS', 'HS'.",
     )
-    duration_days: int | None = Field(default=None, ge=0, description="Course length in days.")
+    duration_raw: str | None = Field(
+        default=None,
+        description="Course length EXACTLY as written, e.g. 'x 5 days', '5/7', '৪ মাস'. "
+        "Display and parsing source; never converted by the extractor.",
+    )
+    duration_days: int | None = Field(
+        default=None,
+        ge=0,
+        description="Course length in days. Populated by the normalization layer from "
+        "duration_raw, not by the extractor. Null whenever converting duration_raw "
+        "would require an assumption the page does not state.",
+    )
     route: str | None = Field(default=None, description="oral, topical, IV, etc.")
     instructions: str | None = Field(default=None, description="Free-text directions.")
     confidence: float = Field(

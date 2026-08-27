@@ -28,6 +28,25 @@ Unreadable fields are emitted as `null` with a confidence score, **never guessed
 name from context, do not autocorrect to the nearest real drug, do not complete a partial word.
 **A null is correct; a hallucinated drug name is a critical failure.**
 
+### 3a. The extractor transcribes; it does not convert or infer
+`strength_unit` is returned only when that unit is physically written on the page.
+`THYROX 50` yields `strength_unit: null` — supplying `mcg` because Thyrox is dosed in
+micrograms is a fabrication, however standard the unit.
+
+`duration_raw` holds the course length exactly as written (`x 5 days`, `5/7`, `৪ মাস`).
+**`duration_days` is populated by the normalization layer in `rxconcile/normalize/`, not
+by the extractor.** The extractor fills it only when the page states a plain number of
+days, and leaves it null for weeks or months. A month is not 30 days unless something
+says so, and that assumption belongs in a visible, testable line of Python rather than
+inside an LLM call.
+
+This matters downstream: `expected_quantity = doses_per_day × duration_days`, so a
+fabricated `duration_days` becomes a `QUANTITY_SHORT` finding against a number nobody
+wrote down.
+
+Date sources are ranked: printed labelled field > header > body text. A date inside
+advice text ("review on 3/3/21") is a future appointment, not the issue date.
+
 ### 4. No medical advice, no dosing recommendations, no clinical judgement in any output
 This tool reports document discrepancies only. It never says whether a dose is safe, appropriate,
 excessive, or contraindicated. It never suggests what should have been prescribed. Output describes
