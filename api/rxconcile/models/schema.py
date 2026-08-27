@@ -352,7 +352,14 @@ class ReconciliationResult(_Base):
     """The complete outcome of reconciling one prescription against one bill."""
 
     verdict: Verdict
-    score: float = Field(ge=0.0, le=100.0, description="Overall agreement score, 0-100.")
+    score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Overall agreement score 0-100, or None when the verdict is "
+        "'inconclusive'. A number implies a measurement was possible; emitting 0 "
+        "would read as 'measured, terrible' rather than 'not measurable'.",
+    )
     findings: list[Finding] = Field(default_factory=list)
     matched_pairs: list[MatchedPair] = Field(default_factory=list)
     unmatched_prescribed: list[str] = Field(
@@ -398,6 +405,22 @@ class ReconciliationResult(_Base):
             # Let the normal field validation report the real problem.
             return data
         return {**data, "review_summary": build_review_summary(rx, ph)}
+
+    @model_validator(mode="after")
+    def _score_matches_verdict(self) -> Self:
+        """score is None if and only if the verdict is 'inconclusive'."""
+        if self.verdict == "inconclusive" and self.score is not None:
+            raise ValueError(
+                f"verdict is 'inconclusive' but score is {self.score}. An "
+                "inconclusive result measured nothing reliably, so it must carry "
+                "no score."
+            )
+        if self.verdict != "inconclusive" and self.score is None:
+            raise ValueError(
+                f"verdict is {self.verdict!r} but score is None. Only an "
+                "'inconclusive' verdict may omit the score."
+            )
+        return self
 
     @model_validator(mode="after")
     def _references_resolve(self) -> Self:

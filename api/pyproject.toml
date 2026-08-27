@@ -16,6 +16,8 @@ dependencies = [
     "pydantic==2.13.4",
     "pydantic-settings==2.15.0",
     "rapidfuzz==3.14.5",
+    "scipy==1.17.1",
+    "numpy==2.4.6",
     # Not imported by rxconcile directly, but google-auth's ADC token-refresh
     # transport imports it at runtime. Removing it breaks credential refresh
     # with "The requests library is not installed". Keep it pinned.
@@ -28,6 +30,7 @@ dev = [
     "pillow==12.3.0",
     "pytest==9.1.1",
     "ruff==0.16.4",
+    "scipy-stubs==1.17.1.5",
 ]
 
 [tool.hatch.build.targets.wheel]

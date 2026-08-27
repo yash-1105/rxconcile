@@ -1,9 +1,11 @@
 # Reconciliation engine — amended specification
 
-**Status: not implemented.** This records the spec the engine in
-`api/rxconcile/reconcile/` must be built against. The only part already built is
-`ReviewSummary` on `ReconciliationResult` (see [§6](#6-review-summary)), because
-it is a data contract rather than engine logic.
+**Status: implemented** in `api/rxconcile/reconcile/engine.py`. Pairing uses
+`scipy.optimize.linear_sum_assignment`; `score` is `float | None` with a
+validator asserting it is None if and only if the verdict is `inconclusive`.
+The open questions at the foot of this document are now settled in the engine:
+the pairing algorithm and its weights, `inconclusive` accompanying rather than
+suppressing findings, and score derivation.
 
 Amendments below supersede the original engine spec wherever they conflict. Each
 comes from measured evidence in [BASELINE.md](./BASELINE.md) and the decisions in
@@ -139,9 +141,16 @@ Two implementation notes for the engine:
 
 ---
 
-## Open, to settle when the engine is built
+## Settled in the implementation
 
-- Majority-vote resolution is defined for extraction; the **pairing** algorithm
-  and its `MatchedPair.similarity` scoring are still unspecified.
-- Whether `inconclusive` suppresses other findings or accompanies them.
-- Score (0–100) derivation from findings.
+- **Pairing**: composite similarity, drug/salt 0.60 + strength 0.25 + form 0.15,
+  accepted above 0.55, assigned globally with
+  `scipy.optimize.linear_sum_assignment`. An unresolved drug scores 0 on the drug
+  component and never falls back to string similarity; a missing strength or form
+  scores 0 rather than a free pass. Note 0.55 sits just below the drug weight, so
+  a confident drug match pairs two lines on its own — the common case on real
+  bills, where the bill states no form.
+- **`inconclusive` accompanies findings**, never suppresses them. Findings are
+  computed in full and `ILLEGIBLE_RX` is appended carrying the reasons.
+- **Score**: `100 − 25×criticals − 8×warnings`, floored at 0, info ignored, and
+  `None` under `inconclusive`.

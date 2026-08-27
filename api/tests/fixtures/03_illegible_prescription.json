@@ -1,6 +1,6 @@
 {
   "name": "illegible_prescription",
-  "description": "A badly handwritten script. Illegible fields are emitted as null with low confidence, never guessed: rx-01 has no readable drug name at all, rx-02 has a drug name but no readable strength, rx-03 is legible. A null is the correct output here; a plausible-looking drug name would be a critical failure. Low overall legibility drives an inconclusive verdict rather than a mismatch.",
+  "description": "A badly handwritten script. Illegible fields are emitted as null with low confidence, never guessed: rx-01 has no readable drug name at all, rx-02 has a drug name but no readable strength, rx-03 is legible. A null is the correct output here; a plausible-looking drug name would be a critical failure. Low overall legibility drives an inconclusive verdict rather than a mismatch. Agreement ratios model a post-consensus N=3 extraction: the unreadable line differs every run, so mean drug_name agreement falls below 0.67 and the verdict is inconclusive under the amended rules.",
   "prescription": {
     "patient_name": null,
     "patient_age": "6 months",
@@ -30,7 +30,12 @@
         "duration_days": 3,
         "route": "oral",
         "instructions": null,
-        "confidence": 0.18
+        "confidence": 0.18,
+        "agreement": {
+          "raw_text": 0.33,
+          "drug_name": 0.33,
+          "strength_value": 0.33
+        }
       },
       {
         "item_id": "rx-02",
@@ -45,7 +50,12 @@
         "duration_days": null,
         "route": "oral",
         "instructions": null,
-        "confidence": 0.44
+        "confidence": 0.44,
+        "agreement": {
+          "raw_text": 0.67,
+          "drug_name": 0.33,
+          "strength_value": 0.67
+        }
       },
       {
         "item_id": "rx-03",
@@ -60,9 +70,20 @@
         "duration_days": null,
         "route": "oral",
         "instructions": "If fever",
-        "confidence": 0.79
+        "confidence": 0.79,
+        "agreement": {
+          "raw_text": 1.0,
+          "drug_name": 1.0,
+          "strength_value": 1.0
+        }
       }
-    ]
+    ],
+    "run_item_counts": [
+      3,
+      3,
+      3
+    ],
+    "unstable_lines": []
   },
   "bill": {
     "pharmacy_name": "Cityline Chemists",
@@ -74,7 +95,9 @@
     "subtotal": "184.00",
     "tax_total": "22.08",
     "grand_total": "206.08",
-    "warnings": ["Pharmacy licence number not printed on the bill."],
+    "warnings": [
+      "Pharmacy licence number not printed on the bill."
+    ],
     "items": [
       {
         "item_id": "bill-01",
@@ -90,7 +113,11 @@
         "line_total": "98.00",
         "batch_no": "AZ8812",
         "hsn_code": "30042019",
-        "confidence": 0.93
+        "confidence": 0.93,
+        "agreement": {
+          "raw_text": 1.0,
+          "drug_name": 1.0
+        }
       },
       {
         "item_id": "bill-02",
@@ -106,7 +133,11 @@
         "line_total": "46.00",
         "batch_no": "PD3390",
         "hsn_code": "30049099",
-        "confidence": 0.9
+        "confidence": 0.9,
+        "agreement": {
+          "raw_text": 1.0,
+          "drug_name": 1.0
+        }
       },
       {
         "item_id": "bill-03",
@@ -122,19 +153,41 @@
         "line_total": "40.00",
         "batch_no": "CTZ100",
         "hsn_code": "30049099",
-        "confidence": 0.91
+        "confidence": 0.91,
+        "agreement": {
+          "raw_text": 1.0,
+          "drug_name": 1.0
+        }
       }
-    ]
+    ],
+    "run_item_counts": [
+      3,
+      3,
+      3
+    ],
+    "unstable_lines": []
   },
   "expected": {
     "verdict": "inconclusive",
-    "score": 30.0,
+    "score": null,
     "matched_pairs": [
-      { "prescribed_id": "rx-02", "billed_id": "bill-01", "similarity": 0.55 },
-      { "prescribed_id": "rx-03", "billed_id": "bill-02", "similarity": 0.88 }
+      {
+        "prescribed_id": "rx-02",
+        "billed_id": "bill-01",
+        "similarity": 0.55
+      },
+      {
+        "prescribed_id": "rx-03",
+        "billed_id": "bill-02",
+        "similarity": 0.88
+      }
     ],
-    "unmatched_prescribed": ["rx-01"],
-    "unmatched_billed": ["bill-03"],
+    "unmatched_prescribed": [
+      "rx-01"
+    ],
+    "unmatched_billed": [
+      "bill-03"
+    ],
     "finding_rule_codes": [
       "ILLEGIBLE_PRESCRIBED_ITEM",
       "LOW_DOCUMENT_LEGIBILITY",
