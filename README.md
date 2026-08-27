@@ -60,6 +60,33 @@ make lint        # ruff + oxlint
 make dev         # web dev server
 ```
 
+## Known limitations
+
+Measured, not assumed. See [docs/BASELINE.md](./docs/BASELINE.md) for the
+evidence and [docs/DESIGN_DECISIONS.md](./docs/DESIGN_DECISIONS.md) for what
+follows from it.
+
+- **Model confidence scores do not gate anything.** Measured range across 56
+  observations was 0.75–0.95, with the highest score (0.95) appearing on a field
+  the model could not reproduce across three runs. Treat `confidence` and
+  `overall_legibility` as model-reported numbers, not as reliability signals.
+
+- **Non-Latin script transcription is unreliable.** On Bengali prescriptions the
+  model transcribes legible script but *generates* plausible script where the
+  handwriting is unclear, with no signal distinguishing the two. One duration was
+  read as "2 weeks", "1 week" and "7 days" across runs, each at confidence 0.85.
+  This is invisible to a reviewer who does not read the script.
+
+- **Item counts can vary between runs.** One document returned 7, 7 and 6 items
+  across three extractions, silently dropping a prescribed line. A dropped line
+  produces no discrepancy finding, so it reads as a clean match.
+
+- **Accuracy is unmeasured.** Ground truth for drug names is unconfirmed. What
+  has been measured is reproducibility; a field can be stable and still wrong.
+
+**This is a proof of concept. Do not use it to make any decision about a
+patient's medication.**
+
 ## Configuration
 
 | Key | Default | Notes |
