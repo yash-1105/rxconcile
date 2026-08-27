@@ -129,6 +129,12 @@ class BilledItem(_Base):
         default=None,
         description="Pack description exactly as printed, e.g. \"10'S\", '1x10'. Not parsed here.",
     )
+    units_basis: Literal["pack", "unit"] | None = Field(
+        default=None,
+        description="What `quantity` counts: whole packs or individual dosage units. "
+        "Set ONLY when the bill states it explicitly; null otherwise. Never inferred "
+        "- misreading packs as units inflates a quantity comparison by the pack size.",
+    )
     unit_price: Decimal | None = Field(default=None, description="Price per unit.")
     line_total: Decimal | None = Field(default=None, description="Line amount charged.")
     batch_no: str | None = Field(default=None)

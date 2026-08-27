@@ -124,6 +124,11 @@ class BilledItemDTO(_DTO):
         default=None,
         description="Pack EXACTLY as printed, e.g. \"10'S\", '15ML'. Do not parse or convert.",
     )
+    units_basis: str | None = Field(
+        default=None,
+        description="Either 'pack' or 'unit', describing what the QTY column counts. "
+        "Set ONLY if the bill says so explicitly. Null if it does not. Never guess.",
+    )
     unit_price: float | None = Field(default=None, description="Rate or MRP per unit.")
     line_total: float | None = Field(default=None, description="Net amount for this line.")
     batch_no: str | None = Field(default=None)

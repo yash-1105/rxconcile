@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "2026-08-27.2"
+PROMPT_VERSION: Final[str] = "2026-08-27.3"
 
 _NEVER_GUESS: Final[str] = """
 ABSOLUTE RULE — NEVER INVENT A VALUE
@@ -186,6 +186,17 @@ not a drug; an unexpected charge is exactly what reconciliation must surface.
 {_VERBATIM}
 
 {_STRENGTH_UNIT}
+
+WHAT THE QUANTITY COLUMN COUNTS
+Set `units_basis` ONLY when the bill states it explicitly:
+  - "pack"  when the column is headed "Strips", "Packs", "Qty (strips)", or the
+            row otherwise makes clear the count is of whole packs
+  - "unit"  when the column is headed "Units", "Nos", "Tabs", or the quantity
+            obviously exceeds any plausible number of packs (e.g. qty 30 against
+            a pack of 10'S on a one-month course)
+Otherwise return null. **Do not guess.** A wrong basis multiplies or divides the
+dispensed quantity by the pack size, which is worse than leaving it unstated --
+software compares both readings when this is null.
 
 PACK SIZE
 Return `pack_size` EXACTLY as printed — "10'S", "1x10", "15ML", "STRIP OF 10".

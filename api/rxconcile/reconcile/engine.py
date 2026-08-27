@@ -24,9 +24,10 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 from rapidfuzz import fuzz
 from scipy.optimize import linear_sum_assignment
 
@@ -363,14 +364,80 @@ def _pair_rules(
     return findings
 
 
+#: Relative tolerance when checking a bill line's own arithmetic.
+#: Loose enough to absorb rounding, tight enough that a pack-size factor of 10
+#: never fits inside it.
+PRICE_TOLERANCE_RATIO: Final[float] = 0.02
+
+
+class QuantityBasis(BaseModel):
+    """What a billed ``quantity`` counts, and how that was established."""
+
+    model_config = ConfigDict(frozen=True)
+
+    basis: Literal["pack", "unit"] | None = None
+    method: Literal[
+        "declared", "price_reconciled", "price_inconclusive", "no_price_data"
+    ] = "no_price_data"
+
+
+def _close(left: float, right: float) -> bool:
+    scale = max(abs(left), abs(right), 1.0)
+    return abs(left - right) <= PRICE_TOLERANCE_RATIO * scale
+
+
+def resolve_units_basis(billed: BilledItem, units_per_pack: int | None) -> QuantityBasis:
+    """Decide whether ``quantity`` counts packs or units, or decline to.
+
+    A basis stated on the bill wins outright. Otherwise the line's own
+    arithmetic is consulted: if ``quantity x units_per_pack x unit_price``
+    reconciles to ``line_total`` while ``quantity x unit_price`` does not, the
+    rate is per dosage unit and the quantity therefore counts packs.
+
+    **The converse does not resolve.** ``quantity x unit_price == line_total`` is
+    equally consistent with units priced per unit and packs priced per pack, so
+    it is reported as ``price_inconclusive`` rather than assumed. Discounts also
+    push ``line_total`` below the gross figure, so a mismatch is treated as
+    absence of evidence, never as evidence for the other reading.
+    """
+    if billed.units_basis is not None:
+        return QuantityBasis(basis=billed.units_basis, method="declared")
+
+    quantity, unit_price, line_total = billed.quantity, billed.unit_price, billed.line_total
+    if quantity is None or unit_price is None or line_total is None or units_per_pack is None:
+        return QuantityBasis(basis=None, method="no_price_data")
+
+    total = float(line_total)
+    as_stated = quantity * float(unit_price)
+    as_packs = quantity * units_per_pack * float(unit_price)
+
+    if _close(as_packs, total) and not _close(as_stated, total):
+        return QuantityBasis(basis="pack", method="price_reconciled")
+    return QuantityBasis(basis=None, method="price_inconclusive")
+
+
+def _quantity_outcome(billed_units: float, expected: float) -> str | None:
+    """Which quantity rule, if any, this reading would raise."""
+    if billed_units < expected:
+        return "QUANTITY_SHORT"
+    if billed_units > expected * (1 + QUANTITY_EXCESS_TOLERANCE):
+        return "QUANTITY_EXCESS"
+    return None
+
+
 def _quantity_rules(
     prescribed: PrescribedItem, billed: BilledItem, refs: dict[str, str]
 ) -> list[Finding]:
-    """QUANTITY_SHORT / QUANTITY_EXCESS, or nothing at all.
+    """QUANTITY_SHORT / QUANTITY_EXCESS / QUANTITY_AMBIGUOUS, or nothing.
 
     Skips silently whenever the expectation cannot be computed. A null duration
     is not a discrepancy, and a rule fired against an absent expectation reports
     a difference from a number nobody wrote down.
+
+    When the basis is unresolved the expectation is compared under **both**
+    readings. The finding is emitted only if both readings raise the same one --
+    the discrepancy is then real either way. If the readings disagree, nothing
+    is asserted and QUANTITY_AMBIGUOUS records why.
     """
     days = prescribed.duration_days
     if days is None:
@@ -382,20 +449,57 @@ def _quantity_rules(
         return []
 
     pack = parse_pack_size(billed.pack_size)
-    if pack is None or pack.units_per_pack is None:
-        return []
+    units_per_pack = pack.units_per_pack if pack is not None else None
+    resolution = resolve_units_basis(billed, units_per_pack)
 
-    billed_units = billed.quantity * pack.units_per_pack
     detail: dict[str, Any] = {
         "expected_units": expected,
         "billed_quantity": billed.quantity,
-        "units_per_pack": pack.units_per_pack,
-        "billed_units": billed_units,
+        "units_per_pack": units_per_pack,
         "pack_size": billed.pack_size,
         "duration_days": days,
+        "units_basis": resolution.basis,
+        "basis_method": resolution.method,
     }
 
-    if billed_units < expected:
+    if resolution.basis == "unit":
+        billed_units = billed.quantity
+    elif resolution.basis == "pack":
+        if units_per_pack is None:
+            return []
+        billed_units = billed.quantity * units_per_pack
+    else:
+        # Unresolved: compare under both readings and only assert what holds
+        # under each.
+        if units_per_pack is None:
+            return []
+        as_units = billed.quantity
+        as_packs = billed.quantity * units_per_pack
+        outcome_unit = _quantity_outcome(as_units, expected)
+        outcome_pack = _quantity_outcome(as_packs, expected)
+        detail["interpretations"] = {
+            "as_units": {"billed_units": as_units, "outcome": outcome_unit},
+            "as_packs": {"billed_units": as_packs, "outcome": outcome_pack},
+        }
+        if outcome_unit != outcome_pack:
+            return [
+                _finding(
+                    "QUANTITY_AMBIGUOUS", "info",
+                    f"Billed quantity {billed.quantity:g} against a pack of "
+                    f"{units_per_pack} could mean {as_units:g} or {as_packs:g} units; "
+                    f"the bill does not say which, and the two readings disagree "
+                    f"(expected {expected:g}). No quantity discrepancy is asserted.",
+                    **refs, detail=detail,
+                )
+            ]
+        if outcome_unit is None:
+            return []
+        billed_units = as_packs
+        detail["note"] = "Same outcome under both readings, so the discrepancy holds either way."
+
+    detail["billed_units"] = billed_units
+    outcome = _quantity_outcome(billed_units, expected)
+    if outcome == "QUANTITY_SHORT":
         return [
             _finding(
                 "QUANTITY_SHORT", "warning",
@@ -404,7 +508,7 @@ def _quantity_rules(
                 **refs, detail=detail,
             )
         ]
-    if billed_units > expected * (1 + QUANTITY_EXCESS_TOLERANCE):
+    if outcome == "QUANTITY_EXCESS":
         return [
             _finding(
                 "QUANTITY_EXCESS", "warning",

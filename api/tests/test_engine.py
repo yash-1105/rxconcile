@@ -252,14 +252,16 @@ def test_quantity_short() -> None:
 
 
 def test_quantity_excess_needs_more_than_twenty_percent() -> None:
+    """Boundary test. The basis is declared so this exercises the tolerance,
+    not the pack/unit ambiguity."""
     within = engine.reconcile(
         rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
-        bill(bill_item("bill-01", quantity=1.0, pack_size="11'S")),
+        bill(bill_item("bill-01", quantity=1.0, pack_size="11'S", units_basis="pack")),
     )
     assert "QUANTITY_EXCESS" not in codes(within)
     beyond = engine.reconcile(
         rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
-        bill(bill_item("bill-01", quantity=1.0, pack_size="20'S")),
+        bill(bill_item("bill-01", quantity=1.0, pack_size="20'S", units_basis="pack")),
     )
     assert "QUANTITY_EXCESS" in codes(beyond)
 
@@ -556,3 +558,120 @@ def test_result_is_deterministic() -> None:
     first = engine.reconcile(prescription, pharmacy, processing_ms=0)
     second = engine.reconcile(prescription, pharmacy, processing_ms=0)
     assert first.model_dump_json() == second.model_dump_json()
+
+
+# ==========================================================================
+# Pack/unit ambiguity
+# ==========================================================================
+
+
+def qty_case(**bill_kwargs: object) -> ReconciliationResult:
+    """A 1-0-1 x 5 day prescription (expects 10 units) against one billed line."""
+    return engine.reconcile(
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days", duration_days=5)),
+        bill(bill_item("bill-01", **bill_kwargs)),
+    )
+
+
+def test_declared_unit_basis_wins_over_price() -> None:
+    result = qty_case(
+        quantity=10.0, pack_size="10'S", units_basis="unit",
+        unit_price="2.00", line_total="20.00",
+    )
+    assert "QUANTITY_SHORT" not in codes(result)
+    assert "QUANTITY_EXCESS" not in codes(result)
+    assert "QUANTITY_AMBIGUOUS" not in codes(result)
+
+
+def test_declared_pack_basis_is_multiplied() -> None:
+    """1 pack of 10 against an expected 10 is exactly right."""
+    result = qty_case(quantity=1.0, pack_size="10'S", units_basis="pack")
+    assert "QUANTITY_SHORT" not in codes(result)
+    assert "QUANTITY_EXCESS" not in codes(result)
+
+
+def test_price_reconciliation_establishes_pack_basis() -> None:
+    """qty x pack x rate == total means the rate is per tablet, so qty is packs."""
+    result = qty_case(
+        quantity=2.0, pack_size="10'S", unit_price="5.00", line_total="100.00"
+    )
+    finding = next(f for f in result.findings if f.rule_code == "QUANTITY_EXCESS")
+    assert finding.detail["basis_method"] == "price_reconciled"
+    assert finding.detail["units_basis"] == "pack"
+    assert finding.detail["billed_units"] == 20.0
+
+
+def test_price_matching_at_stated_quantity_does_not_resolve_the_basis() -> None:
+    """qty x rate == total fits units-priced-per-unit AND packs-priced-per-pack."""
+    basis = engine.resolve_units_basis(
+        BilledItem.model_validate(
+            {
+                "item_id": "bill-01", "raw_text": "x", "quantity": 1.0,
+                "unit_price": "178.00", "line_total": "178.00", "confidence": 0.9,
+            }
+        ),
+        10,
+    )
+    assert basis.basis is None
+    assert basis.method == "price_inconclusive"
+
+
+def test_ambiguous_basis_with_disagreeing_readings_asserts_nothing() -> None:
+    """1 unit is short of 10; 1 pack of 10 is exactly right. So say neither."""
+    result = qty_case(quantity=1.0, pack_size="10'S", unit_price="178.00", line_total="178.00")
+    assert "QUANTITY_SHORT" not in codes(result)
+    assert "QUANTITY_EXCESS" not in codes(result)
+    finding = next(f for f in result.findings if f.rule_code == "QUANTITY_AMBIGUOUS")
+    assert finding.severity == "info"
+    assert finding.detail["interpretations"]["as_units"]["billed_units"] == 1.0
+    assert finding.detail["interpretations"]["as_packs"]["billed_units"] == 10.0
+
+
+def test_discrepancy_holding_under_both_readings_is_emitted() -> None:
+    """A 30-day course expects 60; 2 units and 2 packs of 10 are both short."""
+    result = engine.reconcile(
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 30 days", duration_days=30)),
+        bill(bill_item("bill-01", quantity=2.0, pack_size="10'S")),
+    )
+    finding = next(f for f in result.findings if f.rule_code == "QUANTITY_SHORT")
+    assert finding.detail["interpretations"]["as_units"]["outcome"] == "QUANTITY_SHORT"
+    assert finding.detail["interpretations"]["as_packs"]["outcome"] == "QUANTITY_SHORT"
+    assert "QUANTITY_AMBIGUOUS" not in codes(result)
+
+
+def test_no_discrepancy_under_either_reading_is_silent() -> None:
+    """10 units or 10 packs of 1 both satisfy an expected 10; say nothing."""
+    result = qty_case(quantity=10.0, pack_size="1'S")
+    assert "QUANTITY_SHORT" not in codes(result)
+    assert "QUANTITY_EXCESS" not in codes(result)
+    assert "QUANTITY_AMBIGUOUS" not in codes(result)
+
+
+def test_ambiguity_never_affects_the_verdict() -> None:
+    """QUANTITY_AMBIGUOUS is info, so it cannot turn a match into a warning."""
+    result = qty_case(quantity=1.0, pack_size="10'S", unit_price="178.00", line_total="178.00")
+    assert "QUANTITY_AMBIGUOUS" in codes(result)
+    assert result.verdict == "match"
+    assert result.score == 100.0
+
+
+def test_unparseable_pack_still_skips_entirely() -> None:
+    result = qty_case(quantity=1.0, pack_size="MYSTERY BOX", unit_price="5.00", line_total="5.00")
+    assert not (codes(result) & {"QUANTITY_SHORT", "QUANTITY_EXCESS", "QUANTITY_AMBIGUOUS"})
+
+
+def test_declared_unit_basis_works_without_a_pack_size() -> None:
+    """A stated basis of 'unit' needs no pack size to be usable."""
+    result = qty_case(quantity=3.0, pack_size=None, units_basis="unit")
+    assert "QUANTITY_SHORT" in codes(result)
+
+
+def test_units_basis_is_never_inferred_from_a_bare_quantity() -> None:
+    basis = engine.resolve_units_basis(
+        BilledItem.model_validate(
+            {"item_id": "b", "raw_text": "x", "quantity": 30.0, "confidence": 0.9}
+        ),
+        10,
+    )
+    assert basis.basis is None
+    assert basis.method == "no_price_data"

@@ -94,9 +94,39 @@ length, and oncology lines frequently state none. On the real corpus,
 quantity rule against an absent expectation reports a discrepancy against a
 number nobody wrote down.
 
-Quantity comparison must also be pack-aware: a bill line reading `2` against a
-pack marked `10'S` is twenty units. Use `normalize.units.parse_pack_size`, and
-skip when it returns `method="unrecognised"`.
+### 5a. Pack/unit basis — resolved by evidence, or not at all
+
+A billed `quantity` may count whole packs or individual units, and nothing in the
+extracted data distinguishes them. Multiplying by `units_per_pack` when the bill
+already states units inflates by the pack size — the month-to-days assumption
+relocated into the engine.
+
+Resolution order:
+
+1. **`BilledItem.units_basis`** (`"pack" | "unit" | None`), set by the extractor
+   only when the bill states it explicitly. A declared basis **wins outright**.
+2. **Price reconciliation.** If `quantity × units_per_pack × unit_price`
+   reconciles to `line_total` while `quantity × unit_price` does not, the rate is
+   per dosage unit and the quantity therefore counts packs
+   (`method="price_reconciled"`).
+3. **Otherwise, decline.** `quantity × unit_price == line_total` is equally
+   consistent with units-priced-per-unit and packs-priced-per-pack, so it is
+   recorded as `price_inconclusive`, never assumed. Discounts push `line_total`
+   below the gross figure, so a mismatch is absence of evidence rather than
+   evidence for the other reading.
+
+When the basis is unresolved, the expectation is evaluated under **both**
+readings:
+
+- Both readings raise the **same** rule → emit it; the discrepancy is real either
+  way.
+- Readings disagree → assert nothing, and emit **`QUANTITY_AMBIGUOUS`**
+  (severity `info`) carrying both interpretations and `basis_method`.
+
+Because it is `info`, ambiguity never moves the verdict or the score.
+
+Quantity comparison remains pack-aware via `normalize.units.parse_pack_size`, and
+skips entirely when it returns `method="unrecognised"`.
 
 ## 6. `LOW_CONFIDENCE_FIELD` is per item, not per field
 
