@@ -15,6 +15,7 @@ dependencies = [
     "google-auth==2.57.0",
     "pydantic==2.13.4",
     "pydantic-settings==2.15.0",
+    "rapidfuzz==3.14.5",
     # Not imported by rxconcile directly, but google-auth's ADC token-refresh
     # transport imports it at runtime. Removing it breaks credential refresh
     # with "The requests library is not installed". Keep it pinned.

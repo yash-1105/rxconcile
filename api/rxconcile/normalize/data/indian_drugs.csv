@@ -1,0 +1,282 @@
+brand_name,salt_composition,common_strengths,form,therapeutic_class,schedule
+Dolo,Paracetamol,500mg|650mg,tablet,analgesic_antipyretic,OTC
+Calpol,Paracetamol,500mg|650mg|120mg/5ml,tablet,analgesic_antipyretic,OTC
+Crocin,Paracetamol,500mg|650mg,tablet,analgesic_antipyretic,OTC
+Metacin,Paracetamol,500mg,tablet,analgesic_antipyretic,OTC
+Pacimol,Paracetamol,500mg|650mg,tablet,analgesic_antipyretic,OTC
+Paracip,Paracetamol,500mg|650mg,tablet,analgesic_antipyretic,OTC
+Sumo,Nimesulide+Paracetamol,100mg+325mg,tablet,analgesic_antipyretic,H
+Nimulid,Nimesulide,100mg,tablet,nsaid,H
+Zerodol,Aceclofenac,100mg,tablet,nsaid,H
+Zerodol-SP,Aceclofenac+Paracetamol+Serratiopeptidase,100mg+325mg+15mg,tablet,nsaid,H
+Zerodol-P,Aceclofenac+Paracetamol,100mg+325mg,tablet,nsaid,H
+Hifenac,Aceclofenac,100mg,tablet,nsaid,H
+Dolokind,Aceclofenac+Paracetamol,100mg+325mg,tablet,nsaid,H
+Voveran,Diclofenac,50mg|75mg,tablet,nsaid,H
+Diclomol,Diclofenac+Paracetamol,50mg+325mg,tablet,nsaid,H
+Dynapar,Diclofenac,50mg,tablet,nsaid,H
+Brufen,Ibuprofen,200mg|400mg|600mg,tablet,nsaid,H
+Combiflam,Ibuprofen+Paracetamol,400mg+325mg,tablet,nsaid,OTC
+Ibugesic,Ibuprofen,200mg|400mg,tablet,nsaid,H
+Flexon,Ibuprofen+Paracetamol,400mg+325mg,tablet,nsaid,OTC
+Naprosyn,Naproxen,250mg|500mg,tablet,nsaid,H
+Enzoflam,Aceclofenac+Paracetamol+Serratiopeptidase,100mg+325mg+15mg,tablet,nsaid,H
+Etova,Etodolac,400mg,tablet,nsaid,H
+Etoshine,Etoricoxib,60mg|90mg|120mg,tablet,nsaid,H
+Nucoxia,Etoricoxib,60mg|90mg|120mg,tablet,nsaid,H
+Ultracet,Tramadol+Paracetamol,37.5mg+325mg,tablet,opioid_analgesic,H1
+Tramazac,Tramadol,50mg|100mg,capsule,opioid_analgesic,H1
+Ketorol,Ketorolac,10mg,tablet,nsaid,H
+Ketorol-DT,Ketorolac,10mg,tablet,nsaid,H
+Spasmonil,Dicyclomine+Paracetamol,10mg+325mg,tablet,antispasmodic,H
+Meftal,Mefenamic Acid,250mg|500mg,tablet,nsaid,H
+Meftal-Spas,Mefenamic Acid+Dicyclomine,250mg+10mg,tablet,antispasmodic,H
+Buscopan,Hyoscine Butylbromide,10mg,tablet,antispasmodic,H
+Drotin,Drotaverine,40mg|80mg,tablet,antispasmodic,H
+Cyclopam,Dicyclomine+Paracetamol,20mg+500mg,tablet,antispasmodic,H
+Augmentin,Amoxicillin+Clavulanic Acid,375mg|625mg|1g,tablet,antibiotic_penicillin,H
+Clavam,Amoxicillin+Clavulanic Acid,375mg|625mg,tablet,antibiotic_penicillin,H
+Moxikind-CV,Amoxicillin+Clavulanic Acid,375mg|625mg,tablet,antibiotic_penicillin,H
+Mox,Amoxicillin,250mg|500mg,capsule,antibiotic_penicillin,H
+Novamox,Amoxicillin,250mg|500mg,capsule,antibiotic_penicillin,H
+Amoxyclav,Amoxicillin+Clavulanic Acid,625mg,tablet,antibiotic_penicillin,H
+Ampilox,Ampicillin+Cloxacillin,250mg|500mg,capsule,antibiotic_penicillin,H
+Azithral,Azithromycin,250mg|500mg,tablet,antibiotic_macrolide,H
+Azee,Azithromycin,250mg|500mg,tablet,antibiotic_macrolide,H
+Zithrox,Azithromycin,250mg|500mg,tablet,antibiotic_macrolide,H
+Azicip,Azithromycin,250mg|500mg,tablet,antibiotic_macrolide,H
+Erythrocin,Erythromycin,250mg|500mg,tablet,antibiotic_macrolide,H
+Clarimac,Clarithromycin,250mg|500mg,tablet,antibiotic_macrolide,H
+Cifran,Ciprofloxacin,250mg|500mg,tablet,antibiotic_quinolone,H
+Ciplox,Ciprofloxacin,250mg|500mg,tablet,antibiotic_quinolone,H
+Levoflox,Levofloxacin,250mg|500mg|750mg,tablet,antibiotic_quinolone,H1
+Levotas,Levofloxacin,500mg,tablet,antibiotic_quinolone,H1
+Moxiford,Moxifloxacin,400mg,tablet,antibiotic_quinolone,H1
+Norflox,Norfloxacin,400mg,tablet,antibiotic_quinolone,H
+Ofloxacin,Ofloxacin,200mg|400mg,tablet,antibiotic_quinolone,H
+Oflox,Ofloxacin,200mg,tablet,antibiotic_quinolone,H
+O2,Ofloxacin+Ornidazole,200mg+500mg,tablet,antibiotic_combination,H
+Zenflox,Ofloxacin,200mg,tablet,antibiotic_quinolone,H
+Taxim,Cefotaxime,250mg|500mg|1g,injection,antibiotic_cephalosporin,H1
+Taxim-O,Cefixime,100mg|200mg,tablet,antibiotic_cephalosporin,H1
+Zifi,Cefixime,100mg|200mg,tablet,antibiotic_cephalosporin,H1
+Cefspan,Cefixime,200mg,capsule,antibiotic_cephalosporin,H1
+Monocef,Ceftriaxone,250mg|500mg|1g,injection,antibiotic_cephalosporin,H1
+Cefaclor,Cefaclor,250mg|500mg,capsule,antibiotic_cephalosporin,H1
+Ceftum,Cefuroxime,250mg|500mg,tablet,antibiotic_cephalosporin,H1
+Altacef,Cefuroxime,250mg|500mg,tablet,antibiotic_cephalosporin,H1
+Cephalexin,Cephalexin,250mg|500mg,capsule,antibiotic_cephalosporin,H
+Sporidex,Cephalexin,250mg|500mg,capsule,antibiotic_cephalosporin,H
+Meronem,Meropenem,500mg|1g,injection,antibiotic_carbapenem,H1
+Linospan,Linezolid,600mg,tablet,antibiotic_oxazolidinone,H1
+Doxt,Doxycycline,100mg,capsule,antibiotic_tetracycline,H
+Doxy-1,Doxycycline,100mg,tablet,antibiotic_tetracycline,H
+Minicycline,Minocycline,50mg|100mg,capsule,antibiotic_tetracycline,H
+Flagyl,Metronidazole,200mg|400mg,tablet,antibiotic_nitroimidazole,H
+Metrogyl,Metronidazole,200mg|400mg,tablet,antibiotic_nitroimidazole,H
+Tiniba,Tinidazole,300mg|500mg,tablet,antibiotic_nitroimidazole,H
+Ornidazole,Ornidazole,500mg,tablet,antibiotic_nitroimidazole,H
+Septran,Sulfamethoxazole+Trimethoprim,400mg+80mg,tablet,antibiotic_sulfonamide,H
+Bactrim,Sulfamethoxazole+Trimethoprim,400mg+80mg,tablet,antibiotic_sulfonamide,H
+Rifagut,Rifaximin,200mg|400mg,tablet,antibiotic_rifamycin,H1
+Nitrofurantoin,Nitrofurantoin,100mg,tablet,antibiotic_urinary,H
+Niftran,Nitrofurantoin,100mg,capsule,antibiotic_urinary,H
+Pan,Pantoprazole,20mg|40mg,tablet,ppi,H
+Pan-D,Pantoprazole+Domperidone,40mg+30mg,capsule,ppi_combination,H
+Pantocid,Pantoprazole,20mg|40mg,tablet,ppi,H
+Pantocid-DSR,Pantoprazole+Domperidone,40mg+30mg,capsule,ppi_combination,H
+Pantop,Pantoprazole,40mg,tablet,ppi,H
+Protonix,Pantoprazole,40mg,tablet,ppi,H
+Omez,Omeprazole,20mg|40mg,capsule,ppi,H
+Ocid,Omeprazole,20mg,capsule,ppi,H
+Nexpro,Esomeprazole,20mg|40mg,tablet,ppi,H
+Esomac,Esomeprazole,20mg|40mg,tablet,ppi,H
+Sergel,Esomeprazole,20mg|40mg,capsule,ppi,H
+Rabium,Rabeprazole,20mg,tablet,ppi,H
+Razo,Rabeprazole,20mg,tablet,ppi,H
+Rablet,Rabeprazole,20mg,tablet,ppi,H
+Happi,Rabeprazole+Domperidone,20mg+30mg,capsule,ppi_combination,H
+Aciloc,Ranitidine,150mg|300mg,tablet,h2_blocker,H
+Zinetac,Ranitidine,150mg,tablet,h2_blocker,H
+Famocid,Famotidine,20mg|40mg,tablet,h2_blocker,H
+Digene,Magnesium Hydroxide+Aluminium Hydroxide+Simethicone,185mg+830mg+50mg,tablet,antacid,OTC
+Gelusil,Magnesium Hydroxide+Aluminium Hydroxide+Simethicone,250mg+250mg+50mg,tablet,antacid,OTC
+Mucaine,Oxetacaine+Aluminium Hydroxide+Magnesium Hydroxide,10mg+291mg+98mg,suspension,antacid,OTC
+Domstal,Domperidone,10mg,tablet,prokinetic,H
+Perinorm,Metoclopramide,10mg,tablet,prokinetic,H
+Emeset,Ondansetron,4mg|8mg,tablet,antiemetic,H
+Ondem,Ondansetron,4mg|8mg,tablet,antiemetic,H
+Vomikind,Ondansetron,4mg,tablet,antiemetic,H
+Rantac,Ranitidine,150mg,tablet,h2_blocker,H
+Cetirizine,Cetirizine,5mg|10mg,tablet,antihistamine,OTC
+Cetzine,Cetirizine,10mg,tablet,antihistamine,OTC
+Alerid,Cetirizine,10mg,tablet,antihistamine,OTC
+Okacet,Cetirizine,10mg,tablet,antihistamine,OTC
+Levocet,Levocetirizine,5mg,tablet,antihistamine,OTC
+Xyzal,Levocetirizine,5mg,tablet,antihistamine,H
+Teczine,Levocetirizine,5mg,tablet,antihistamine,H
+Allegra,Fexofenadine,120mg|180mg,tablet,antihistamine,H
+Fexova,Fexofenadine,120mg|180mg,tablet,antihistamine,H
+Avil,Pheniramine,25mg|45mg,tablet,antihistamine,H
+Montair,Montelukast,4mg|5mg|10mg,tablet,leukotriene_antagonist,H
+Montair-LC,Montelukast+Levocetirizine,10mg+5mg,tablet,respiratory_combination,H
+Montek,Montelukast,10mg,tablet,leukotriene_antagonist,H
+Montek-LC,Montelukast+Levocetirizine,10mg+5mg,tablet,respiratory_combination,H
+Telekast,Montelukast,10mg,tablet,leukotriene_antagonist,H
+Telekast-L,Montelukast+Levocetirizine,10mg+5mg,tablet,respiratory_combination,H
+Deriphyllin,Etophylline+Theophylline,77mg+23mg,tablet,bronchodilator,H
+Asthalin,Salbutamol,2mg|4mg|100mcg,tablet,bronchodilator,H
+Duolin,Levosalbutamol+Ipratropium,50mcg+20mcg,inhaler,bronchodilator,H
+Foracort,Formoterol+Budesonide,6mcg+200mcg,inhaler,respiratory_combination,H
+Seroflo,Salmeterol+Fluticasone,25mcg+250mcg,inhaler,respiratory_combination,H
+Budecort,Budesonide,100mcg|200mcg,inhaler,corticosteroid,H
+Ascoril,Ambroxol+Guaifenesin+Terbutaline,30mg+50mg+1.25mg,syrup,cough_expectorant,H
+Grilinctus,Chlorpheniramine+Dextromethorphan+Guaifenesin,2.5mg+5mg+50mg,syrup,cough_suppressant,H
+Mucolite,Ambroxol,30mg,syrup,mucolytic,H
+Glycomet,Metformin,500mg|850mg|1000mg,tablet,antidiabetic_biguanide,H
+Glycomet-GP,Metformin+Glimepiride,500mg+1mg|500mg+2mg,tablet,antidiabetic_combination,H
+Metformin,Metformin,500mg|1000mg,tablet,antidiabetic_biguanide,H
+Gluconorm,Metformin,500mg,tablet,antidiabetic_biguanide,H
+Obimet,Metformin,500mg,tablet,antidiabetic_biguanide,H
+Amaryl,Glimepiride,1mg|2mg|4mg,tablet,antidiabetic_sulfonylurea,H
+Glimestar,Glimepiride,1mg|2mg,tablet,antidiabetic_sulfonylurea,H
+Glimisave,Glimepiride,1mg|2mg,tablet,antidiabetic_sulfonylurea,H
+Daonil,Glibenclamide,5mg,tablet,antidiabetic_sulfonylurea,H
+Diamicron,Gliclazide,30mg|60mg|80mg,tablet,antidiabetic_sulfonylurea,H
+Reclide,Gliclazide,30mg|60mg,tablet,antidiabetic_sulfonylurea,H
+Januvia,Sitagliptin,25mg|50mg|100mg,tablet,antidiabetic_dpp4,H
+Istamet,Sitagliptin+Metformin,50mg+500mg,tablet,antidiabetic_combination,H
+Zita,Teneligliptin,20mg,tablet,antidiabetic_dpp4,H
+Zita-Met,Teneligliptin+Metformin,20mg+500mg,tablet,antidiabetic_combination,H
+Galvus,Vildagliptin,50mg,tablet,antidiabetic_dpp4,H
+Galvus-Met,Vildagliptin+Metformin,50mg+500mg,tablet,antidiabetic_combination,H
+Jardiance,Empagliflozin,10mg|25mg,tablet,antidiabetic_sglt2,H
+Forxiga,Dapagliflozin,5mg|10mg,tablet,antidiabetic_sglt2,H
+Dapanorm,Dapagliflozin,10mg,tablet,antidiabetic_sglt2,H
+Pioglit,Pioglitazone,15mg|30mg,tablet,antidiabetic_tzd,H
+Lantus,Insulin Glargine,100IU/ml,injection,insulin,H
+Humalog,Insulin Lispro,100IU/ml,injection,insulin,H
+Mixtard,Insulin Human,100IU/ml,injection,insulin,H
+Huminsulin,Insulin Human,100IU/ml,injection,insulin,H
+Telma,Telmisartan,20mg|40mg|80mg,tablet,antihypertensive_arb,H
+Telma-H,Telmisartan+Hydrochlorothiazide,40mg+12.5mg,tablet,antihypertensive_combination,H
+Telma-AM,Telmisartan+Amlodipine,40mg+5mg,tablet,antihypertensive_combination,H
+Telsartan,Telmisartan,40mg|80mg,tablet,antihypertensive_arb,H
+Telvas,Telmisartan,40mg,tablet,antihypertensive_arb,H
+Losar,Losartan,25mg|50mg,tablet,antihypertensive_arb,H
+Losacar,Losartan,50mg,tablet,antihypertensive_arb,H
+Repace,Losartan,50mg,tablet,antihypertensive_arb,H
+Olmesar,Olmesartan,20mg|40mg,tablet,antihypertensive_arb,H
+Olmy,Olmesartan,20mg,tablet,antihypertensive_arb,H
+Amlong,Amlodipine,2.5mg|5mg|10mg,tablet,antihypertensive_ccb,H
+Amlodac,Amlodipine,5mg|10mg,tablet,antihypertensive_ccb,H
+Stamlo,Amlodipine,5mg,tablet,antihypertensive_ccb,H
+Amlokind,Amlodipine,5mg,tablet,antihypertensive_ccb,H
+Cilacar,Cilnidipine,10mg|20mg,tablet,antihypertensive_ccb,H
+Nicardia,Nifedipine,10mg|20mg,capsule,antihypertensive_ccb,H
+Envas,Enalapril,2.5mg|5mg|10mg,tablet,antihypertensive_acei,H
+Ramipril,Ramipril,2.5mg|5mg|10mg,capsule,antihypertensive_acei,H
+Cardace,Ramipril,2.5mg|5mg,tablet,antihypertensive_acei,H
+Lisinopril,Lisinopril,5mg|10mg,tablet,antihypertensive_acei,H
+Metolar,Metoprolol,25mg|50mg,tablet,beta_blocker,H
+Betaloc,Metoprolol,25mg|50mg,tablet,beta_blocker,H
+Ciplar,Propranolol,10mg|40mg,tablet,beta_blocker,H
+Concor,Bisoprolol,2.5mg|5mg,tablet,beta_blocker,H
+Atenolol,Atenolol,25mg|50mg,tablet,beta_blocker,H
+Aten,Atenolol,25mg|50mg,tablet,beta_blocker,H
+Carvedilol,Carvedilol,3.125mg|6.25mg,tablet,beta_blocker,H
+Nebicard,Nebivolol,2.5mg|5mg,tablet,beta_blocker,H
+Dytor,Torsemide,10mg|20mg,tablet,diuretic,H
+Lasix,Furosemide,40mg,tablet,diuretic,H
+Aldactone,Spironolactone,25mg|50mg,tablet,diuretic,H
+Ecosprin,Aspirin,75mg|150mg,tablet,antiplatelet,H
+Ecosprin-AV,Aspirin+Atorvastatin,75mg+20mg,capsule,cardiac_combination,H
+Clopilet,Clopidogrel,75mg,tablet,antiplatelet,H
+Deplatt,Clopidogrel,75mg,tablet,antiplatelet,H
+Clopitab,Clopidogrel,75mg,tablet,antiplatelet,H
+Atorva,Atorvastatin,10mg|20mg|40mg,tablet,statin,H
+Atorlip,Atorvastatin,10mg|20mg|40mg,tablet,statin,H
+Storvas,Atorvastatin,10mg|20mg,tablet,statin,H
+Lipitor,Atorvastatin,10mg|20mg,tablet,statin,H
+Rosuvas,Rosuvastatin,5mg|10mg|20mg,tablet,statin,H
+Rozavel,Rosuvastatin,10mg|20mg,tablet,statin,H
+Crestor,Rosuvastatin,10mg|20mg,tablet,statin,H
+Simvotin,Simvastatin,10mg|20mg,tablet,statin,H
+Fenolip,Fenofibrate,145mg|160mg,tablet,fibrate,H
+Rosuvas-F,Rosuvastatin+Fenofibrate,10mg+145mg,tablet,lipid_combination,H
+Shelcal,Calcium Carbonate+Vitamin D3,500mg+250IU,tablet,mineral_supplement,OTC
+Calcimax,Calcium Carbonate+Vitamin D3,500mg+250IU,tablet,mineral_supplement,OTC
+Ostocalcium,Calcium+Vitamin D3,500mg+250IU,tablet,mineral_supplement,OTC
+Uprise-D3,Cholecalciferol,60000IU,capsule,vitamin,OTC
+Calcirol,Cholecalciferol,60000IU,sachet,vitamin,OTC
+D-Rise,Cholecalciferol,60000IU,capsule,vitamin,OTC
+Defrol,Cholecalciferol,40000IU|60000IU,capsule,vitamin,OTC
+Becosules,Vitamin B Complex,,capsule,vitamin,OTC
+Neurobion,Vitamin B1+B6+B12,,tablet,vitamin,OTC
+Nurokind,Mecobalamin,500mcg|1500mcg,tablet,vitamin,OTC
+Methylcobalamin,Mecobalamin,500mcg,tablet,vitamin,OTC
+Zincovit,Multivitamin+Zinc,,tablet,vitamin,OTC
+A to Z,Multivitamin+Multimineral,,tablet,vitamin,OTC
+Limcee,Ascorbic Acid,500mg,tablet,vitamin,OTC
+Celin,Ascorbic Acid,500mg,tablet,vitamin,OTC
+Folvite,Folic Acid,5mg,tablet,vitamin,OTC
+Autrin,Ferrous Fumarate+Folic Acid,,capsule,haematinic,OTC
+Livogen,Ferrous Fumarate+Folic Acid,152mg+1.5mg,tablet,haematinic,OTC
+Orofer,Ferrous Ascorbate,100mg,tablet,haematinic,OTC
+Dexorange,Iron+Vitamin B12+Folic Acid,,syrup,haematinic,OTC
+Thyronorm,Levothyroxine,25mcg|50mcg|100mcg,tablet,thyroid,H
+Eltroxin,Levothyroxine,25mcg|50mcg|100mcg,tablet,thyroid,H
+Thyrox,Levothyroxine,25mcg|50mcg|100mcg,tablet,thyroid,H
+Neomercazole,Carbimazole,5mg|10mg,tablet,antithyroid,H
+Wysolone,Prednisolone,5mg|10mg|20mg,tablet,corticosteroid,H
+Omnacortil,Prednisolone,5mg|10mg|20mg,tablet,corticosteroid,H
+Medrol,Methylprednisolone,4mg|8mg|16mg,tablet,corticosteroid,H
+Dexona,Dexamethasone,0.5mg|4mg,tablet,corticosteroid,H
+Betnesol,Betamethasone,0.5mg,tablet,corticosteroid,H
+Mydocalm,Tolperisone,50mg|150mg,tablet,muscle_relaxant,H
+Myoril,Thiocolchicoside,4mg|8mg,capsule,muscle_relaxant,H
+Chymoral,Trypsin+Chymotrypsin,,tablet,enzyme,H
+Alprax,Alprazolam,0.25mg|0.5mg|1mg,tablet,benzodiazepine,H1
+Restyl,Alprazolam,0.25mg|0.5mg,tablet,benzodiazepine,H1
+Clonotril,Clonazepam,0.25mg|0.5mg,tablet,benzodiazepine,H1
+Rivotril,Clonazepam,0.5mg,tablet,benzodiazepine,H1
+Lonazep,Clonazepam,0.25mg|0.5mg,tablet,benzodiazepine,H1
+Etizola,Etizolam,0.25mg|0.5mg,tablet,benzodiazepine,H1
+Nexito,Escitalopram,5mg|10mg|20mg,tablet,antidepressant_ssri,H
+Escitalopram,Escitalopram,5mg|10mg,tablet,antidepressant_ssri,H
+Esipram,Escitalopram,5mg|10mg,tablet,antidepressant_ssri,H
+Sentix,Clonazepam,0.25mg|0.5mg,tablet,benzodiazepine,H1
+Zoloft,Sertraline,25mg|50mg,tablet,antidepressant_ssri,H
+Daxid,Sertraline,50mg,tablet,antidepressant_ssri,H
+Fludac,Fluoxetine,20mg,capsule,antidepressant_ssri,H
+Amitone,Amitriptyline,10mg|25mg,tablet,antidepressant_tricyclic,H
+Pregabalin,Pregabalin,75mg|150mg,capsule,neuropathic_analgesic,H
+Pregeb,Pregabalin,75mg,capsule,neuropathic_analgesic,H
+Gabapin,Gabapentin,100mg|300mg,capsule,neuropathic_analgesic,H
+Eptoin,Phenytoin,100mg,tablet,anticonvulsant,H
+Levipil,Levetiracetam,250mg|500mg,tablet,anticonvulsant,H
+Encorate,Sodium Valproate,200mg|500mg,tablet,anticonvulsant,H
+Tegrital,Carbamazepine,200mg|400mg,tablet,anticonvulsant,H
+Urimax,Tamsulosin,0.4mg,capsule,alpha_blocker,H
+Urimax-D,Tamsulosin+Dutasteride,0.4mg+0.5mg,tablet,urology_combination,H
+Veltam,Tamsulosin,0.4mg,tablet,alpha_blocker,H
+Finast,Finasteride,1mg|5mg,tablet,urology,H
+Cystone,Herbal Formulation,,tablet,urology,OTC
+Hexigel,Chlorhexidine Gluconate,1%,gel,oral_antiseptic,OTC
+Betadine,Povidone Iodine,5%|10%,solution,antiseptic,OTC
+Soframycin,Framycetin,1%,cream,topical_antibiotic,H
+Neosporin,Neomycin+Bacitracin+Polymyxin B,,ointment,topical_antibiotic,H
+Candid,Clotrimazole,1%,cream,antifungal,H
+Fluconazole,Fluconazole,150mg|200mg,tablet,antifungal,H
+Forcan,Fluconazole,150mg,tablet,antifungal,H
+Itraconazole,Itraconazole,100mg|200mg,capsule,antifungal,H
+Terbinaforce,Terbinafine,250mg,tablet,antifungal,H
+Acivir,Aciclovir,200mg|400mg|800mg,tablet,antiviral,H
+Valcivir,Valaciclovir,500mg|1000mg,tablet,antiviral,H
+Xgeva,Denosumab,120mg,injection,bone_modifying_agent,H
+Zoledronic Acid,Zoledronic Acid,4mg,injection,bisphosphonate,H
+Rifampicin,Rifampicin,150mg|300mg|450mg,capsule,antitubercular,H1
+Isoniazid,Isoniazid,300mg,tablet,antitubercular,H1
+Ethambutol,Ethambutol,400mg|800mg,tablet,antitubercular,H1
+Pyrazinamide,Pyrazinamide,750mg|1000mg,tablet,antitubercular,H1
+AKT-4,Rifampicin+Isoniazid+Pyrazinamide+Ethambutol,,tablet,antitubercular,H1
