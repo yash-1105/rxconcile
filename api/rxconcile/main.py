@@ -327,11 +327,37 @@ class SampleRequest(BaseModel):
 
 SAMPLES: Final[tuple[SampleSummary, ...]] = (
     SampleSummary(
+        sample_id="sample-01",
+        label="Clean matching pair",
+        prescription="sample-01-prescription.png",
+        bill="sample-01-bill.png",
+        note="Regression coverage. Em-dash sig notation, 'x 5 days' durations, "
+        "\"10'S\" packs. Every line should reconcile.",
+    ),
+    SampleSummary(
+        sample_id="sample-02",
+        label="Strength mismatch and an unprescribed antibiotic",
+        prescription="sample-02-prescription.png",
+        bill="sample-02-bill.png",
+        note="Regression coverage. En-dash sig notation, '5/7' duration, '1x10' "
+        "packs. Telma billed at 80mg against 40mg prescribed, plus a Levoflox line "
+        "with no prescription behind it.",
+    ),
+    SampleSummary(
+        sample_id="sample-03",
+        label="Brand substitution",
+        prescription="sample-03-prescription.png",
+        bill="sample-03-bill.png",
+        note="Regression coverage. Mixed dash forms, 'STRIP OF 10' packs, a 'NOS' "
+        "quantity column, mixed-case drug names. Dolo dispensed as Calpol and Pan "
+        "as Pantocid: same salts, legal substitution.",
+    ),
+    SampleSummary(
         sample_id="p3-dental",
-        label="Dental prescription vs matching pharmacy bill",
+        label="Real dental prescription vs matching pharmacy bill",
         prescription="p3.jpg",
         bill="synthetic_bill_p3.png",
-        note="Real prescription photo. The bill is synthetic, with planted "
+        note="Real prescription photograph. The bill is synthetic, with planted "
         "discrepancies: a strength mismatch, a missing item and an unprescribed one.",
     ),
     SampleSummary(
@@ -339,7 +365,7 @@ SAMPLES: Final[tuple[SampleSummary, ...]] = (
         label="Synthetic prescription vs synthetic bill",
         prescription="synthetic_prescription.png",
         bill="synthetic_bill.png",
-        note="Both documents synthetic. Typed text, not handwriting.",
+        note="Typed text, not handwriting. Exercises the pipeline, not accuracy.",
     ),
 )
 

@@ -675,3 +675,52 @@ def test_units_basis_is_never_inferred_from_a_bare_quantity() -> None:
     )
     assert basis.basis is None
     assert basis.method == "no_price_data"
+
+
+# ==========================================================================
+# Unstated strength units
+# ==========================================================================
+
+
+def test_unstated_unit_with_equal_values_is_not_a_mismatch() -> None:
+    """'DOLO 650' against 'CALPOL 650MG' is not a discrepancy.
+
+    The extractor is right not to invent the missing unit, so a critical
+    STRENGTH_MISMATCH here would be a false positive on a correct extraction.
+    """
+    result = engine.reconcile(
+        rx(rx_item("rx-01", drug_name="Dolo", strength_value=650.0, strength_unit=None)),
+        bill(bill_item("bill-01", drug_name="Calpol", strength_value=650.0, strength_unit="MG")),
+    )
+    assert "STRENGTH_MISMATCH" not in codes(result)
+    unstated = next(f for f in result.findings if f.rule_code == "STRENGTH_UNIT_UNSTATED")
+    assert unstated.severity == "info"
+    assert result.verdict == "match"
+
+
+def test_unstated_unit_does_not_suppress_brand_substitution() -> None:
+    """The knock-on: BRAND_SUBSTITUTION requires matching strengths."""
+    result = engine.reconcile(
+        rx(rx_item("rx-01", drug_name="Dolo", strength_value=650.0, strength_unit=None)),
+        bill(bill_item("bill-01", drug_name="Calpol", strength_value=650.0, strength_unit="MG")),
+    )
+    assert "BRAND_SUBSTITUTION" in codes(result)
+
+
+def test_unstated_unit_with_different_values_is_still_a_mismatch() -> None:
+    """Different numbers are a discrepancy whatever the units say."""
+    result = engine.reconcile(
+        rx(rx_item("rx-01", strength_value=500.0, strength_unit=None)),
+        bill(bill_item("bill-01", strength_value=650.0, strength_unit="mg")),
+    )
+    assert "STRENGTH_MISMATCH" in codes(result)
+    assert result.verdict == "mismatch"
+
+
+def test_both_units_stated_and_different_still_fires() -> None:
+    result = engine.reconcile(
+        rx(rx_item("rx-01", strength_value=625.0, strength_unit="mg")),
+        bill(bill_item("bill-01", strength_value=375.0, strength_unit="mg")),
+    )
+    assert "STRENGTH_MISMATCH" in codes(result)
+    assert "STRENGTH_UNIT_UNSTATED" not in codes(result)

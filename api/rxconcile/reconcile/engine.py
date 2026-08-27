@@ -285,24 +285,51 @@ def _pair_rules(
     refs = {"prescribed_ref": prescribed.item_id, "billed_ref": billed.item_id}
 
     rx_strength, bill_strength = _strength_of(prescribed), _strength_of(billed)
-    strengths_match = (
-        rx_strength is not None
-        and bill_strength is not None
-        and strengths_equal(rx_strength, bill_strength)
-    )
-    if rx_strength is not None and bill_strength is not None and not strengths_match:
-        findings.append(
-            _finding(
-                "STRENGTH_MISMATCH", "critical",
-                f"Prescribed strength {rx_strength} does not match billed strength "
-                f"{bill_strength}.",
-                **refs,
-                detail={
-                    "expected": {"value": rx_strength.value, "unit": rx_strength.unit},
-                    "found": {"value": bill_strength.value, "unit": bill_strength.unit},
-                },
+    strengths_match = False
+    if rx_strength is not None and bill_strength is not None:
+        detail = {
+            "expected": {"value": rx_strength.value, "unit": rx_strength.unit},
+            "found": {"value": bill_strength.value, "unit": bill_strength.unit},
+        }
+        units_stated = rx_strength.unit is not None and bill_strength.unit is not None
+        values_equal = abs(rx_strength.value - bill_strength.value) < 1e-6
+
+        if units_stated:
+            strengths_match = strengths_equal(rx_strength, bill_strength)
+            if not strengths_match:
+                findings.append(
+                    _finding(
+                        "STRENGTH_MISMATCH", "critical",
+                        f"Prescribed strength {rx_strength} does not match billed "
+                        f"strength {bill_strength}.",
+                        **refs, detail=detail,
+                    )
+                )
+        elif values_equal:
+            # One side does not print a unit -- "DOLO 650" against "CALPOL 650MG".
+            # The extractor is right not to invent the missing unit, so the numbers
+            # are all there is to compare. Equal numbers are not a discrepancy, and
+            # calling them one would be a critical false positive on a correct
+            # extraction. The gap is recorded instead.
+            strengths_match = True
+            findings.append(
+                _finding(
+                    "STRENGTH_UNIT_UNSTATED", "info",
+                    f"Both documents show {rx_strength.value:g}, but a unit is printed "
+                    "on only one of them, so the strengths could not be compared in "
+                    "full. The numbers agree.",
+                    **refs, detail=detail,
+                )
             )
-        )
+        else:
+            findings.append(
+                _finding(
+                    "STRENGTH_MISMATCH", "critical",
+                    f"Prescribed strength {rx_strength} does not match billed "
+                    f"strength {bill_strength}.",
+                    **refs, detail=detail,
+                )
+            )
 
     rx_form, bill_form = _norm_form(prescribed.form), _norm_form(billed.form)
     if rx_form is not None and bill_form is not None and rx_form != bill_form:
