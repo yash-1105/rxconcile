@@ -14,6 +14,7 @@ from rxconcile.extract._runner import (
     assign_ids,
     clamp_unit,
     collect_runs,
+    collect_runs_async,
     resolve_date,
 )
 from rxconcile.extract.dto import PrescriptionDTO
@@ -212,3 +213,51 @@ def extract_prescription(
         len(prescription.unstable_lines),
     )
     return prescription
+
+
+def _cache_key(image: PreparedImage, run_count: int, chosen_model: str) -> str:
+    return cache.cache_key(
+        image_sha256=image.sha256,
+        doc_type=f"{DOC_TYPE}:n{run_count}",
+        model=chosen_model,
+        prompt_version=PROMPT_VERSION,
+    )
+
+
+async def extract_prescription_async(
+    source: Path | bytes | PreparedImage,
+    *,
+    model: str | None = None,
+    use_cache: bool = True,
+    runs: int | None = None,
+) -> Prescription:
+    """Async twin of :func:`extract_prescription`, fanning the N runs out concurrently."""
+    image = source if isinstance(source, PreparedImage) else prepare_image(source)
+    run_count = runs if runs is not None else settings.extraction_runs
+    chosen_model = model or settings.gemini_model
+    key = _cache_key(image, run_count, chosen_model)
+
+    if use_cache:
+        cached = cache.load(key)
+        if cached is not None:
+            try:
+                return Prescription.model_validate(cached)
+            except ValidationError as exc:
+                logger.warning("cache entry %s no longer validates: %s", key[:12], exc)
+
+    dtos = await collect_runs_async(
+        dto_type=PrescriptionDTO,
+        instruction=PRESCRIPTION_INSTRUCTION,
+        image=image,
+        doc_type=DOC_TYPE,
+        runs=run_count,
+        model=model,
+    )
+    try:
+        document = build_prescription(dtos)
+    except ValueError as exc:
+        raise ExtractionError(f"extracted prescription failed domain validation: {exc}") from exc
+
+    if use_cache:
+        cache.store(key, document.model_dump(mode="json"))
+    return document

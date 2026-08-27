@@ -14,6 +14,7 @@ from rxconcile.extract._runner import (
     assign_ids,
     clamp_unit,
     collect_runs,
+    collect_runs_async,
     resolve_date,
     to_decimal,
 )
@@ -196,3 +197,51 @@ def extract_bill(
         len(bill.items), run_count, bill.run_item_counts, len(bill.unstable_lines),
     )
     return bill
+
+
+def _cache_key(image: PreparedImage, run_count: int, chosen_model: str) -> str:
+    return cache.cache_key(
+        image_sha256=image.sha256,
+        doc_type=f"{DOC_TYPE}:n{run_count}",
+        model=chosen_model,
+        prompt_version=PROMPT_VERSION,
+    )
+
+
+async def extract_bill_async(
+    source: Path | bytes | PreparedImage,
+    *,
+    model: str | None = None,
+    use_cache: bool = True,
+    runs: int | None = None,
+) -> PharmacyBill:
+    """Async twin of :func:`extract_bill`, fanning the N runs out concurrently."""
+    image = source if isinstance(source, PreparedImage) else prepare_image(source)
+    run_count = runs if runs is not None else settings.extraction_runs
+    chosen_model = model or settings.gemini_model
+    key = _cache_key(image, run_count, chosen_model)
+
+    if use_cache:
+        cached = cache.load(key)
+        if cached is not None:
+            try:
+                return PharmacyBill.model_validate(cached)
+            except ValidationError as exc:
+                logger.warning("cache entry %s no longer validates: %s", key[:12], exc)
+
+    dtos = await collect_runs_async(
+        dto_type=PharmacyBillDTO,
+        instruction=BILL_INSTRUCTION,
+        image=image,
+        doc_type=DOC_TYPE,
+        runs=run_count,
+        model=model,
+    )
+    try:
+        document = build_bill(dtos)
+    except ValueError as exc:
+        raise ExtractionError(f"extracted bill failed domain validation: {exc}") from exc
+
+    if use_cache:
+        cache.store(key, document.model_dump(mode="json"))
+    return document

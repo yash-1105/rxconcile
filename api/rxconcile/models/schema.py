@@ -300,24 +300,36 @@ class ReviewSummary(_Base):
     overstate what was measured.
     """
 
-    items_needing_review: int = Field(
-        default=0,
-        ge=0,
-        description="Items with at least one field below full agreement across runs.",
+    agreement_measured: bool = Field(
+        default=False,
+        description="Whether agreement was measurable at all. False for a single-run "
+        "extraction, where the counts below are null rather than zero.",
     )
-    fields_nulled_by_disagreement: int = Field(
-        default=0,
+    items_needing_review: int | None = Field(
+        default=None,
         ge=0,
-        description="Fields resolved to null because the runs did not agree.",
+        description="Items with at least one field below full agreement across runs. "
+        "**None when agreement was not measured** -- a single run cannot show that "
+        "nothing needs review, and reporting 0 would read as a clean result.",
     )
-    unstable_line_count: int = Field(
-        default=0,
+    fields_nulled_by_disagreement: int | None = Field(
+        default=None,
         ge=0,
-        description="Lines present in some extraction runs but not all, across both documents.",
+        description="Fields resolved to null because the runs did not agree. None when "
+        "agreement was not measured.",
+    )
+    unstable_line_count: int | None = Field(
+        default=None,
+        ge=0,
+        description="Lines present in some extraction runs but not all, across both "
+        "documents. None when a single run made instability undetectable.",
     )
 
     @property
     def needs_attention(self) -> bool:
+        """True only when something measured actually warrants review."""
+        if not self.agreement_measured:
+            return False
         return bool(
             self.items_needing_review
             or self.fields_nulled_by_disagreement
@@ -344,10 +356,25 @@ def _summarise_items(items: Sequence[PrescribedItem | BilledItem]) -> tuple[int,
 def build_review_summary(
     prescription: Prescription, bill: PharmacyBill
 ) -> ReviewSummary:
-    """Derive the headline counts from both documents."""
+    """Derive the headline counts from both documents.
+
+    When no item carries agreement data -- a single-run extraction -- every count
+    is None rather than 0. Zero would claim that nothing needs review, which a
+    single run cannot establish.
+    """
+    measured = (
+        any(item.agreement for item in prescription.items)
+        or any(item.agreement for item in bill.items)
+        or len(prescription.run_item_counts) > 1
+        or len(bill.run_item_counts) > 1
+    )
+    if not measured:
+        return ReviewSummary(agreement_measured=False)
+
     rx_needing, rx_nulled = _summarise_items(prescription.items)
     bill_needing, bill_nulled = _summarise_items(bill.items)
     return ReviewSummary(
+        agreement_measured=True,
         items_needing_review=rx_needing + bill_needing,
         fields_nulled_by_disagreement=rx_nulled + bill_nulled,
         unstable_line_count=len(prescription.unstable_lines) + len(bill.unstable_lines),

@@ -26,7 +26,12 @@
         "duration_days": 30,
         "route": "oral",
         "instructions": "Morning",
-        "confidence": 0.92
+        "confidence": 0.92,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "frequency_raw": 1.0
+        }
       },
       {
         "item_id": "rx-02",
@@ -41,9 +46,20 @@
         "duration_days": 30,
         "route": "oral",
         "instructions": "After food",
-        "confidence": 0.9
+        "confidence": 0.9,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "frequency_raw": 1.0
+        }
       }
-    ]
+    ],
+    "run_item_counts": [
+      3,
+      3,
+      3
+    ],
+    "unstable_lines": []
   },
   "bill": {
     "pharmacy_name": "Lakeview Pharmacy",
@@ -71,7 +87,12 @@
         "line_total": "96.00",
         "batch_no": "AML5512",
         "hsn_code": "30049099",
-        "confidence": 0.97
+        "confidence": 0.97,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "quantity": 1.0
+        }
       },
       {
         "item_id": "bill-02",
@@ -87,7 +108,12 @@
         "line_total": "270.00",
         "batch_no": "MET7734",
         "hsn_code": "30049099",
-        "confidence": 0.96
+        "confidence": 0.96,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "quantity": 1.0
+        }
       },
       {
         "item_id": "bill-03",
@@ -103,20 +129,44 @@
         "line_total": "120.00",
         "batch_no": "VD3221",
         "hsn_code": "30045020",
-        "confidence": 0.95
+        "confidence": 0.95,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "quantity": 1.0
+        }
       }
-    ]
+    ],
+    "run_item_counts": [
+      3,
+      3,
+      3
+    ],
+    "unstable_lines": []
   },
   "expected": {
     "verdict": "mismatch",
     "score": 55.0,
     "matched_pairs": [
-      { "prescribed_id": "rx-01", "billed_id": "bill-01", "similarity": 0.72 },
-      { "prescribed_id": "rx-02", "billed_id": "bill-02", "similarity": 1.0 }
+      {
+        "prescribed_id": "rx-01",
+        "billed_id": "bill-01",
+        "similarity": 0.72
+      },
+      {
+        "prescribed_id": "rx-02",
+        "billed_id": "bill-02",
+        "similarity": 1.0
+      }
     ],
     "unmatched_prescribed": [],
-    "unmatched_billed": ["bill-03"],
-    "finding_rule_codes": ["STRENGTH_MISMATCH", "EXTRA_BILLED_ITEM"],
+    "unmatched_billed": [
+      "bill-03"
+    ],
+    "finding_rule_codes": [
+      "STRENGTH_MISMATCH",
+      "EXTRA_BILLED_ITEM"
+    ],
     "findings": [
       {
         "rule_code": "STRENGTH_MISMATCH",
@@ -126,8 +176,14 @@
         "billed_ref": "bill-01",
         "detail": {
           "field": "strength_value",
-          "expected": { "value": 5.0, "unit": "mg" },
-          "found": { "value": 10.0, "unit": "mg" }
+          "expected": {
+            "value": 5.0,
+            "unit": "mg"
+          },
+          "found": {
+            "value": 10.0,
+            "unit": "mg"
+          }
         }
       },
       {
@@ -136,7 +192,10 @@
         "message": "Billed item has no corresponding line on the prescription.",
         "prescribed_ref": null,
         "billed_ref": "bill-03",
-        "detail": { "billed_drug_name": "Cholecalciferol", "line_total": "120.00" }
+        "detail": {
+          "billed_drug_name": "Cholecalciferol",
+          "line_total": "120.00"
+        }
       }
     ]
   }

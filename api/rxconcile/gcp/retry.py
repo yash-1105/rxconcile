@@ -75,10 +75,10 @@ class GenerationResult(BaseModel):
 
 def _backoff_seconds(attempt: int) -> float:
     """Exponential backoff with jitter for a 1-indexed ``attempt``."""
-    raw = _BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+    raw = _BACKOFF_BASE_SECONDS * float(2 ** (attempt - 1))
     capped = min(raw, _BACKOFF_MAX_SECONDS)
     jitter = capped * _JITTER_RATIO * random.random()
-    return capped + jitter
+    return float(capped + jitter)
 
 
 def _status_of(exc: genai_errors.APIError) -> int | None:

@@ -22,7 +22,7 @@ test: ## Run Python tests
 	$(PY) -m pytest api/tests -q
 
 typecheck: ## mypy (strict) + tsc
-	$(PY) -m mypy api/rxconcile api/scripts api/tests
+	$(PY) -m mypy --config-file api/pyproject.toml api/rxconcile api/scripts api/tests
 	cd web && npx tsc -b --noEmit
 
 lint: ## ruff + oxlint
@@ -31,6 +31,9 @@ lint: ## ruff + oxlint
 
 dev: ## Run the web dev server
 	cd web && npm run dev
+
+api: ## Run the API on :8000 with reload
+	$(VENV)/bin/uvicorn rxconcile.main:app --reload --port 8000
 
 list-models: ## List Gemini models actually available to this project
 	./api/scripts/list_models.sh
@@ -41,4 +44,4 @@ verify: ## Prove the Vertex chain works via curl (text + multimodal)
 smoke: ## Prove the Vertex chain works via the google-genai SDK
 	$(PY) api/scripts/smoke_gcp.py
 
-.PHONY: help setup setup-api setup-web test typecheck lint dev list-models verify smoke
+.PHONY: help setup setup-api setup-web test typecheck lint dev api list-models verify smoke

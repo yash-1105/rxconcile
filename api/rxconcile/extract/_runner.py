@@ -10,6 +10,7 @@ identifier assignment and date resolution.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -266,3 +267,36 @@ def collect_runs(
         )
         for _ in range(runs)
     ]
+
+
+async def collect_runs_async(
+    *,
+    dto_type: type[DTO],
+    instruction: str,
+    image: PreparedImage,
+    doc_type: str,
+    runs: int,
+    model: str | None = None,
+) -> list[DTO]:
+    """Extract ``runs`` times **concurrently**, for consensus resolution.
+
+    The SDK is synchronous, so each run goes to a worker thread and all of them
+    are awaited together. Wall time is therefore roughly one call, not N.
+
+    Each run still goes through :func:`run_extraction`, so the retry and
+    quota-fallback wrapper applies per call. Concurrency makes a 429 *more*
+    likely, not less, and each call falls back independently.
+    """
+    tasks = [
+        asyncio.to_thread(
+            run_extraction,
+            dto_type=dto_type,
+            instruction=instruction,
+            image=image,
+            doc_type=doc_type,
+            model=model,
+            use_cache=False,
+        )
+        for _ in range(runs)
+    ]
+    return list(await asyncio.gather(*tasks))

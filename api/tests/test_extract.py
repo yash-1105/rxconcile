@@ -13,6 +13,7 @@ import pytest
 from google.genai import types
 from PIL import Image
 
+from rxconcile.config import settings
 from rxconcile.extract import _runner, cache, preprocess
 from rxconcile.extract.bill import build_bill
 from rxconcile.extract.dto import (
@@ -80,7 +81,7 @@ def test_exif_orientation_is_applied() -> None:
 
 def test_oversized_image_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        type(preprocess.settings), "max_upload_bytes", property(lambda _self: 10)
+        type(settings), "max_upload_bytes", property(lambda _self: 10)
     )
     with pytest.raises(ImageTooLargeError, match="MAX_UPLOAD_MB"):
         prepare_image(png_bytes())

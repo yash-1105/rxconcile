@@ -18,6 +18,10 @@ dependencies = [
     "rapidfuzz==3.14.5",
     "scipy==1.17.1",
     "numpy==2.4.6",
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.52.4",
+    "python-multipart==0.0.32",
+    "pypdfium2==5.13.0",
     # Not imported by rxconcile directly, but google-auth's ADC token-refresh
     # transport imports it at runtime. Removing it breaks credential refresh
     # with "The requests library is not installed". Keep it pinned.
@@ -43,9 +47,21 @@ testpaths = ["tests"]
 python_version = "3.11"
 strict = true
 
+# pypdfium2 is a native binding and ships no type information.
+[[tool.mypy.overrides]]
+module = "pypdfium2.*"
+ignore_missing_imports = true
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ANN"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency injection requires File()/Form() calls in argument
+# defaults; B008 exists for mutable defaults, which these are not.
+"**/main.py" = ["B008"]
+# Test doubles mirror the SDK's own untyped signatures, where Any is accurate.
+"**/tests/*.py" = ["ANN401"]

@@ -80,7 +80,7 @@ def test_upload_bounds_enforced() -> None:
 
 def test_settings_are_frozen() -> None:
     with pytest.raises(ValidationError):
-        make().gcp_project_id = "other"  # type: ignore[misc]
+        make().gcp_project_id = "other"
 
 
 def test_runtime_models_ordered_and_deduplicated() -> None:

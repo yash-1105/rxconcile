@@ -26,7 +26,13 @@
         "duration_days": 5,
         "route": "oral",
         "instructions": "After food",
-        "confidence": 0.96
+        "confidence": 0.96,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "frequency_raw": 1.0,
+          "duration_days": 1.0
+        }
       },
       {
         "item_id": "rx-02",
@@ -41,7 +47,13 @@
         "duration_days": 3,
         "route": "oral",
         "instructions": "Continue if fever persists",
-        "confidence": 0.93
+        "confidence": 0.93,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "frequency_raw": 1.0,
+          "duration_days": 1.0
+        }
       },
       {
         "item_id": "rx-03",
@@ -56,9 +68,21 @@
         "duration_days": 5,
         "route": "oral",
         "instructions": null,
-        "confidence": 0.91
+        "confidence": 0.91,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "frequency_raw": 1.0,
+          "duration_days": 1.0
+        }
       }
-    ]
+    ],
+    "run_item_counts": [
+      3,
+      3,
+      3
+    ],
+    "unstable_lines": []
   },
   "bill": {
     "pharmacy_name": "Sunrise Pharmacy",
@@ -86,7 +110,12 @@
         "line_total": "22.00",
         "batch_no": "PC4471",
         "hsn_code": "30049099",
-        "confidence": 0.98
+        "confidence": 0.98,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "quantity": 1.0
+        }
       },
       {
         "item_id": "bill-02",
@@ -102,7 +131,12 @@
         "line_total": "13.20",
         "batch_no": "PC4471",
         "hsn_code": "30049099",
-        "confidence": 0.98
+        "confidence": 0.98,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "quantity": 1.0
+        }
       },
       {
         "item_id": "bill-03",
@@ -118,17 +152,40 @@
         "line_total": "176.80",
         "batch_no": "AMX9921",
         "hsn_code": "30041020",
-        "confidence": 0.97
+        "confidence": 0.97,
+        "agreement": {
+          "drug_name": 1.0,
+          "strength_value": 1.0,
+          "quantity": 1.0
+        }
       }
-    ]
+    ],
+    "run_item_counts": [
+      3,
+      3,
+      3
+    ],
+    "unstable_lines": []
   },
   "expected": {
     "verdict": "match",
     "score": 100.0,
     "matched_pairs": [
-      { "prescribed_id": "rx-01", "billed_id": "bill-01", "similarity": 1.0 },
-      { "prescribed_id": "rx-02", "billed_id": "bill-02", "similarity": 1.0 },
-      { "prescribed_id": "rx-03", "billed_id": "bill-03", "similarity": 1.0 }
+      {
+        "prescribed_id": "rx-01",
+        "billed_id": "bill-01",
+        "similarity": 1.0
+      },
+      {
+        "prescribed_id": "rx-02",
+        "billed_id": "bill-02",
+        "similarity": 1.0
+      },
+      {
+        "prescribed_id": "rx-03",
+        "billed_id": "bill-03",
+        "similarity": 1.0
+      }
     ],
     "unmatched_prescribed": [],
     "unmatched_billed": [],
