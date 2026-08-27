@@ -1,0 +1,143 @@
+{
+  "name": "strength_mismatch_extra_billed",
+  "description": "Amlodipine is dispensed at 10mg against a 5mg prescription (critical strength mismatch), and the bill carries a Vitamin D3 line that was never prescribed (extra billed item). Metformin reconciles cleanly.",
+  "prescription": {
+    "patient_name": "K. Iyer",
+    "patient_age": "62",
+    "patient_sex": "F",
+    "prescriber_name": "Dr. S. Rao",
+    "prescriber_reg_no": "TN-11907",
+    "clinic_name": "Lakeview Medical Centre",
+    "date_issued": "2026-08-22",
+    "diagnosis_text": "Hypertension, type 2 diabetes mellitus",
+    "overall_legibility": 0.88,
+    "warnings": [],
+    "items": [
+      {
+        "item_id": "rx-01",
+        "raw_text": "TAB AMLODIPINE 5MG 1-0-0 x 30D",
+        "drug_name": "Amlodipine",
+        "salt": "Amlodipine besylate",
+        "strength_value": 5.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "dose_per_administration": 1.0,
+        "frequency_raw": "1-0-0",
+        "duration_days": 30,
+        "route": "oral",
+        "instructions": "Morning",
+        "confidence": 0.92
+      },
+      {
+        "item_id": "rx-02",
+        "raw_text": "TAB METFORMIN 500MG 1-0-1 x 30D",
+        "drug_name": "Metformin",
+        "salt": "Metformin hydrochloride",
+        "strength_value": 500.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "dose_per_administration": 1.0,
+        "frequency_raw": "1-0-1",
+        "duration_days": 30,
+        "route": "oral",
+        "instructions": "After food",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "bill": {
+    "pharmacy_name": "Lakeview Pharmacy",
+    "pharmacy_licence_no": "TN-31C-40028",
+    "bill_no": "LP-2026-8830",
+    "bill_date": "2026-08-22",
+    "patient_name": "K. Iyer",
+    "currency": "INR",
+    "subtotal": "486.00",
+    "tax_total": "58.32",
+    "grand_total": "544.32",
+    "warnings": [],
+    "items": [
+      {
+        "item_id": "bill-01",
+        "raw_text": "AMLODIPINE 10MG TAB 30'S",
+        "drug_name": "Amlodipine",
+        "salt": "Amlodipine besylate",
+        "strength_value": 10.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "quantity": 30.0,
+        "pack_size": "30'S",
+        "unit_price": "3.20",
+        "line_total": "96.00",
+        "batch_no": "AML5512",
+        "hsn_code": "30049099",
+        "confidence": 0.97
+      },
+      {
+        "item_id": "bill-02",
+        "raw_text": "METFORMIN 500MG TAB 60'S",
+        "drug_name": "Metformin",
+        "salt": "Metformin hydrochloride",
+        "strength_value": 500.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "quantity": 60.0,
+        "pack_size": "60'S",
+        "unit_price": "4.50",
+        "line_total": "270.00",
+        "batch_no": "MET7734",
+        "hsn_code": "30049099",
+        "confidence": 0.96
+      },
+      {
+        "item_id": "bill-03",
+        "raw_text": "VITAMIN D3 60K IU SACHET 4'S",
+        "drug_name": "Cholecalciferol",
+        "salt": "Cholecalciferol",
+        "strength_value": 60000.0,
+        "strength_unit": "IU",
+        "form": "sachet",
+        "quantity": 4.0,
+        "pack_size": "4'S",
+        "unit_price": "30.00",
+        "line_total": "120.00",
+        "batch_no": "VD3221",
+        "hsn_code": "30045020",
+        "confidence": 0.95
+      }
+    ]
+  },
+  "expected": {
+    "verdict": "mismatch",
+    "score": 55.0,
+    "matched_pairs": [
+      { "prescribed_id": "rx-01", "billed_id": "bill-01", "similarity": 0.72 },
+      { "prescribed_id": "rx-02", "billed_id": "bill-02", "similarity": 1.0 }
+    ],
+    "unmatched_prescribed": [],
+    "unmatched_billed": ["bill-03"],
+    "finding_rule_codes": ["STRENGTH_MISMATCH", "EXTRA_BILLED_ITEM"],
+    "findings": [
+      {
+        "rule_code": "STRENGTH_MISMATCH",
+        "severity": "critical",
+        "message": "Prescribed strength 5 mg does not match billed strength 10 mg.",
+        "prescribed_ref": "rx-01",
+        "billed_ref": "bill-01",
+        "detail": {
+          "field": "strength_value",
+          "expected": { "value": 5.0, "unit": "mg" },
+          "found": { "value": 10.0, "unit": "mg" }
+        }
+      },
+      {
+        "rule_code": "EXTRA_BILLED_ITEM",
+        "severity": "warning",
+        "message": "Billed item has no corresponding line on the prescription.",
+        "prescribed_ref": null,
+        "billed_ref": "bill-03",
+        "detail": { "billed_drug_name": "Cholecalciferol", "line_total": "120.00" }
+      }
+    ]
+  }
+}

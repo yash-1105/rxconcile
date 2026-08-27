@@ -1,0 +1,144 @@
+{
+  "name": "illegible_prescription",
+  "description": "A badly handwritten script. Illegible fields are emitted as null with low confidence, never guessed: rx-01 has no readable drug name at all, rx-02 has a drug name but no readable strength, rx-03 is legible. A null is the correct output here; a plausible-looking drug name would be a critical failure. Low overall legibility drives an inconclusive verdict rather than a mismatch.",
+  "prescription": {
+    "patient_name": null,
+    "patient_age": "6 months",
+    "patient_sex": null,
+    "prescriber_name": "Dr. (illegible)",
+    "prescriber_reg_no": null,
+    "clinic_name": null,
+    "date_issued": null,
+    "diagnosis_text": null,
+    "overall_legibility": 0.31,
+    "warnings": [
+      "Prescriber signature block is illegible.",
+      "Date of issue could not be read; ambiguous handwritten date was not inferred.",
+      "1 of 3 items has no readable drug name."
+    ],
+    "items": [
+      {
+        "item_id": "rx-01",
+        "raw_text": "T. ___?___ 1-0-1 x 3D",
+        "drug_name": null,
+        "salt": null,
+        "strength_value": null,
+        "strength_unit": null,
+        "form": "tablet",
+        "dose_per_administration": 1.0,
+        "frequency_raw": "1-0-1",
+        "duration_days": 3,
+        "route": "oral",
+        "instructions": null,
+        "confidence": 0.18
+      },
+      {
+        "item_id": "rx-02",
+        "raw_text": "SYP AZITHRO ___ 5ML OD",
+        "drug_name": "Azithromycin",
+        "salt": null,
+        "strength_value": null,
+        "strength_unit": null,
+        "form": "syrup",
+        "dose_per_administration": 5.0,
+        "frequency_raw": "OD",
+        "duration_days": null,
+        "route": "oral",
+        "instructions": null,
+        "confidence": 0.44
+      },
+      {
+        "item_id": "rx-03",
+        "raw_text": "DROPS PARACETAMOL 100MG/ML SOS",
+        "drug_name": "Paracetamol",
+        "salt": "Paracetamol",
+        "strength_value": 100.0,
+        "strength_unit": "mg",
+        "form": "drops",
+        "dose_per_administration": null,
+        "frequency_raw": "SOS",
+        "duration_days": null,
+        "route": "oral",
+        "instructions": "If fever",
+        "confidence": 0.79
+      }
+    ]
+  },
+  "bill": {
+    "pharmacy_name": "Cityline Chemists",
+    "pharmacy_licence_no": null,
+    "bill_no": "CC-0091",
+    "bill_date": "2026-08-25",
+    "patient_name": null,
+    "currency": "INR",
+    "subtotal": "184.00",
+    "tax_total": "22.08",
+    "grand_total": "206.08",
+    "warnings": ["Pharmacy licence number not printed on the bill."],
+    "items": [
+      {
+        "item_id": "bill-01",
+        "raw_text": "AZITHROMYCIN 200MG/5ML SYP 15ML",
+        "drug_name": "Azithromycin",
+        "salt": "Azithromycin",
+        "strength_value": 200.0,
+        "strength_unit": "mg",
+        "form": "syrup",
+        "quantity": 1.0,
+        "pack_size": "15ML",
+        "unit_price": "98.00",
+        "line_total": "98.00",
+        "batch_no": "AZ8812",
+        "hsn_code": "30042019",
+        "confidence": 0.93
+      },
+      {
+        "item_id": "bill-02",
+        "raw_text": "PARACETAMOL DROPS 100MG/ML 15ML",
+        "drug_name": "Paracetamol",
+        "salt": "Paracetamol",
+        "strength_value": 100.0,
+        "strength_unit": "mg",
+        "form": "drops",
+        "quantity": 1.0,
+        "pack_size": "15ML",
+        "unit_price": "46.00",
+        "line_total": "46.00",
+        "batch_no": "PD3390",
+        "hsn_code": "30049099",
+        "confidence": 0.9
+      },
+      {
+        "item_id": "bill-03",
+        "raw_text": "CETIRIZINE 5MG TAB 10'S",
+        "drug_name": "Cetirizine",
+        "salt": "Cetirizine hydrochloride",
+        "strength_value": 5.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "quantity": 10.0,
+        "pack_size": "10'S",
+        "unit_price": "4.00",
+        "line_total": "40.00",
+        "batch_no": "CTZ100",
+        "hsn_code": "30049099",
+        "confidence": 0.91
+      }
+    ]
+  },
+  "expected": {
+    "verdict": "inconclusive",
+    "score": 30.0,
+    "matched_pairs": [
+      { "prescribed_id": "rx-02", "billed_id": "bill-01", "similarity": 0.55 },
+      { "prescribed_id": "rx-03", "billed_id": "bill-02", "similarity": 0.88 }
+    ],
+    "unmatched_prescribed": ["rx-01"],
+    "unmatched_billed": ["bill-03"],
+    "finding_rule_codes": [
+      "ILLEGIBLE_PRESCRIBED_ITEM",
+      "LOW_DOCUMENT_LEGIBILITY",
+      "EXTRA_BILLED_ITEM"
+    ]
+  }
+}

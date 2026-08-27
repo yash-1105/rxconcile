@@ -1,0 +1,137 @@
+{
+  "name": "clean_match",
+  "description": "Every prescribed item is dispensed correctly. Exercises the identity rule: rx-01 and rx-02 have byte-identical raw_text (the drug line is written twice, with the course length recorded in a separate duration column that is not part of the line text) but different item_id and different duration_days. They must pair to DISTINCT billed items. If anyone reverts cross-referencing to raw_text keying, these two collapse into one and this fixture fails.",
+  "prescription": {
+    "patient_name": "R. Sharma",
+    "patient_age": "45",
+    "patient_sex": "M",
+    "prescriber_name": "Dr. A. Menon",
+    "prescriber_reg_no": "KMC-48213",
+    "clinic_name": "Sunrise Clinic",
+    "date_issued": "2026-08-20",
+    "diagnosis_text": "Viral fever with secondary bacterial infection",
+    "overall_legibility": 0.94,
+    "warnings": [],
+    "items": [
+      {
+        "item_id": "rx-01",
+        "raw_text": "TAB PARACETAMOL 500MG 1-0-1",
+        "drug_name": "Paracetamol",
+        "salt": "Paracetamol",
+        "strength_value": 500.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "dose_per_administration": 1.0,
+        "frequency_raw": "1-0-1",
+        "duration_days": 5,
+        "route": "oral",
+        "instructions": "After food",
+        "confidence": 0.96
+      },
+      {
+        "item_id": "rx-02",
+        "raw_text": "TAB PARACETAMOL 500MG 1-0-1",
+        "drug_name": "Paracetamol",
+        "salt": "Paracetamol",
+        "strength_value": 500.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "dose_per_administration": 1.0,
+        "frequency_raw": "1-0-1",
+        "duration_days": 3,
+        "route": "oral",
+        "instructions": "Continue if fever persists",
+        "confidence": 0.93
+      },
+      {
+        "item_id": "rx-03",
+        "raw_text": "CAP AMOXICILLIN 250MG 1-1-1 x 5D",
+        "drug_name": "Amoxicillin",
+        "salt": "Amoxicillin",
+        "strength_value": 250.0,
+        "strength_unit": "mg",
+        "form": "capsule",
+        "dose_per_administration": 1.0,
+        "frequency_raw": "1-1-1",
+        "duration_days": 5,
+        "route": "oral",
+        "instructions": null,
+        "confidence": 0.91
+      }
+    ]
+  },
+  "bill": {
+    "pharmacy_name": "Sunrise Pharmacy",
+    "pharmacy_licence_no": "KL-20B-99814",
+    "bill_no": "INV-2026-4417",
+    "bill_date": "2026-08-20",
+    "patient_name": "R. Sharma",
+    "currency": "INR",
+    "subtotal": "212.00",
+    "tax_total": "25.44",
+    "grand_total": "237.44",
+    "warnings": [],
+    "items": [
+      {
+        "item_id": "bill-01",
+        "raw_text": "PARACETAMOL 500MG TAB 10'S",
+        "drug_name": "Paracetamol",
+        "salt": "Paracetamol",
+        "strength_value": 500.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "quantity": 10.0,
+        "pack_size": "10'S",
+        "unit_price": "2.20",
+        "line_total": "22.00",
+        "batch_no": "PC4471",
+        "hsn_code": "30049099",
+        "confidence": 0.98
+      },
+      {
+        "item_id": "bill-02",
+        "raw_text": "PARACETAMOL 500MG TAB 10'S",
+        "drug_name": "Paracetamol",
+        "salt": "Paracetamol",
+        "strength_value": 500.0,
+        "strength_unit": "mg",
+        "form": "tablet",
+        "quantity": 6.0,
+        "pack_size": "10'S",
+        "unit_price": "2.20",
+        "line_total": "13.20",
+        "batch_no": "PC4471",
+        "hsn_code": "30049099",
+        "confidence": 0.98
+      },
+      {
+        "item_id": "bill-03",
+        "raw_text": "AMOXICILLIN 250MG CAP 15'S",
+        "drug_name": "Amoxicillin",
+        "salt": "Amoxicillin",
+        "strength_value": 250.0,
+        "strength_unit": "mg",
+        "form": "capsule",
+        "quantity": 15.0,
+        "pack_size": "15'S",
+        "unit_price": "11.79",
+        "line_total": "176.80",
+        "batch_no": "AMX9921",
+        "hsn_code": "30041020",
+        "confidence": 0.97
+      }
+    ]
+  },
+  "expected": {
+    "verdict": "match",
+    "score": 100.0,
+    "matched_pairs": [
+      { "prescribed_id": "rx-01", "billed_id": "bill-01", "similarity": 1.0 },
+      { "prescribed_id": "rx-02", "billed_id": "bill-02", "similarity": 1.0 },
+      { "prescribed_id": "rx-03", "billed_id": "bill-03", "similarity": 1.0 }
+    ],
+    "unmatched_prescribed": [],
+    "unmatched_billed": [],
+    "finding_rule_codes": []
+  }
+}
