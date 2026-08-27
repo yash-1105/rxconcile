@@ -460,3 +460,29 @@ def test_pack_aware_quantity_reasoning() -> None:
     assert billed_packs * pack.units_per_pack == 20.0
     expected = sig.expected_quantity(sig.doses_per_day("1-0-1"), sig.duration_to_days("x 10d"), 1.0)
     assert expected == 20.0
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("1 — 0 — 1", 2.0),   # em-dash, as transcribed from a real prescription
+        ("1 – 0 – 1", 2.0),   # en-dash
+        ("1 − 0 − 1", 2.0),   # minus sign
+        ("1 ‑ 0 ‑ 1", 2.0),   # non-breaking hyphen
+        ("1 — 0 — 0", 1.0),
+    ],
+)
+def test_dash_variants_in_positional_frequency(raw: str, expected: float) -> None:
+    """Prescriptions are written with long dashes and transcribed verbatim.
+
+    Folding them here keeps the verbatim rule intact while letting the parser
+    read the schedule. Without this, doses_per_day returns None and every
+    quantity rule silently skips.
+    """
+    assert sig.doses_per_day(raw) == pytest.approx(expected)
+
+
+def test_dash_variants_do_not_break_duration() -> None:
+    """Duration text with a long dash before the count still parses."""
+    assert sig.duration_to_days("x 5 days") == 5
+    assert sig.duration_to_days("— x 5 days") == 5

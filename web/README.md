@@ -30,3 +30,19 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Running
+
+```bash
+make api                 # API on :8000 (API_PORT=8010 if 8000 is taken)
+cd web && npm run dev    # UI on :5173
+```
+
+The UI calls `http://localhost:8000` by default. Point it elsewhere with
+`VITE_API_BASE`:
+
+```bash
+VITE_API_BASE=http://localhost:8010 npm run dev
+```
+
+CORS on the API allows `http://localhost:5173` only.

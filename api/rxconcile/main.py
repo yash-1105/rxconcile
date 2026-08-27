@@ -23,7 +23,7 @@ from typing import Any, Final
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
@@ -378,6 +378,29 @@ async def _reconcile_bytes(
     _guard_disagreement(bill, "bill")
     elapsed_ms = int((time.monotonic() - started) * 1000)
     return reconcile(prescription, bill, processing_ms=elapsed_ms)
+
+
+@app.get("/api/samples/{sample_id}/image/{which}")
+async def sample_image(sample_id: str, which: str) -> FileResponse:
+    """Serve a sample's source image, so the viewer can show the actual page."""
+    sample = next((s for s in SAMPLES if s.sample_id == sample_id), None)
+    if sample is None or which not in {"prescription", "bill"}:
+        raise ApiError(
+            status_code=404,
+            error_code="SAMPLE_NOT_FOUND",
+            message=f"No {which!r} image for sample {sample_id!r}.",
+            hint="Call GET /api/samples for the available sample_id values.",
+        )
+    filename = sample.prescription if which == "prescription" else sample.bill
+    path = SAMPLES_DIR / filename
+    if not path.is_file():
+        raise ApiError(
+            status_code=404,
+            error_code="SAMPLE_FILE_MISSING",
+            message=f"{filename} is missing from samples/.",
+            hint="Check the samples/ directory in the repository is intact.",
+        )
+    return FileResponse(path)
 
 
 @app.post("/api/reconcile")

@@ -1,0 +1,210 @@
+import type {
+  BilledItem,
+  Finding,
+  PrescribedItem,
+  ReconciliationResult,
+} from '../types/api'
+import { Value } from './primitives'
+
+type RowStatus = 'ok' | 'warning' | 'critical'
+
+interface Row {
+  key: string
+  prescribed: PrescribedItem | null
+  billed: BilledItem | null
+  similarity: number | null
+  status: RowStatus
+  codes: string[]
+}
+
+function strengthOf(item: PrescribedItem | BilledItem | null): string | null {
+  if (!item || item.strength_value === null) return null
+  return `${item.strength_value}${item.strength_unit ?? ''}`
+}
+
+function qtyOf(item: BilledItem | null): string | null {
+  if (!item || item.quantity === null) return null
+  const basis = item.units_basis ? ` ${item.units_basis}` : ''
+  const pack = item.pack_size ? ` / ${item.pack_size}` : ''
+  return `${item.quantity}${basis}${pack}`
+}
+
+function statusFrom(codes: string[]): RowStatus {
+  if (codes.some((c) => CRITICAL_CODES.has(c))) return 'critical'
+  if (codes.some((c) => WARNING_CODES.has(c))) return 'warning'
+  return 'ok'
+}
+
+const CRITICAL_CODES = new Set([
+  'RX_NOT_BILLED',
+  'BILL_NOT_PRESCRIBED',
+  'STRENGTH_MISMATCH',
+  'SALT_DIFFERENT_CLASS',
+  'SCHEDULE_H_UNBACKED',
+])
+const WARNING_CODES = new Set([
+  'FORM_MISMATCH',
+  'QUANTITY_SHORT',
+  'QUANTITY_EXCESS',
+  'DUPLICATE_THERAPY',
+])
+
+const STATUS_MARK: Record<RowStatus, { glyph: string; className: string; label: string }> = {
+  ok: { glyph: '✓', className: 'text-emerald-700', label: 'No discrepancy' },
+  warning: { glyph: '▲', className: 'text-amber-700', label: 'Warning' },
+  critical: { glyph: '✕', className: 'text-red-700', label: 'Critical' },
+}
+
+function buildRows(result: ReconciliationResult): Row[] {
+  const rx = new Map(result.prescription.items.map((i) => [i.item_id, i]))
+  const bill = new Map(result.bill.items.map((i) => [i.item_id, i]))
+  const codesFor = (finding: Finding, id: string) =>
+    finding.prescribed_ref === id || finding.billed_ref === id
+
+  const rows: Row[] = result.matched_pairs.map((pair) => {
+    const codes = result.findings
+      .filter((f) => f.prescribed_ref === pair.prescribed_id && f.billed_ref === pair.billed_id)
+      .map((f) => f.rule_code)
+    return {
+      key: `${pair.prescribed_id}-${pair.billed_id}`,
+      prescribed: rx.get(pair.prescribed_id) ?? null,
+      billed: bill.get(pair.billed_id) ?? null,
+      similarity: pair.similarity,
+      status: statusFrom(codes),
+      codes,
+    }
+  })
+
+  for (const id of result.unmatched_prescribed) {
+    const codes = result.findings.filter((f) => codesFor(f, id)).map((f) => f.rule_code)
+    rows.push({
+      key: `rx-only-${id}`,
+      prescribed: rx.get(id) ?? null,
+      billed: null,
+      similarity: null,
+      status: statusFrom(codes.length ? codes : ['RX_NOT_BILLED']),
+      codes,
+    })
+  }
+  for (const id of result.unmatched_billed) {
+    const codes = result.findings.filter((f) => codesFor(f, id)).map((f) => f.rule_code)
+    rows.push({
+      key: `bill-only-${id}`,
+      prescribed: null,
+      billed: bill.get(id) ?? null,
+      similarity: null,
+      status: statusFrom(codes),
+      codes,
+    })
+  }
+  return rows
+}
+
+function Cell({ item }: { item: PrescribedItem | BilledItem | null }) {
+  if (!item) {
+    return <span className="font-mono text-xs text-ink-300">not present</span>
+  }
+  return (
+    <span className="font-mono text-xs text-ink-500" title={item.raw_text}>
+      {item.item_id}
+    </span>
+  )
+}
+
+export function ComparisonTable({ result }: { result: ReconciliationResult }) {
+  const rows = buildRows(result)
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[52rem] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-ink-300 text-left">
+            {['', 'Prescribed', 'Billed', 'Drug', 'Strength', 'Form', 'Qty', 'Similarity'].map(
+              (heading) => (
+                <th
+                  key={heading}
+                  className="px-3 py-2 text-xs font-semibold tracking-wide text-ink-500 uppercase"
+                >
+                  {heading}
+                </th>
+              ),
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const mark = STATUS_MARK[row.status]
+            const drugMismatch =
+              row.prescribed && row.billed
+                ? (row.prescribed.drug_name ?? '').toLowerCase() !==
+                  (row.billed.drug_name ?? '').toLowerCase()
+                : false
+            const strengthMismatch = row.codes.includes('STRENGTH_MISMATCH')
+            const formMismatch = row.codes.includes('FORM_MISMATCH')
+            return (
+              <tr key={row.key} className="border-b border-ink-200 align-top hover:bg-ink-50">
+                <td className={`px-3 py-2 text-center ${mark.className}`} title={mark.label}>
+                  {mark.glyph}
+                </td>
+                <td className="px-3 py-2">
+                  <Cell item={row.prescribed} />
+                </td>
+                <td className="px-3 py-2">
+                  <Cell item={row.billed} />
+                </td>
+                <td className="px-3 py-2">
+                  <div className={drugMismatch ? 'rounded bg-amber-50 px-1' : ''}>
+                    <Value>{row.prescribed?.drug_name}</Value>
+                    {row.billed ? (
+                      <>
+                        <span className="px-1 text-ink-300">/</span>
+                        <Value>{row.billed.drug_name}</Value>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className={strengthMismatch ? 'rounded bg-red-50 px-1' : ''}>
+                    <Value>{strengthOf(row.prescribed)}</Value>
+                    {row.billed ? (
+                      <>
+                        <span className="px-1 text-ink-300">/</span>
+                        <Value>{strengthOf(row.billed)}</Value>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className={formMismatch ? 'rounded bg-amber-50 px-1' : ''}>
+                    <Value>{row.prescribed?.form}</Value>
+                    {row.billed ? (
+                      <>
+                        <span className="px-1 text-ink-300">/</span>
+                        <Value>{row.billed.form}</Value>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <Value>{qtyOf(row.billed)}</Value>
+                </td>
+                <td className="px-3 py-2">
+                  {row.similarity === null ? (
+                    <span className="font-mono text-xs text-ink-300">—</span>
+                  ) : (
+                    <span className="font-mono text-xs text-ink-600">
+                      {row.similarity.toFixed(2)}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p className="mt-3 text-xs text-ink-500">
+        Paired rows show prescribed / billed side by side. Cells are highlighted where a rule
+        fired, not merely where the strings differ.
+      </p>
+    </div>
+  )
+}

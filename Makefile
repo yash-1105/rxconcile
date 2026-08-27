@@ -32,8 +32,10 @@ lint: ## ruff + oxlint
 dev: ## Run the web dev server
 	cd web && npm run dev
 
-api: ## Run the API on :8000 with reload
-	$(VENV)/bin/uvicorn rxconcile.main:app --reload --port 8000
+API_PORT ?= 8000
+
+api: ## Run the API with reload (override with API_PORT=8010)
+	$(VENV)/bin/uvicorn rxconcile.main:app --reload --port $(API_PORT)
 
 list-models: ## List Gemini models actually available to this project
 	./api/scripts/list_models.sh

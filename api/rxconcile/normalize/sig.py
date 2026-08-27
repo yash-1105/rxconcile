@@ -60,6 +60,12 @@ _VULGAR_FRACTIONS: Final[dict[str, float]] = {
 
 _POSITIONAL_SEPARATORS: Final[str] = "-+"
 
+#: Dash variants that appear in transcribed sig notation. Prescriptions are
+#: written with long dashes and the extractor copies them verbatim, as it must,
+#: so "1 - 0 - 1" arrives as "1 \u2014 0 \u2014 1". Folding them here keeps the
+#: verbatim rule intact while still letting the parser read the schedule.
+_DASH_VARIANTS: Final[str] = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uff0d"
+
 
 def _expand_fractions(token: str) -> str:
     for glyph, value in _VULGAR_FRACTIONS.items():
@@ -92,7 +98,10 @@ def normalize_frequency(raw: str | None) -> str | None:
     """Uppercase and collapse a frequency string, or None if blank."""
     if raw is None:
         return None
-    text = " ".join(raw.upper().split())
+    folded = raw
+    for dash in _DASH_VARIANTS:
+        folded = folded.replace(dash, "-")
+    text = " ".join(folded.upper().split())
     return text or None
 
 
@@ -121,7 +130,7 @@ def doses_per_day(raw: str | None) -> float | None:
     # Positional schedule: "1-0-1", "1+0+1", "0+0+2½", "1/2-0-1/2".
     for separator in _POSITIONAL_SEPARATORS:
         if separator in text:
-            slots = [slot for slot in text.split(separator)]
+            slots = [slot.strip() for slot in text.split(separator)]
             doses = [_token_to_dose(slot) for slot in slots]
             if len(doses) >= 2 and all(dose is not None for dose in doses):
                 total = sum(dose for dose in doses if dose is not None)
@@ -219,7 +228,10 @@ def duration_to_days(raw: str | None) -> int | None:
     """
     if raw is None:
         return None
-    text = " ".join(transliterate_bengali_duration(raw).upper().split())
+    folded = transliterate_bengali_duration(raw)
+    for dash in _DASH_VARIANTS:
+        folded = folded.replace(dash, "-")
+    text = " ".join(folded.upper().split())
     if not text:
         return None
 
