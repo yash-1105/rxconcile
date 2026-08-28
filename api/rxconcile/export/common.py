@@ -206,6 +206,108 @@ def unchecked_line(result: ReconciliationResult) -> str | None:
     )
 
 
+#: Never allowed to become the hidden half of a "+N more".
+PINNED_CODE: Final[str] = "SCHEDULE_H_UNBACKED"
+
+#: Tie-break within one severity: the more specific message wins. Mirrors
+#: web/src/lib/grouping.ts so all three surfaces tell the same story.
+_SPECIFICITY: Final[tuple[str, ...]] = (
+    PINNED_CODE,
+    "SALT_DIFFERENT_CLASS",
+    "STRENGTH_MISMATCH",
+    "DUPLICATE_THERAPY",
+    "PANEL_PARTIAL",
+    "TEST_DUPLICATE",
+    "FORM_MISMATCH",
+    "QUANTITY_SHORT",
+    "QUANTITY_EXCESS",
+    "BRAND_SUBSTITUTION",
+    "TEST_NOT_PRESCRIBED",
+    "TEST_NOT_BILLED",
+    "BILL_NOT_PRESCRIBED",
+    "RX_NOT_BILLED",
+)
+
+_SEVERITY_RANK: Final[dict[str, int]] = {"critical": 0, "warning": 1, "info": 2}
+
+
+class FindingGroup(BaseModel):
+    """Every finding about one item, headline first."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    key: str
+    headline: Finding
+    findings: list[Finding]
+    severity: str
+
+    @property
+    def extra(self) -> int:
+        return len(self.findings) - 1
+
+    @property
+    def is_discrepancy(self) -> bool:
+        return self.severity != "info"
+
+
+def _finding_rank(finding: Finding) -> tuple[int, int]:
+    try:
+        specificity = _SPECIFICITY.index(finding.rule_code)
+    except ValueError:
+        specificity = len(_SPECIFICITY)
+    return _SEVERITY_RANK[finding.severity], specificity
+
+
+def group_findings(result: ReconciliationResult) -> list[FindingGroup]:
+    """One row per item, the way the screen shows it.
+
+    Alprax produced two rows -- "billed but not prescribed" and "prescription-
+    only medicine with nothing backing it" -- which is one fact told twice.
+
+    A matched pair is one item: a finding may carry a prescribed ref, a billed
+    ref or both, so refs are folded together through the pairs the engine
+    reported. Document-level findings concern no item and each stays its own
+    row rather than being merged into something they are not about.
+    """
+    canonical: dict[str, str] = {}
+    for pair in [*result.matched_pairs, *result.matched_tests]:
+        canonical[pair.prescribed_id] = pair.prescribed_id
+        canonical[pair.billed_id] = pair.prescribed_id
+
+    buckets: dict[str, list[Finding]] = {}
+    order: list[str] = []
+    for index, finding in enumerate(result.findings):
+        if finding.severity not in {"critical", "warning", "info"}:
+            continue
+        ref = finding.prescribed_ref or finding.billed_ref
+        key = f"doc-{index}" if ref is None else canonical.get(ref, ref)
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(finding)
+
+    groups: list[FindingGroup] = []
+    for key in order:
+        members = sorted(buckets[key], key=_finding_rank)
+        # Pinned, not ranked: a Schedule H finding heads its row whatever else
+        # is in it. It is the most consequential thing this system detects and
+        # exactly what a naive merge buries under a more generic line.
+        pinned = next((f for f in members if f.rule_code == PINNED_CODE), None)
+        if pinned is not None:
+            members = [pinned, *[f for f in members if f is not pinned]]
+        severity = min((f.severity for f in members), key=lambda s: _SEVERITY_RANK[s])
+        groups.append(
+            FindingGroup(key=key, headline=members[0], findings=members, severity=severity)
+        )
+
+    return sorted(groups, key=lambda g: (_SEVERITY_RANK[g.severity], _finding_rank(g.headline)))
+
+
+def discrepancy_groups(result: ReconciliationResult) -> list[FindingGroup]:
+    """Groups that count as a discrepancy: items with a problem, not findings."""
+    return [group for group in group_findings(result) if group.is_discrepancy]
+
+
 def discrepancies(result: ReconciliationResult) -> list[Finding]:
     rank = {"critical": 0, "warning": 1, "info": 2}
     real = [f for f in result.findings if f.severity in {"critical", "warning"}]

@@ -96,7 +96,15 @@ All three carry the same disclaimer, and all three state what could not be
 checked — including any document that was not supplied. A report outlives the
 session it came from; a reader months later has no other way to know.
 
-The PDF and the workbook are written for a person: remarks are capped at one
-sentence and internal check names do not appear. **The JSON is not summarised
-in any way** — every finding, every rule code and every detail object is
-present, because it feeds a system rather than a reader.
+The PDF and the workbook are written for a person: findings are grouped so one
+medicine is one row, remarks are capped at one sentence, and internal check
+names do not appear. **The JSON is neither grouped nor summarised** — findings
+arrive as a flat list, every rule code and every detail object present, because
+it feeds a system rather than a reader.
+
+An integrator wanting the same grouping should key on `prescribed_ref` and
+`billed_ref`, folding a matched pair's two ids together through `matched_pairs`
+and `matched_tests`. Findings with both refs null are document-level and belong
+to no item. Note that a discrepancy count over raw findings will exceed the one
+the UI shows: a prescription-only medicine with nothing behind it produces both
+`SCHEDULE_H_UNBACKED` and `BILL_NOT_PRESCRIBED` about the same line.

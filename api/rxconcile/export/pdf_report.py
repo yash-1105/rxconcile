@@ -42,7 +42,7 @@ from rxconcile.export.common import (
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
-    discrepancies,
+    discrepancy_groups,
     document_gaps,
     short_remark,
     status_word,
@@ -174,8 +174,11 @@ def build_pdf(context: ExportContext) -> bytes:
 
     # ---- verdict ----
     story.append(Paragraph("Summary", H2))
-    found = discrepancies(result)
-    criticals = sum(1 for f in found if f.severity == "critical")
+    # Counted by ITEM, matching the screen and the list below it. Counting raw
+    # findings said "7" where two of them were a second sentence about a
+    # medicine already listed.
+    found = discrepancy_groups(result)
+    criticals = sum(1 for g in found if g.severity == "critical")
     not_run = result.review_summary.checks_unavailable
     if result.verdict == "inconclusive":
         headline = "Could not read reliably"
@@ -198,8 +201,15 @@ def build_pdf(context: ExportContext) -> bytes:
     if found:
         story.append(Paragraph("What is wrong", H2))
         rows: list[Row] = [["STATUS", "WHAT IT SAYS", "RULE"]]
-        rows += [[_p(STATUS_WORD[f.severity], CELL), _p(f.message), _p(f.rule_code)]
-                 for f in found]
+        for group in found:
+            message = group.headline.message
+            if group.extra:
+                message += f" (+{group.extra} more)"
+            rows.append([
+                _p(STATUS_WORD[group.severity], CELL),
+                _p(message),
+                _p(group.headline.rule_code),
+            ])
         story.append(_table(rows, [width * 0.12, width * 0.66, width * 0.22]))
 
     # ---- reimbursement ----

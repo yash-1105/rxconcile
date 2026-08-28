@@ -15,8 +15,9 @@ from rxconcile.export.common import (
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
-    discrepancies,
+    discrepancy_groups,
     document_gaps,
+    group_findings,
     money,
     short_remark,
     status_word,
@@ -57,7 +58,7 @@ def _summary_sheet(sheet: Worksheet, context: ExportContext) -> None:
         ("Bill", context.bill_filename),
         ("Verdict", result.verdict),
         ("Extraction runs", context.extraction_runs or ""),
-        ("Discrepancies", len(discrepancies(result))),
+        ("Items needing attention", len(discrepancy_groups(result))),
         ("Lines needing a manual check", result.reimbursement.needs_review_line_count),
     ):
         sheet.cell(row=row, column=1, value=label).font = Font(bold=True)
@@ -105,16 +106,32 @@ def _summary_sheet(sheet: Worksheet, context: ExportContext) -> None:
 
 
 def _findings_sheet(sheet: Worksheet, context: ExportContext) -> None:
+    """One row per item, matching the screen and the report.
+
+    Grouped rows are ordered headline-first and marked, so a reader can see
+    that two lines belong to one medicine without losing either of them.
+    """
     sheet.title = "Findings"
-    _widths(sheet, [12, 24, 70, 16, 16])
-    _headers(sheet, 1, ["Status", "Rule", "What it says", "Prescribed ref", "Billed ref"])
-    for row, finding in enumerate(context.result.findings, start=2):
-        sheet.cell(row=row, column=1, value=STATUS_WORD.get(finding.severity, finding.severity))
-        sheet.cell(row=row, column=2, value=finding.rule_code)
-        cell = sheet.cell(row=row, column=3, value=finding.message)
-        cell.alignment = _WRAP
-        sheet.cell(row=row, column=4, value=finding.prescribed_ref or "—")
-        sheet.cell(row=row, column=5, value=finding.billed_ref or "—")
+    _widths(sheet, [8, 12, 24, 66, 16, 16])
+    _headers(sheet, 1, ["Item", "Status", "Rule", "What it says", "Prescribed ref", "Billed ref"])
+    row = 2
+    for index, group in enumerate(group_findings(context.result), start=1):
+        for position, finding in enumerate(group.findings):
+            sheet.cell(row=row, column=1, value=index if position == 0 else "")
+            sheet.cell(
+                row=row, column=2,
+                value=STATUS_WORD.get(finding.severity, finding.severity)
+                if position == 0
+                else "",
+            )
+            sheet.cell(row=row, column=3, value=finding.rule_code)
+            message = finding.message
+            if position == 0 and group.extra:
+                message += f" (+{group.extra} more)"
+            sheet.cell(row=row, column=4, value=message).alignment = _WRAP
+            sheet.cell(row=row, column=5, value=finding.prescribed_ref or "—")
+            sheet.cell(row=row, column=6, value=finding.billed_ref or "—")
+            row += 1
 
 
 def _medicines_sheet(sheet: Worksheet, context: ExportContext) -> None:

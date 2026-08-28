@@ -326,3 +326,107 @@ def test_the_workbook_and_the_report_agree_on_every_status() -> None:
     }
     assert statuses <= {"MATCHES", "CHECK", "PROBLEM"}
     assert "NOTED" not in statuses
+
+
+# ---------------------------------------------------------------------------
+# Grouping — all three surfaces tell the same story
+# ---------------------------------------------------------------------------
+
+
+def schedule_h_result() -> ReconciliationResult:
+    """Alprax billed with nothing behind it: two findings, one item."""
+    prescription = Prescription(
+        overall_legibility=0.95,
+        items=[
+            PrescribedItem(item_id="rx-01", raw_text="Dolo 650", drug_name="Dolo",
+                           strength_value=650.0, strength_unit="mg", form="tablet",
+                           confidence=0.9)
+        ],
+    )
+    bill = PharmacyBill(
+        currency="INR",
+        items=[
+            BilledItem(item_id="bill-01", raw_text="DOLO 650", drug_name="Dolo",
+                       strength_value=650.0, strength_unit="mg", form="tablet",
+                       quantity=10.0, line_total=Decimal("22.00"), confidence=0.9),
+            BilledItem(item_id="bill-02", raw_text="ALPRAX 0.5", drug_name="Alprax",
+                       quantity=10.0, line_total=Decimal("57.00"), confidence=0.9),
+        ],
+    )
+    return engine.reconcile(prescription, bill, processing_ms=5)
+
+
+def test_two_findings_on_one_billed_line_become_one_group() -> None:
+    from rxconcile.export.common import group_findings
+
+    result = schedule_h_result()
+    alprax = [
+        g for g in group_findings(result)
+        if any(f.billed_ref == "bill-02" for f in g.findings)
+    ]
+    assert len(alprax) == 1, "Alprax must be one row, not two"
+    assert len(alprax[0].findings) >= 2
+
+
+def test_schedule_h_is_the_headline_never_the_hidden_one() -> None:
+    """The single most consequential thing this system detects."""
+    from rxconcile.export.common import PINNED_CODE, group_findings
+
+    result = schedule_h_result()
+    group = next(
+        g for g in group_findings(result)
+        if any(f.rule_code == PINNED_CODE for f in g.findings)
+    )
+    assert group.headline.rule_code == PINNED_CODE
+
+
+def test_a_matched_pair_is_one_group_whichever_ref_a_finding_carries() -> None:
+    from rxconcile.export.common import group_findings
+
+    result = result_with_discrepancy()
+    keys = [g.key for g in group_findings(result)]
+    assert len(keys) == len(set(keys))
+    for group in group_findings(result):
+        refs = {f.prescribed_ref for f in group.findings if f.prescribed_ref}
+        assert len(refs) <= 1, "one group must not span two prescribed lines"
+
+
+def test_grouping_drops_nothing() -> None:
+    from rxconcile.export.common import group_findings
+
+    result = schedule_h_result()
+    grouped = sum(len(g.findings) for g in group_findings(result))
+    assert grouped == len(result.findings)
+
+
+def test_document_level_findings_stay_their_own_rows() -> None:
+    from rxconcile.export.common import group_findings
+
+    result = schedule_h_result()
+    doc_groups = [g for g in group_findings(result) if g.key.startswith("doc-")]
+    assert all(len(g.findings) == 1 for g in doc_groups)
+
+
+def test_the_pdf_counts_items_not_findings() -> None:
+    import pypdfium2 as pdfium
+
+    from rxconcile.export.common import discrepancy_groups
+
+    result = schedule_h_result()
+    expected = len(discrepancy_groups(result))
+    pdf = pdfium.PdfDocument(BytesIO(build_pdf(context(result))))
+    text = " ".join(page.get_textpage().get_text_range() for page in pdf)
+    assert f"{expected} discrepanc" in text
+    # And the Alprax row carries its companion rather than dropping it.
+    assert "(+1 more)" in text
+
+
+def test_the_workbook_keeps_every_finding_under_its_item() -> None:
+    openpyxl = pytest.importorskip("openpyxl")
+
+    result = schedule_h_result()
+    book = openpyxl.load_workbook(BytesIO(build_xlsx(context(result))))
+    rows = list(book["Findings"].iter_rows(min_row=2, values_only=True))
+    codes = [row[2] for row in rows if row[2]]
+    assert len(codes) == len(result.findings), "nothing may be dropped"
+    assert "SCHEDULE_H_UNBACKED" in codes

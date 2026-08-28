@@ -15,6 +15,12 @@
 
 import { useCallback, useState } from 'react'
 import { documentGaps, groupFindings, headline, phrase, type Grouped } from '../lib/phrasing'
+import {
+  criticalCount,
+  discrepancyCount,
+  groupByItem,
+  type FindingGroup,
+} from '../lib/grouping'
 import type { DocSide, Finding, ReconciliationResult } from '../types/api'
 import { AuditPanel } from './Audit'
 import { SpineMark, type SpineState } from './Spine'
@@ -81,12 +87,17 @@ function Summary({
   result,
   grouped,
   manualChecks,
+  affectedItems,
+  seriousItems,
 }: {
   result: ReconciliationResult
   grouped: Grouped
   manualChecks: number
+  /** Items with a problem. What the Analysis list below actually shows. */
+  affectedItems: number
+  seriousItems: number
 }) {
-  const head = headline(result, grouped)
+  const head = headline(result, grouped, affectedItems, seriousItems)
   return (
     <section className="rounded border border-ink-200 bg-surface px-6 py-5">
       <div className="flex items-start gap-4">
@@ -143,67 +154,87 @@ function DocumentGaps({ result }: { result: ReconciliationResult }) {
 }
 
 function FindingRow({
-  finding,
+  group,
   text,
   onLocate,
   technical,
 }: {
-  finding: Finding
+  group: FindingGroup
   text: string
   onLocate: (finding: Finding) => LocateResult
   technical: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [located, setLocated] = useState<LocateResult | null>(null)
+  const { headline: lead, findings, severity } = group
+  const extra = findings.length - 1
   const state: SpineState =
-    finding.severity === 'critical' ? 'problem' : finding.severity === 'warning' ? 'warning' : 'unchecked'
+    severity === 'critical' ? 'problem' : severity === 'warning' ? 'warning' : 'unchecked'
   return (
     <li className="border-b border-ink-200 last:border-b-0">
       <button
         type="button"
         onClick={() => {
           setOpen(!open)
-          setLocated(onLocate(finding))
+          setLocated(onLocate(lead))
         }}
         aria-expanded={open}
         className="flex w-full items-start gap-3 py-3 text-left hover:bg-paper"
       >
         <SpineMark state={state} className="mt-1" />
-        <span className="t-body flex-1 text-ink">{text}</span>
-        {technical ? <span className="t-data text-unknown">{finding.rule_code}</span> : null}
+        <span className="t-body flex-1 text-ink">
+          {text}
+          {extra > 0 ? (
+            <span className="t-small ml-2 text-muted">(+{extra} more)</span>
+          ) : null}
+        </span>
+        {technical ? <span className="t-data text-unknown">{lead.rule_code}</span> : null}
         <span className="t-data shrink-0 text-unknown">{open ? '−' : '+'}</span>
       </button>
       {open ? (
-        <div className="pb-3 pl-6">
+        <div className="space-y-4 pb-3 pl-6">
           {located === 'not-located' ? (
-            <p className="t-small mb-2 text-muted">
+            <p className="t-small text-muted">
               This line could not be located on the image, so there is nothing to highlight.
               Read it off the page before acting on this.
             </p>
           ) : null}
           {located === 'no-ref' ? (
-            <p className="t-small mb-2 text-muted">
+            <p className="t-small text-muted">
               This describes the document as a whole, not one line, so there is no region to
               highlight.
             </p>
           ) : null}
-          <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[11rem_1fr]">
-            {Object.entries(finding.detail).map(([key, value]) => (
-              <div key={key} className="contents">
-                <dt className="t-micro text-muted">{key}</dt>
-                <dd className="t-data break-all text-ink">
-                  {typeof value === 'object' && value !== null
-                    ? JSON.stringify(value)
-                    : String(value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          {/* Every finding in the group, in full. Nothing is lost by grouping;
+              it moves one click away. */}
+          {findings.map((finding, index) => (
+            <div key={`${finding.rule_code}-${index}`}>
+              <p className="t-small text-ink">
+                <span className="t-data mr-2 text-unknown">{finding.rule_code}</span>
+                {finding.message}
+              </p>
+              {Object.keys(finding.detail).length > 0 ? (
+                <dl className="mt-1 grid gap-x-6 gap-y-1 sm:grid-cols-[11rem_1fr]">
+                  {Object.entries(finding.detail).map(([key, value]) => (
+                    <div key={key} className="contents">
+                      <dt className="t-micro text-muted">{key}</dt>
+                      <dd className="t-data break-all text-ink">
+                        {typeof value === 'object' && value !== null
+                          ? JSON.stringify(value)
+                          : String(value)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </div>
+          ))}
         </div>
       ) : null}
     </li>
   )
 }
+
 
 export function Result({
   result,
@@ -273,7 +304,11 @@ export function Result({
     [itemHasBox, technical],
   )
 
-  const analysis = [...grouped.discrepancies, ...grouped.noted]
+  // One row per item. Two findings about Alprax are one row about Alprax, and
+  // the summary counts items with problems rather than raw findings.
+  const analysis = groupByItem([...grouped.discrepancies, ...grouped.noted], result)
+  const affectedItems = discrepancyCount(analysis)
+  const seriousItems = criticalCount(analysis)
   // Counted from the reimbursement assessment rather than from finding codes:
   // that is where a reader can now see the reason for each one.
   const manualChecks = result.reimbursement?.needs_review_line_count ?? 0
@@ -288,17 +323,23 @@ export function Result({
 
       {/* 1 — SUMMARY */}
       <DocumentGaps result={result} />
-      <Summary result={result} grouped={grouped} manualChecks={manualChecks} />
+      <Summary
+        result={result}
+        grouped={grouped}
+        manualChecks={manualChecks}
+        affectedItems={affectedItems}
+        seriousItems={seriousItems}
+      />
 
       {/* 2 — ANALYSIS */}
       {analysis.length > 0 ? (
         <Section title="Analysis">
           <ul className="rounded border border-ink-200 bg-surface px-5">
-            {analysis.map((finding, index) => (
+            {analysis.map((group) => (
               <FindingRow
-                key={`${finding.rule_code}-${index}`}
-                finding={finding}
-                text={say(finding)}
+                key={group.key}
+                group={group}
+                text={say(group.headline)}
                 onLocate={locate}
                 technical={technical}
               />

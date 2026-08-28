@@ -214,8 +214,19 @@ export interface Headline {
  * any check could not run, the wording says so — a check that did not run must
  * never read as a check that passed.
  */
-export function headline(result: ReconciliationResult, grouped: Grouped): Headline {
-  const count = grouped.discrepancies.length
+export function headline(
+  result: ReconciliationResult,
+  grouped: Grouped,
+  /**
+   * Items with a problem, which is what the Analysis list shows. Counting raw
+   * findings said "7 discrepancies" where two of them were a second sentence
+   * about a medicine already listed.
+   */
+  affectedItems?: number,
+  /** Of those, the serious ones. Counted by item too, so the two agree. */
+  seriousItems?: number,
+): Headline {
+  const count = affectedItems ?? grouped.discrepancies.length
   const notRun = grouped.notRun.length + grouped.unverified.length
 
   if (result.verdict === 'inconclusive') {
@@ -244,15 +255,16 @@ export function headline(result: ReconciliationResult, grouped: Grouped): Headli
           tone: 'clear',
         }
   }
-  const criticals = grouped.discrepancies.filter((f) => f.severity === 'critical').length
+  const serious =
+    seriousItems ?? grouped.discrepancies.filter((f) => f.severity === 'critical').length
   return {
     title: `${count} ${count === 1 ? 'discrepancy' : 'discrepancies'} found`,
     supporting:
-      criticals > 0
-        ? `${criticals} of them ${criticals === 1 ? 'is' : 'are'} serious: the bill does not ` +
+      serious > 0
+        ? `${serious} of them ${serious === 1 ? 'is' : 'are'} serious: the bill does not ` +
           'match what was prescribed. Each is listed below with the source line.'
         : 'None are serious, but each is worth checking against the source documents.',
-    tone: criticals > 0 ? 'problem' : 'warning',
+    tone: serious > 0 ? 'problem' : 'warning',
   }
 }
 
