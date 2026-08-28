@@ -12,13 +12,15 @@ from openpyxl.worksheet.worksheet import Worksheet
 from rxconcile.export.common import (
     CATEGORY_LABEL,
     DISCLAIMER,
-    REIMBURSEMENT_NOTE,
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
     discrepancies,
     document_gaps,
     money,
+    short_remark,
+    status_word,
+    unchecked_line,
 )
 
 _HEAD = Font(bold=True, color="FFFFFF")
@@ -56,7 +58,7 @@ def _summary_sheet(sheet: Worksheet, context: ExportContext) -> None:
         ("Verdict", result.verdict),
         ("Extraction runs", context.extraction_runs or ""),
         ("Discrepancies", len(discrepancies(result))),
-        ("Checks that could not run", result.review_summary.checks_unavailable),
+        ("Lines needing a manual check", result.reimbursement.needs_review_line_count),
     ):
         sheet.cell(row=row, column=1, value=label).font = Font(bold=True)
         sheet.cell(row=row, column=2, value=value)
@@ -75,10 +77,7 @@ def _summary_sheet(sheet: Worksheet, context: ExportContext) -> None:
 
     row += 1
     purse = result.reimbursement
-    sheet.cell(row=row, column=1, value="REIMBURSEMENT ASSESSMENT").font = Font(bold=True)
-    row += 1
-    cell = sheet.cell(row=row, column=2, value=REIMBURSEMENT_NOTE)
-    cell.alignment = _WRAP
+    sheet.cell(row=row, column=1, value="REIMBURSEMENT").font = Font(bold=True)
     row += 2
     for label, total, count in (
         (CATEGORY_LABEL["eligible"], purse.eligible_total, purse.eligible_line_count),
@@ -149,14 +148,7 @@ def _medicines_sheet(sheet: Worksheet, context: ExportContext) -> None:
             f for f in result.findings
             if (rx_id and f.prescribed_ref == rx_id) or (bill_id and f.billed_ref == bill_id)
         ]
-        worst = "info"
-        for finding in found:
-            if finding.severity == "critical":
-                worst = "critical"
-                break
-            if finding.severity == "warning":
-                worst = "warning"
-        status = STATUS_WORD[worst] if found else "MATCHES"
+        status = status_word(found)
         rx_item = rx.get(rx_id or "")
         bill_item = bill.get(bill_id or "")
         rx_match, bill_match = canonical.get(rx_id or ""), canonical.get(bill_id or "")
@@ -176,7 +168,7 @@ def _medicines_sheet(sheet: Worksheet, context: ExportContext) -> None:
         sheet.cell(row=row, column=9, value=expected if expected is not None else "—")
         quantity = getattr(bill_item, "quantity", None)
         sheet.cell(row=row, column=10, value=quantity if quantity is not None else "—")
-        cell = sheet.cell(row=row, column=11, value="; ".join(f.message for f in found) or "—")
+        cell = sheet.cell(row=row, column=11, value=short_remark(found))
         cell.alignment = _WRAP
 
 
@@ -212,11 +204,7 @@ def _tests_sheet(sheet: Worksheet, context: ExportContext) -> None:
             f for f in result.findings
             if (rx_id and f.prescribed_ref == rx_id) or (bill_id and f.billed_ref == bill_id)
         ]
-        worst = next(
-            (STATUS_WORD[s] for s in ("critical", "warning")
-             if any(f.severity == s for f in found)),
-            "MATCHES",
-        )
+        worst = status_word(found)
         panel = next(
             (str(f.detail.get("panel") or f.detail.get("resolved_as"))
              for f in found if f.detail.get("panel") or f.detail.get("resolved_as")),
@@ -227,8 +215,7 @@ def _tests_sheet(sheet: Worksheet, context: ExportContext) -> None:
         billed_name = getattr(bill.get(bill_id or ""), "test_name", None) or "—"
         sheet.cell(row=row, column=3, value=billed_name)
         sheet.cell(row=row, column=4, value=panel or "—")
-        remark = "; ".join(f.message for f in found) or "—"
-        cell = sheet.cell(row=row, column=5, value=remark)
+        cell = sheet.cell(row=row, column=5, value=short_remark(found))
         cell.alignment = _WRAP
 
 
@@ -246,6 +233,10 @@ def _reimbursement_sheet(sheet: Worksheet, context: ExportContext) -> None:
         )
         sheet.cell(row=row, column=4, value=line.item_id)
         sheet.cell(row=row, column=5, value=line.reason).alignment = _WRAP
+    explanation = unchecked_line(context.result)
+    if explanation:
+        note = sheet.cell(row=len(purse.lines) + 3, column=1, value=explanation)
+        note.alignment = _WRAP
 
 
 def build_xlsx(context: ExportContext) -> bytes:

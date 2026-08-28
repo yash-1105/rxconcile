@@ -267,31 +267,82 @@ export function headline(result: ReconciliationResult, grouped: Grouped): Headli
  * words them. It never decides anything. Rows with nothing wrong get an empty
  * remark rather than the word "OK", so the eye skips them.
  */
+/**
+ * Rule codes that say something worth putting in a Remark, most severe first.
+ *
+ * The order IS the precedence: a row showing four stacked statements makes a
+ * reader work out which one matters. One sentence, the most important thing,
+ * and a count of what else is there.
+ */
+const REMARKS: ReadonlyArray<readonly [string, string]> = [
+  ['SALT_DIFFERENT_CLASS', 'Different kind of medicine to the one prescribed'],
+  ['SCHEDULE_H_UNBACKED', 'Prescription-only medicine with nothing backing it'],
+  ['STRENGTH_MISMATCH', 'Strength differs'],
+  ['BILL_NOT_PRESCRIBED', 'Not on the prescription'],
+  ['RX_NOT_BILLED', 'Prescribed but not dispensed'],
+  ['FORM_MISMATCH', 'Dispensed in a different form'],
+  ['QUANTITY_SHORT', 'Less dispensed than the course requires'],
+  ['QUANTITY_EXCESS', 'More dispensed than the course requires'],
+  ['DUPLICATE_THERAPY', 'Same medicine on more than one line'],
+  ['BRAND_SUBSTITUTION', 'Brand substitution'],
+  ['QUANTITY_AMBIGUOUS', 'Quantity could not be confirmed'],
+  ['STRENGTH_UNIT_UNSTATED', 'Strength not printed on one document'],
+]
+
+/** "(+2 more)" when a row has more to say. Full detail lives in the JSON export. */
+function withCount(text: string, total: number): string {
+  return total > 1 ? `${text} (+${total - 1} more)` : text
+}
+
+/**
+ * One short sentence naming the single most important thing about a row.
+ *
+ * Capped deliberately. Stacking every statement into one cell produced remarks
+ * seven lines deep in the PDF, which is not something a reviewer reads.
+ */
 export function remark(codes: string[], findings: Finding[]): string {
-  const has = (code: string) => codes.includes(code)
-  if (has('BILL_NOT_PRESCRIBED')) {
-    const found = findings.find((f) => f.rule_code === 'BILL_NOT_PRESCRIBED')
-    return found?.detail['identified'] === false
-      ? 'Billed line could not be read'
-      : 'Not found in prescription'
+  const sayable = REMARKS.filter(([code]) => codes.includes(code))
+  if (sayable.length === 0) return ''
+  const [code, wording] = sayable[0]!
+  const found = findings.find((f) => f.rule_code === code)
+  const detail = found?.detail ?? {}
+  const total = sayable.length
+
+  if (code === 'BILL_NOT_PRESCRIBED' && detail['identified'] === false) {
+    return withCount('Billed line could not be read', total)
   }
-  if (has('RX_NOT_BILLED')) {
-    const found = findings.find((f) => f.rule_code === 'RX_NOT_BILLED')
-    if (found?.detail['lab_only_bill'] === true) return 'Not assessed — no pharmacy bill supplied'
-    if (found?.detail['identified'] === false) return 'Prescribed line could not be read'
-    return 'Not bought'
+  if (code === 'RX_NOT_BILLED') {
+    if (detail['lab_only_bill'] === true) {
+      return withCount('Not assessed — no pharmacy bill supplied', total)
+    }
+    if (detail['identified'] === false) {
+      return withCount('Prescribed line could not be read', total)
+    }
   }
-  if (has('SALT_DIFFERENT_CLASS')) return 'Different kind of medicine — likely a misreading'
-  if (has('STRENGTH_MISMATCH')) return 'Strength differs from the prescription'
-  if (has('SCHEDULE_H_UNBACKED')) return 'Prescription-only medicine with nothing backing it'
-  if (has('BRAND_SUBSTITUTION')) return 'Alternate medicine bought — same salt'
-  if (has('FORM_MISMATCH')) return 'Dispensed in a different form'
-  if (has('DUPLICATE_THERAPY')) return 'Same salt appears on more than one line'
-  if (has('QUANTITY_SHORT')) return 'Less dispensed than the course requires'
-  if (has('QUANTITY_EXCESS')) return 'More dispensed than the course requires'
-  if (has('QUANTITY_AMBIGUOUS')) return 'Quantity not verifiable'
-  if (has('STRENGTH_UNIT_UNSTATED')) return 'Strength unit not printed — not verifiable'
-  return ''
+  if (code === 'STRENGTH_MISMATCH') {
+    // detail carries {value, unit} objects, not formatted strings.
+    const side = (key: string): string | null => {
+      const value = detail[key] as { value?: number; unit?: string | null } | undefined
+      if (!value || value.value === undefined) return null
+      return `${value.value}${value.unit ?? ''}`
+    }
+    const expected = side('expected')
+    const billed = side('found')
+    if (expected && billed) {
+      return withCount(`Strength differs: ${expected} vs ${billed}`, total)
+    }
+  }
+  if (code === 'BRAND_SUBSTITUTION') {
+    const billedBrand = detail['billed_brand']
+    const prescribedBrand = detail['prescribed_brand']
+    if (billedBrand && prescribedBrand) {
+      return withCount(
+        `Brand substitution — ${String(billedBrand)} for ${String(prescribedBrand)}, same salt`,
+        total,
+      )
+    }
+  }
+  return withCount(wording, total)
 }
 
 /** The same, for a lab test row. */
@@ -310,7 +361,10 @@ export function testRemark(codes: string[], findings: Finding[]): string {
   if (has('PANEL_PARTIAL')) {
     const found = findings.find((f) => f.rule_code === 'PANEL_PARTIAL')
     const missing = (found?.detail['missing_components'] as string[] | undefined) ?? []
-    return `Panel billed incompletely — missing ${missing.join(', ')}`
+    // Named rather than listed: a seven-analyte panel filled the cell.
+    return missing.length > 2
+      ? `Panel billed incompletely — ${missing.length} components missing`
+      : `Panel billed incompletely — missing ${missing.join(', ')}`
   }
   if (has('TEST_DUPLICATE')) return 'Billed more than once'
   if (has('TEST_UNRESOLVED')) return 'Not a test this build recognises — not verifiable'

@@ -30,10 +30,11 @@ STATUS_WORD: Final[dict[str, str]] = {
     "info": "NOTED",
 }
 
+#: Plain wording, matching the screen exactly.
 CATEGORY_LABEL: Final[dict[str, str]] = {
-    "eligible": "Supported by the prescription",
-    "not_eligible": "Not supported by the prescription",
-    "needs_review": "Needs review",
+    "eligible": "Covered by prescription",
+    "not_eligible": "Not on prescription",
+    "needs_review": "Needs a manual check",
 }
 
 
@@ -116,6 +117,93 @@ def document_gaps(result: ReconciliationResult) -> list[tuple[str, str]]:
             "nor reported as unordered.",
         ))
     return gaps
+
+
+#: Rule codes worth a Remark, most severe first. The order IS the precedence.
+#:
+#: Mirrors web/src/lib/phrasing.ts so the screen and a printed report never say
+#: two different things about the same row.
+_REMARKS: Final[tuple[tuple[str, str], ...]] = (
+    ("SALT_DIFFERENT_CLASS", "Different kind of medicine to the one prescribed"),
+    ("SCHEDULE_H_UNBACKED", "Prescription-only medicine with nothing backing it"),
+    ("STRENGTH_MISMATCH", "Strength differs"),
+    ("BILL_NOT_PRESCRIBED", "Not on the prescription"),
+    ("RX_NOT_BILLED", "Prescribed but not dispensed"),
+    ("TEST_NOT_PRESCRIBED", "Not on the prescription"),
+    ("TEST_NOT_BILLED", "Ordered but not done"),
+    ("FORM_MISMATCH", "Dispensed in a different form"),
+    ("QUANTITY_SHORT", "Less dispensed than the course requires"),
+    ("QUANTITY_EXCESS", "More dispensed than the course requires"),
+    ("DUPLICATE_THERAPY", "Same medicine on more than one line"),
+    ("TEST_DUPLICATE", "Billed more than once"),
+    ("PANEL_PARTIAL", "Only part of the ordered panel was billed"),
+    ("BRAND_SUBSTITUTION", "Brand substitution"),
+    ("QUANTITY_AMBIGUOUS", "Quantity could not be confirmed"),
+    ("STRENGTH_UNIT_UNSTATED", "Strength not printed on one document"),
+    ("TEST_UNRESOLVED", "Not a test name the system recognises"),
+)
+
+
+def status_word(found: list[Finding]) -> str:
+    """A row's status as a WORD, never a colour.
+
+    One definition for the screen, the PDF and the workbook. The Excel sheet
+    used to derive its own and printed NOTED where the other two said MATCHES.
+    """
+    for severity in ("critical", "warning"):
+        if any(f.severity == severity for f in found):
+            return STATUS_WORD[severity]
+    return "MATCHES"
+
+
+def short_remark(found: list[Finding]) -> str:
+    """One short sentence naming the most important thing about a row.
+
+    Capped deliberately. Joining every message produced remarks seven lines
+    deep in the PDF, stacking four statements into a cell nobody reads. The
+    full detail stays in the JSON export.
+    """
+    codes = {f.rule_code for f in found}
+    sayable = [(code, wording) for code, wording in _REMARKS if code in codes]
+    if not sayable:
+        return "—"
+    code, wording = sayable[0]
+    detail = next((f.detail for f in found if f.rule_code == code), {})
+
+    if code == "STRENGTH_MISMATCH":
+        expected, billed = detail.get("expected"), detail.get("found")
+        if isinstance(expected, dict) and isinstance(billed, dict):
+            wording = (
+                f"Strength differs: {expected.get('value')}{expected.get('unit') or ''}"
+                f" vs {billed.get('value')}{billed.get('unit') or ''}"
+            )
+    elif code == "BRAND_SUBSTITUTION":
+        prescribed, billed_brand = detail.get("prescribed_brand"), detail.get("billed_brand")
+        if prescribed and billed_brand:
+            wording = f"Brand substitution — {billed_brand} for {prescribed}, same salt"
+    elif code == "RX_NOT_BILLED" and detail.get("lab_only_bill") is True:
+        wording = "Not assessed — no pharmacy bill supplied"
+    elif code in {"BILL_NOT_PRESCRIBED", "RX_NOT_BILLED"} and detail.get("identified") is False:
+        wording = "This line could not be read"
+
+    return f"{wording} (+{len(sayable) - 1} more)" if len(sayable) > 1 else wording
+
+
+def unchecked_line(result: ReconciliationResult) -> str | None:
+    """One sentence replacing the internal check-name table.
+
+    The number in the reimbursement total needs an explanation that survives
+    the app: an unexplained money figure on a report is worse than a technical
+    one. Naming the internal checks was not that explanation.
+    """
+    count = result.reimbursement.needs_review_line_count
+    if not count:
+        return None
+    return (
+        f"{count} billed line{'s' if count != 1 else ''} could not be fully checked and "
+        f"need{'' if count != 1 else 's'} a manual review. The reason for each is shown "
+        "in the table above."
+    )
 
 
 def discrepancies(result: ReconciliationResult) -> list[Finding]:

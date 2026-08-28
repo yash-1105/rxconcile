@@ -226,3 +226,103 @@ def test_the_disclaimer_footer_does_not_break_mid_word() -> None:
     assert " ".join(lines) == DISCLAIMER, "the whole disclaimer must fit in two lines"
     for line in lines:
         assert not line.endswith("-")
+
+
+# ---------------------------------------------------------------------------
+# Remark capping
+# ---------------------------------------------------------------------------
+
+
+def _finding(rule_code: str, severity: str, **detail: object) -> object:
+    from rxconcile.models import Finding
+
+    return Finding(
+        rule_code=rule_code, severity=severity, message="ignored",  # type: ignore[arg-type]
+        prescribed_ref=None, billed_ref=None, detail=detail,
+    )
+
+
+def test_a_remark_is_one_sentence_naming_the_most_severe_thing() -> None:
+    from rxconcile.export.common import short_remark
+
+    found = [
+        _finding("QUANTITY_AMBIGUOUS", "info"),
+        _finding("BRAND_SUBSTITUTION", "info",
+                 prescribed_brand="Dolo", billed_brand="Calpol"),
+        _finding("STRENGTH_MISMATCH", "critical",
+                 expected={"value": 625, "unit": "mg"}, found={"value": 375, "unit": "mg"}),
+    ]
+    remark = short_remark(found)  # type: ignore[arg-type]
+    assert remark == "Strength differs: 625mg vs 375mg (+2 more)"
+    assert "\n" not in remark
+    assert remark.count(";") == 0, "statements must not be stacked into one cell"
+
+
+def test_a_single_finding_gets_no_count() -> None:
+    from rxconcile.export.common import short_remark
+
+    found = [_finding("BRAND_SUBSTITUTION", "info",
+                      prescribed_brand="Dolo", billed_brand="Calpol")]
+    assert short_remark(found) == "Brand substitution — Calpol for Dolo, same salt"  # type: ignore[arg-type]
+
+
+def test_a_row_with_nothing_against_it_has_no_remark() -> None:
+    from rxconcile.export.common import short_remark
+
+    assert short_remark([]) == "—"
+
+
+def test_the_unchecked_line_explains_the_needs_review_total() -> None:
+    """An unexplained money figure on a report is worse than a technical one."""
+    from rxconcile.export.common import unchecked_line
+
+    result = result_with_discrepancy()
+    line = unchecked_line(result)
+    assert line is not None
+    assert str(result.reimbursement.needs_review_line_count) in line
+    assert "manual review" in line
+    assert "shown in the table above" in line
+
+
+def test_no_unchecked_line_when_nothing_needs_review() -> None:
+    from rxconcile.export.common import unchecked_line
+
+    clean = engine.reconcile(
+        Prescription(overall_legibility=0.9), PharmacyBill(currency="INR"), processing_ms=1
+    )
+    assert unchecked_line(clean) is None
+
+
+def test_the_pdf_no_longer_lists_internal_check_names() -> None:
+    """The check-name table meant nothing to a client and is gone."""
+    import pypdfium2 as pdfium
+
+    data = build_pdf(context(result_with_discrepancy()))
+    pdf = pdfium.PdfDocument(BytesIO(data))
+    text = " ".join(page.get_textpage().get_text_range() for page in pdf)
+    assert "Checks that could not run" not in text
+    assert "manual review" in text, "the total still has to be explained"
+
+
+def test_the_status_word_is_the_same_everywhere() -> None:
+    """The workbook printed NOTED where the report and screen said MATCHES."""
+    from rxconcile.export.common import status_word
+
+    assert status_word([]) == "MATCHES"
+    assert status_word([_finding("BRAND_SUBSTITUTION", "info")]) == "MATCHES"  # type: ignore[list-item]
+    assert status_word([_finding("FORM_MISMATCH", "warning")]) == "CHECK"  # type: ignore[list-item]
+    assert status_word([_finding("STRENGTH_MISMATCH", "critical")]) == "PROBLEM"  # type: ignore[list-item]
+    # A critical leads even when a warning sits beside it.
+    mixed = [_finding("FORM_MISMATCH", "warning"), _finding("STRENGTH_MISMATCH", "critical")]
+    assert status_word(mixed) == "PROBLEM"  # type: ignore[arg-type]
+
+
+def test_the_workbook_and_the_report_agree_on_every_status() -> None:
+    openpyxl = pytest.importorskip("openpyxl")
+    ctx = context(result_with_discrepancy())
+    book = openpyxl.load_workbook(BytesIO(build_xlsx(ctx)))
+    statuses = {
+        row[0] for row in book["Medicines"].iter_rows(min_row=2, values_only=True) if row[0]
+    }
+    assert statuses <= {"MATCHES", "CHECK", "PROBLEM"}
+    assert "NOTED" not in statuses

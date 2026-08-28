@@ -59,18 +59,43 @@ UNCHECKED_CODES: Final[frozenset[str]] = frozenset(
 )
 
 
+#: Plain wording for why a line landed where it did, most specific first.
+#:
+#: One definition, used by the screen and by every export, so a reader is never
+#: told two different things about the same line. Written for someone with no
+#: knowledge of the rule codes underneath.
+_REASONS: Final[tuple[tuple[str, str], ...]] = (
+    ("SCHEDULE_H_UNBACKED", "Prescription-only medicine with nothing on the prescription"),
+    ("TEST_NOT_PRESCRIBED", "This test was not ordered on the prescription"),
+    ("BILL_NOT_PRESCRIBED", "Nothing on the prescription matches this item"),
+    ("STRENGTH_MISMATCH", "Strength differs from the prescription"),
+    ("SALT_DIFFERENT_CLASS", "A different kind of medicine to the one prescribed"),
+    ("FORM_MISMATCH", "Dispensed in a different form to the one prescribed"),
+    ("QUANTITY_SHORT", "Less was dispensed than the course requires"),
+    ("QUANTITY_EXCESS", "More was dispensed than the course requires"),
+    ("DUPLICATE_THERAPY", "The same medicine appears on more than one line"),
+    ("TEST_DUPLICATE", "This test is billed more than once"),
+    ("PANEL_PARTIAL", "Only part of the ordered panel was billed"),
+    (
+        "QUANTITY_AMBIGUOUS",
+        "Quantity could not be confirmed — the bill does not say whether it counts "
+        "packs or tablets",
+    ),
+    ("STRENGTH_UNIT_UNSTATED", "Strength was not printed on one of the documents"),
+    ("TEST_UNRESOLVED", "This is not a test name the system recognises"),
+    ("CHECK_UNAVAILABLE", "One of the checks on this line could not be completed"),
+)
+
+
 def _reason(category: ReimbursementCategory, codes: list[str]) -> str:
+    for code, wording in _REASONS:
+        if code in codes:
+            return wording
     if category == "not_eligible":
-        if "SCHEDULE_H_UNBACKED" in codes:
-            return "Prescription-only medicine with nothing on the prescription behind it"
-        if "TEST_NOT_PRESCRIBED" in codes:
-            return "Test billed with no matching investigation ordered"
-        return "Billed with no matching line on the prescription"
+        return "Nothing on the prescription matches this item"
     if category == "needs_review":
-        if any(code in UNCHECKED_CODES for code in codes):
-            return "A check on this line could not be completed"
-        return "The prescription line it matches carries a discrepancy"
-    return "Matched to a prescribed line with nothing against it"
+        return "This line could not be fully checked"
+    return "Matches the prescription"
 
 
 def assess(

@@ -115,7 +115,8 @@ export function Shell({
         <footer className="px-6 py-5 sm:px-10">
           <div className="mx-auto max-w-5xl">
             <p className="t-small text-muted">
-              Proof of concept. Automated document comparison only, not clinical verification.
+              Proof of concept. Automated document comparison only, not clinical verification and
+              not an insurance determination. Nothing here approves or rejects anything.
               All findings require human review.
             </p>
           </div>

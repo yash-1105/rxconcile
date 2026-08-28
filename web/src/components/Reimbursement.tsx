@@ -16,17 +16,16 @@ import type { ReimbursementCategory, ReimbursementSummary } from '../types/api'
 import { SpineMark, type SpineState } from './Spine'
 
 const LABEL: Record<ReimbursementCategory, string> = {
-  eligible: 'Supported by the prescription',
-  not_eligible: 'Not supported by the prescription',
-  needs_review: 'Needs review',
+  eligible: 'Covered by prescription',
+  not_eligible: 'Not on prescription',
+  needs_review: 'Needs a manual check',
 }
 
+/** One line each, for a reader who has never seen a rule code. */
 const BLURB: Record<ReimbursementCategory, string> = {
-  eligible: 'Billed lines matched to a prescribed line with nothing against them.',
-  not_eligible:
-    'Billed lines the comparison found nothing on the prescription behind — unprescribed items, and prescription-only medicines with no order backing them.',
-  needs_review:
-    'Billed lines where a check could not be completed, or whose matched prescription line carries a discrepancy. Not a rejection: a statement that someone has to look.',
+  eligible: "Billed items that match the doctor's prescription.",
+  not_eligible: 'Billed items with nothing on the prescription behind them.',
+  needs_review: 'Someone needs to look at these before approving.',
 }
 
 /** Grey for anything unresolved. Red only where the bill is unsupported. */
@@ -130,14 +129,10 @@ export function Reimbursement({ summary }: { summary: ReimbursementSummary | und
   }
   return (
     <div className="space-y-4">
-      <p className="t-small max-w-3xl text-muted">
-        An assessment of which billed items are supported by the prescription.{' '}
-        <strong className="font-semibold text-ink">
-          This is not an insurance determination.
-        </strong>{' '}
-        Coverage rules, copay tiers and policy limits appear in neither document, are not
-        modelled here, and are not inferred.
-      </p>
+      {/* The not-an-insurance-determination statement lives in the page footer.
+          It still has to appear -- these are money figures and must not read as
+          an approval -- but it does not need to be the first thing anyone
+          reads. */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Bucket
           category="eligible"

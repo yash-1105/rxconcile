@@ -55,11 +55,14 @@ These are the ones where an obvious-looking reading is the wrong one.
 `result.reimbursement` sorts every billed line into exactly one of three
 buckets, each traceable to the lines that built it:
 
-| Category | Means |
-| --- | --- |
-| `eligible` | Matched to a prescribed line with nothing against it |
-| `not_eligible` | Nothing on the prescription behind it |
-| `needs_review` | A check could not be completed, or the matched prescription line carries a discrepancy |
+| Category | Shown to a person as | Means |
+| --- | --- | --- |
+| `eligible` | Covered by prescription | Matched to a prescribed line with nothing against it |
+| `not_eligible` | Not on prescription | Nothing on the prescription behind it |
+| `needs_review` | Needs a manual check | A check could not be completed, or the matched prescription line carries a discrepancy |
+
+The category keys are stable; the labels are copy and may change. Key on
+`category`, never on `reason` — the reason is a sentence written for a person.
 
 **This is not an insurance determination.** Coverage rules, copay tiers, policy
 limits and exclusions appear in none of the documents this system reads, are not
@@ -92,3 +95,8 @@ real identity layer first.
 All three carry the same disclaimer, and all three state what could not be
 checked — including any document that was not supplied. A report outlives the
 session it came from; a reader months later has no other way to know.
+
+The PDF and the workbook are written for a person: remarks are capped at one
+sentence and internal check names do not appear. **The JSON is not summarised
+in any way** — every finding, every rule code and every detail object is
+present, because it feeds a system rather than a reader.

@@ -39,18 +39,19 @@ from reportlab.platypus import (
 from rxconcile.export.common import (
     CATEGORY_LABEL,
     DISCLAIMER,
-    REIMBURSEMENT_NOTE,
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
     discrepancies,
     document_gaps,
-    unavailable,
+    short_remark,
+    status_word,
+    unchecked_line,
 )
 from rxconcile.export.common import (
     money as money_str,
 )
-from rxconcile.models import BilledItem, Finding, PrescribedItem
+from rxconcile.models import BilledItem, PrescribedItem
 
 INK = colors.HexColor("#141A18")
 MUTED = colors.HexColor("#5A635F")
@@ -67,6 +68,10 @@ BODY = ParagraphStyle("Body", parent=_base["BodyText"], fontName="Helvetica", fo
 SMALL = ParagraphStyle("Small", parent=BODY, fontSize=7.6, leading=10, textColor=MUTED)
 CELL = ParagraphStyle("Cell", parent=BODY, fontSize=7.4, leading=9.5)
 GAP_TITLE = ParagraphStyle("GapTitle", parent=BODY, fontName="Helvetica-Bold", fontSize=10)
+#: Header cells wrap. As plain strings they overran their columns and printed
+#: "FORM (RX" on top of the next heading.
+HEAD = ParagraphStyle("Head", parent=BODY, fontName="Helvetica-Bold", fontSize=6.8,
+                      leading=8.4, textColor=MUTED)
 
 
 def _p(text: str, style: ParagraphStyle = CELL) -> Paragraph:
@@ -78,6 +83,11 @@ Row = list[Any]
 
 
 def _table(data: list[Row], widths: list[float], *, head: bool = True) -> Table:
+    if head and data:
+        data = [
+            [Paragraph(cell, HEAD) if isinstance(cell, str) else cell for cell in data[0]],
+            *data[1:],
+        ]
     style: list[Any] = [
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TEXTCOLOR", (0, 0), (-1, -1), INK),
@@ -88,12 +98,7 @@ def _table(data: list[Row], widths: list[float], *, head: bool = True) -> Table:
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]
     if head:
-        style += [
-            ("BACKGROUND", (0, 0), (-1, 0), BAND),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 7),
-            ("TEXTCOLOR", (0, 0), (-1, 0), MUTED),
-        ]
+        style.append(("BACKGROUND", (0, 0), (-1, 0), BAND))
     return Table(data, colWidths=widths, repeatRows=1 if head else 0, style=TableStyle(style))
 
 
@@ -117,13 +122,6 @@ def _strength(item: PrescribedItem | BilledItem | None) -> str:
     if value is None:
         return "—"
     return f"{value}{getattr(item, 'strength_unit', '') or ''}"
-
-
-def _worst(found: list[Finding]) -> str:
-    for severity in ("critical", "warning"):
-        if any(f.severity == severity for f in found):
-            return STATUS_WORD[severity]
-    return "MATCHES" if found is not None else "—"
 
 
 def build_pdf(context: ExportContext) -> bytes:
@@ -204,25 +202,10 @@ def build_pdf(context: ExportContext) -> bytes:
                  for f in found]
         story.append(_table(rows, [width * 0.12, width * 0.66, width * 0.22]))
 
-    if not_run:
-        story.append(Paragraph("Checks that could not run", H2))
-        story.append(Paragraph(
-            "These were not performed, because the documents did not carry the values they "
-            "need. <b>They are not passes.</b>", SMALL,
-        ))
-        rows = [["CHECK", "WHAT WAS MISSING"]]
-        for finding in unavailable(result):
-            rows.append([
-                _p(str(finding.detail.get("check", "—"))),
-                _p(", ".join(finding.detail.get("missing", [])) or "—"),
-            ])
-        story.append(_table(rows, [width * 0.32, width * 0.68]))
-
     # ---- reimbursement ----
     purse = result.reimbursement
-    story.append(Paragraph("Reimbursement assessment", H2))
-    story.append(Paragraph(REIMBURSEMENT_NOTE, SMALL))
-    story.append(Spacer(1, 4))
+    story.append(Paragraph("Reimbursement", H2))
+    story.append(Spacer(1, 2))
     totals: list[Row] = [["", "AMOUNT", "LINES"]]
     for key, total, count in (
         ("eligible", purse.eligible_total, purse.eligible_line_count),
@@ -251,6 +234,10 @@ def build_pdf(context: ExportContext) -> bytes:
             ])
         story.append(Spacer(1, 4))
         story.append(_table(rows, [width * 0.24, width * 0.16, width * 0.24, width * 0.36]))
+    explanation = unchecked_line(result)
+    if explanation:
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(explanation, SMALL))
 
     # ---- medicines ----
     story.append(PageBreak())
@@ -264,8 +251,10 @@ def build_pdf(context: ExportContext) -> bytes:
     pairs += [(i, None) for i in result.unmatched_prescribed]
     pairs += [(None, i) for i in result.unmatched_billed]
 
-    rows = [["STATUS", "DRUG (RX)", "DRUG (BILL)", "SALT", "STR (RX)", "STR (BILL)",
-             "FORM (RX)", "FORM (BILL)", "REMARK"]]
+    # Short heads on purpose: "STRENGTH prescribed" broke as "STREN/GTH prescri/bed"
+    # in a column only wide enough for the value beneath it.
+    rows = [["STATUS", "DRUG<br/>Rx", "DRUG<br/>Bill", "SALT", "STR<br/>Rx",
+             "STR<br/>Bill", "FORM<br/>Rx", "FORM<br/>Bill", "REMARK"]]
     for rx_id, bill_id in pairs:
         found_row = [
             f for f in result.findings
@@ -275,7 +264,7 @@ def build_pdf(context: ExportContext) -> bytes:
         rx_match, bill_match = canonical.get(rx_id or ""), canonical.get(bill_id or "")
         salt = (rx_match.salt if rx_match else None) or (bill_match.salt if bill_match else None)
         rows.append([
-            _p(_worst(found_row) if found_row else "MATCHES"),
+            _p(status_word(found_row)),
             _p(getattr(rx_item, "drug_name", None) or "—"),
             _p(getattr(bill_item, "drug_name", None) or "—"),
             _p(salt or "—"),
@@ -283,12 +272,12 @@ def build_pdf(context: ExportContext) -> bytes:
             _p(_strength(bill_item) if bill_item else "—"),
             _p(getattr(rx_item, "form", None) or "—"),
             _p(getattr(bill_item, "form", None) or "—"),
-            _p("; ".join(f.message for f in found_row) or "—"),
+            _p(short_remark(found_row)),
         ])
     if len(rows) > 1:
         story.append(_table(rows, [
-            width * 0.08, width * 0.11, width * 0.11, width * 0.14,
-            width * 0.08, width * 0.08, width * 0.07, width * 0.07, width * 0.26,
+            width * 0.09, width * 0.11, width * 0.14, width * 0.14,
+            width * 0.075, width * 0.075, width * 0.075, width * 0.075, width * 0.22,
         ]))
     else:
         story.append(Paragraph("Neither document carries a medicine line.", SMALL))
@@ -319,7 +308,7 @@ def build_pdf(context: ExportContext) -> bytes:
         )
         tpairs += [(None, t.item_id) for t in result.bill.tests if t.item_id not in accounted]
 
-        rows = [["STATUS", "TEST (RX)", "TEST (BILL)", "PANEL", "REMARK"]]
+        rows = [["STATUS", "TEST<br/>Rx", "TEST<br/>Bill", "PANEL", "REMARK"]]
         for rx_id, bill_id in tpairs:
             found_row = [
                 f for f in result.findings
@@ -330,18 +319,18 @@ def build_pdf(context: ExportContext) -> bytes:
                  for f in found_row if f.detail.get("panel") or f.detail.get("resolved_as")),
                 None,
             )
-            remark = "; ".join(f.message for f in found_row)
+            remark = short_remark(found_row)
             if not found_row and rx_id is None and bill_id is not None:
                 remark = "Billed as part of an ordered panel"
             rows.append([
-                _p(_worst(found_row) if found_row else "MATCHES"),
+                _p(status_word(found_row)),
                 _p(getattr(rx_t.get(rx_id or ""), "test_name", None) or "—"),
                 _p(getattr(bill_t.get(bill_id or ""), "test_name", None) or "—"),
                 _p(panel or "—"),
                 _p(remark or "—"),
             ])
         story.append(_table(rows, [
-            width * 0.10, width * 0.20, width * 0.20, width * 0.18, width * 0.32,
+            width * 0.12, width * 0.20, width * 0.20, width * 0.18, width * 0.30,
         ]))
 
     # ---- source pages ----

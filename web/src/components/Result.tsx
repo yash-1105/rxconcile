@@ -77,7 +77,15 @@ function Disclosure({
 }
 
 /** SECTION 1 — the plain-language verdict. No score, no rule codes. */
-function Summary({ result, grouped }: { result: ReconciliationResult; grouped: Grouped }) {
+function Summary({
+  result,
+  grouped,
+  manualChecks,
+}: {
+  result: ReconciliationResult
+  grouped: Grouped
+  manualChecks: number
+}) {
   const head = headline(result, grouped)
   return (
     <section className="rounded border border-ink-200 bg-surface px-6 py-5">
@@ -86,6 +94,13 @@ function Summary({ result, grouped }: { result: ReconciliationResult; grouped: G
         <div className="flex-1">
           <h1 className="t-display text-ink">{head.title}</h1>
           <p className="t-body mt-2 max-w-3xl text-muted">{head.supporting}</p>
+          {/* Must never disappear. A check that did not run is not a check that
+              passed, and the reimbursement section is where the reasons are. */}
+          {manualChecks > 0 ? (
+            <p className="t-small mt-2 text-muted">
+              {manualChecks} {manualChecks === 1 ? 'item needs' : 'items need'} a manual check.
+            </p>
+          ) : null}
         </div>
         {/* Secondary by design. The unit stays lower-case: `.t-micro` upper-cases
             labels, which would render "0.1s" as "0.1S". */}
@@ -259,8 +274,9 @@ export function Result({
   )
 
   const analysis = [...grouped.discrepancies, ...grouped.noted]
-  const unverified = grouped.unverified.length
-  const notRun = grouped.notRun.length
+  // Counted from the reimbursement assessment rather than from finding codes:
+  // that is where a reader can now see the reason for each one.
+  const manualChecks = result.reimbursement?.needs_review_line_count ?? 0
 
   return (
     <div className="space-y-10">
@@ -272,7 +288,7 @@ export function Result({
 
       {/* 1 — SUMMARY */}
       <DocumentGaps result={result} />
-      <Summary result={result} grouped={grouped} />
+      <Summary result={result} grouped={grouped} manualChecks={manualChecks} />
 
       {/* 2 — ANALYSIS */}
       {analysis.length > 0 ? (
@@ -289,50 +305,6 @@ export function Result({
             ))}
           </ul>
         </Section>
-      ) : null}
-
-      {/* Neither of these may be deleted, and neither may be coloured as a
-          finding. One compact line each, expandable. */}
-      {unverified + notRun > 0 ? (
-        <div className="space-y-2.5 rounded border border-ink-200 bg-paper px-5 py-4">
-          {unverified > 0 ? (
-            <Disclosure
-              summary={`${unverified} ${unverified === 1 ? 'value' : 'values'} could not be verified`}
-            >
-              <p className="t-small mb-2 max-w-3xl text-muted">
-                These were checked and could not be concluded either way. No discrepancy is
-                claimed.
-              </p>
-              <ul className="space-y-1">
-                {grouped.unverified.map((finding, index) => (
-                  <li key={`uv-${index}`} className="t-small text-muted">
-                    {say(finding)}
-                    {technical ? (
-                      <span className="t-data ml-2 text-unknown">
-                        {String(finding.detail['basis_method'] ?? finding.rule_code)}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </Disclosure>
-          ) : null}
-          {notRun > 0 ? (
-            <Disclosure summary={`${notRun} ${notRun === 1 ? 'check' : 'checks'} could not run`}>
-              <p className="t-small mb-2 max-w-3xl text-muted">
-                These were not performed, because the documents did not carry the values they
-                need. They are not passes.
-              </p>
-              <ul className="space-y-1">
-                {grouped.notRun.map((finding, index) => (
-                  <li key={`nr-${index}`} className="t-small text-muted">
-                    {say(finding)}
-                  </li>
-                ))}
-              </ul>
-            </Disclosure>
-          ) : null}
-        </div>
       ) : null}
 
       <Section title="Reimbursement">
