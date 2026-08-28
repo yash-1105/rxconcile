@@ -43,14 +43,14 @@ dev: ## Run the API and the web dev server together (API_PORT=8010 to move the A
 	@echo "web  http://localhost:$(WEB_PORT)"
 	@trap 'kill 0' EXIT INT TERM; \
 	$(VENV)/bin/uvicorn rxconcile.main:app --reload --port $(API_PORT) & \
-	(cd web && VITE_API_BASE=http://localhost:$(API_PORT) npm run dev) & \
+	(cd web && API_PORT=$(API_PORT) npm run dev) & \
 	wait
 
 api: ## Run only the API
 	$(VENV)/bin/uvicorn rxconcile.main:app --reload --port $(API_PORT)
 
 web: ## Run only the web dev server
-	cd web && VITE_API_BASE=http://localhost:$(API_PORT) npm run dev
+	cd web && API_PORT=$(API_PORT) npm run dev
 
 # --------------------------------------------------------------------------
 # Checks

@@ -1,6 +1,9 @@
 import type { ApiErrorBody, ReconciliationResult, SampleSummary } from '../types/api'
 
-const BASE_URL = import.meta.env['VITE_API_BASE'] ?? 'http://localhost:8000'
+// Empty means same-origin: requests go to the Vite dev server, which proxies
+// them to the API (see vite.config.ts). Set VITE_API_BASE only to point at an
+// API somewhere else entirely.
+const BASE_URL = import.meta.env['VITE_API_BASE'] ?? ''
 
 export class ApiError extends Error {
   readonly code: string
@@ -22,7 +25,10 @@ async function unwrap<T>(response: Response): Promise<T> {
     body = {
       error_code: `HTTP_${response.status}`,
       message: response.statusText || 'Request failed.',
-      hint: 'Check that the API is running on ' + BASE_URL + ' and try again.',
+      hint:
+        'Could not reach the API. Check it is running — ' +
+        (BASE_URL || 'requests are proxied by the dev server') +
+        ' — and try again.',
     }
   }
   throw new ApiError(body)
