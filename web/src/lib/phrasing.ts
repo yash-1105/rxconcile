@@ -110,6 +110,12 @@ export function phrase(
         strengthOf(bl) ?? 'an unstated strength'
       }`
     case 'RX_NOT_BILLED':
+      // A softened finding must not be worded as a confident one. Saying
+      // "does not appear on the bill" under a banner explaining the bill was
+      // never supplied contradicts the banner and reads as an accusation.
+      if (detail['lab_only_bill'] === true) {
+        return `${nameOf(rx)} was not assessed — this bill carries no medicines`
+      }
       return detail['identified'] === false
         ? 'A prescribed line could not be read, so whether it was dispensed is unknown'
         : `${nameOf(rx)} was prescribed but does not appear on the bill`
@@ -248,4 +254,142 @@ export function headline(result: ReconciliationResult, grouped: Grouped): Headli
         : 'None are serious, but each is worth checking against the source documents.',
     tone: criticals > 0 ? 'problem' : 'warning',
   }
+}
+
+// ---------------------------------------------------------------------------
+// Table remarks
+// ---------------------------------------------------------------------------
+
+/**
+ * The plain-English reason a table row is flagged.
+ *
+ * Presentation only: it reads the rule codes the engine already emitted and
+ * words them. It never decides anything. Rows with nothing wrong get an empty
+ * remark rather than the word "OK", so the eye skips them.
+ */
+export function remark(codes: string[], findings: Finding[]): string {
+  const has = (code: string) => codes.includes(code)
+  if (has('BILL_NOT_PRESCRIBED')) {
+    const found = findings.find((f) => f.rule_code === 'BILL_NOT_PRESCRIBED')
+    return found?.detail['identified'] === false
+      ? 'Billed line could not be read'
+      : 'Not found in prescription'
+  }
+  if (has('RX_NOT_BILLED')) {
+    const found = findings.find((f) => f.rule_code === 'RX_NOT_BILLED')
+    if (found?.detail['lab_only_bill'] === true) return 'Not assessed — no pharmacy bill supplied'
+    if (found?.detail['identified'] === false) return 'Prescribed line could not be read'
+    return 'Not bought'
+  }
+  if (has('SALT_DIFFERENT_CLASS')) return 'Different kind of medicine — likely a misreading'
+  if (has('STRENGTH_MISMATCH')) return 'Strength differs from the prescription'
+  if (has('SCHEDULE_H_UNBACKED')) return 'Prescription-only medicine with nothing backing it'
+  if (has('BRAND_SUBSTITUTION')) return 'Alternate medicine bought — same salt'
+  if (has('FORM_MISMATCH')) return 'Dispensed in a different form'
+  if (has('DUPLICATE_THERAPY')) return 'Same salt appears on more than one line'
+  if (has('QUANTITY_SHORT')) return 'Less dispensed than the course requires'
+  if (has('QUANTITY_EXCESS')) return 'More dispensed than the course requires'
+  if (has('QUANTITY_AMBIGUOUS')) return 'Quantity not verifiable'
+  if (has('STRENGTH_UNIT_UNSTATED')) return 'Strength unit not printed — not verifiable'
+  return ''
+}
+
+/** The same, for a lab test row. */
+export function testRemark(codes: string[], findings: Finding[]): string {
+  const has = (code: string) => codes.includes(code)
+  const softened = (code: string) =>
+    Boolean(findings.find((f) => f.rule_code === code)?.detail['softened_because'])
+  if (has('TEST_NOT_PRESCRIBED')) {
+    return softened('TEST_NOT_PRESCRIBED')
+      ? 'Billed — what was ordered could not be established'
+      : 'Not found in prescription'
+  }
+  if (has('TEST_NOT_BILLED')) {
+    return softened('TEST_NOT_BILLED') ? 'Not assessed — no lab bill supplied' : 'Not done'
+  }
+  if (has('PANEL_PARTIAL')) {
+    const found = findings.find((f) => f.rule_code === 'PANEL_PARTIAL')
+    const missing = (found?.detail['missing_components'] as string[] | undefined) ?? []
+    return `Panel billed incompletely — missing ${missing.join(', ')}`
+  }
+  if (has('TEST_DUPLICATE')) return 'Billed more than once'
+  if (has('TEST_UNRESOLVED')) return 'Not a test this build recognises — not verifiable'
+  return ''
+}
+
+// ---------------------------------------------------------------------------
+// Document completeness
+// ---------------------------------------------------------------------------
+
+export interface DocumentGap {
+  /** What the reader must do something about. */
+  title: string
+  detail: string
+  /** How many lines went unassessed because of it. */
+  count: number
+}
+
+/**
+ * The highest-consequence "we could not check" in the product.
+ *
+ * If a lab-only bill is reconciled against a prescription carrying medicines,
+ * every one of those medicines is unassessed — and a screen reporting no
+ * problems with six medicines nobody examined is worse than no screen. This is
+ * read off findings the engine already emitted and belongs at the TOP of the
+ * results, never inside the collapsed footnotes.
+ */
+export function documentGaps(result: ReconciliationResult): DocumentGap[] {
+  const gaps: DocumentGap[] = []
+
+  const unassessedMedicines = result.findings.filter(
+    (f) => f.rule_code === 'RX_NOT_BILLED' && f.detail['lab_only_bill'] === true,
+  )
+  if (unassessedMedicines.length > 0) {
+    gaps.push({
+      title: 'The pharmacy bill was not supplied',
+      detail:
+        `This bill carries only lab tests and no medicines at all, so ${unassessedMedicines.length} ` +
+        `prescribed ${unassessedMedicines.length === 1 ? 'medicine was' : 'medicines were'} not ` +
+        'assessed. Nothing below says they were dispensed correctly — they were not checked. ' +
+        'Upload the pharmacy bill to compare them.',
+      count: unassessedMedicines.length,
+    })
+  }
+
+  const unassessedTests = result.findings.filter(
+    (f) =>
+      f.rule_code === 'TEST_NOT_BILLED' &&
+      typeof f.detail['softened_because'] === 'string' &&
+      (f.detail['softened_because'] as string).includes('only medicines'),
+  )
+  if (unassessedTests.length > 0) {
+    gaps.push({
+      title: 'The lab bill was not supplied',
+      detail:
+        `This bill carries only medicines and no lab lines, so ${unassessedTests.length} ordered ` +
+        `${unassessedTests.length === 1 ? 'test was' : 'tests were'} not assessed. Lab work is ` +
+        'commonly billed on a separate document.',
+      count: unassessedTests.length,
+    })
+  }
+
+  const ordersUnreadable = result.findings.find(
+    (f) =>
+      f.rule_code === 'CHECK_UNAVAILABLE' &&
+      (f.detail['missing'] as string[] | undefined)?.some((m) =>
+        m.includes('readable list of ordered investigations'),
+      ),
+  )
+  if (ordersUnreadable) {
+    gaps.push({
+      title: 'The investigations ordered could not be read',
+      detail:
+        'The prescription has an investigations section that could not be read, so what was ' +
+        'ordered is unknown. Billed tests below are neither confirmed as ordered nor reported ' +
+        'as unordered.',
+      count: (result.bill.tests ?? []).length,
+    })
+  }
+
+  return gaps
 }

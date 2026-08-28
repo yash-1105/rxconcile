@@ -72,6 +72,31 @@ export interface BilledItem {
   confidence: number
 }
 
+export interface PrescribedTest {
+  item_id: string
+  /** Never nulled, deliberately: the evidence a reviewer checks against the image. */
+  raw_text: string
+  test_name: string | null
+  panel: string | null
+  urgency: string | null
+  bbox: BBox | null
+  agreement: Agreement
+  confidence: number
+}
+
+export interface BilledTest {
+  item_id: string
+  raw_text: string
+  test_name: string | null
+  panel: string | null
+  quantity: number | null
+  unit_price: string | null
+  line_total: string | null
+  bbox: BBox | null
+  agreement: Agreement
+  confidence: number
+}
+
 export interface Prescription {
   patient_name: string | null
   patient_age: string | null
@@ -82,6 +107,16 @@ export interface Prescription {
   date_issued: string | null
   diagnosis_text: string | null
   items: PrescribedItem[]
+  tests: PrescribedTest[]
+  /**
+   * Whether the page carries an investigations section at all.
+   *
+   * The three states are NOT interchangeable and must never render alike:
+   * `false` means no tests were ordered; `true` with an empty `tests` array
+   * means tests were ordered and could not be read; `null` means the model
+   * could not tell. Only the first of those is a clean result.
+   */
+  investigations_present: boolean | null
   overall_legibility: number
   /** Item count each extraction run returned. Differing values mean instability. */
   run_item_counts: number[]
@@ -97,6 +132,8 @@ export interface PharmacyBill {
   bill_date: string | null
   patient_name: string | null
   items: BilledItem[]
+  /** Lab lines. A lab invoice populates this with `items` empty, and vice versa. */
+  tests: BilledTest[]
   subtotal: string | null
   tax_total: string | null
   grand_total: string | null
@@ -146,6 +183,9 @@ export interface ReconciliationResult {
   matched_pairs: MatchedPair[]
   unmatched_prescribed: string[]
   unmatched_billed: string[]
+  matched_tests: MatchedPair[]
+  unmatched_prescribed_tests: string[]
+  unmatched_billed_tests: string[]
   prescription: Prescription
   bill: PharmacyBill
   processing_ms: number

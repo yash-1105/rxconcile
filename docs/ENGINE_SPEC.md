@@ -270,5 +270,9 @@ lab-only bill reports every medicine as undispensed. Two symmetric guards:
 | bill has lab lines and no medicines | `RX_NOT_BILLED` softens to warning — a lab bill is not evidence a medicine went undispensed |
 | bill has medicines and no lab lines | `TEST_NOT_BILLED` softens to warning — a pharmacy bill says nothing about whether a test was performed |
 
-Each records a `CHECK_UNAVAILABLE` naming the document that was not supplied.
+The medicine-side guard records a paired `CHECK_UNAVAILABLE` naming the missing
+document; the lab-side one carries its reason on the softened finding itself.
+The results screen reads either and states it at the top of the page, above the
+verdict — a reviewer must not be shown a clean-looking screen for lines nobody
+examined.
 
