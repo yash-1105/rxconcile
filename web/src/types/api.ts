@@ -194,3 +194,40 @@ export interface ItemCountUnstableDetail {
   run_item_counts: number[]
   unstable_lines: string[]
 }
+
+
+// --------------------------------------------------------------------------
+// Demo session and scan history
+// --------------------------------------------------------------------------
+
+export interface DemoSession {
+  token: string
+  email: string
+  name: string
+  employee_number: string
+  role: 'employee' | 'admin'
+}
+
+/** A history row. The full result is fetched only when a row is opened. */
+export interface ScanSummary {
+  id: number
+  created_at: string
+  employee_name: string
+  employee_number: string
+  user_email: string
+  role: string
+  prescription_filename: string
+  bill_filename: string
+  verdict: Verdict
+  discrepancy_count: number
+  critical_count: number
+  warning_count: number
+  /** Counted separately and never folded into discrepancies. */
+  checks_unavailable_count: number
+  processing_ms: number
+  extraction_runs: number
+}
+
+export interface ScanDetail extends ScanSummary {
+  result: ReconciliationResult
+}

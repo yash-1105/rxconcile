@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import { ApiError, fetchSamples, reconcile, reconcileSample, sampleImageUrl } from './api/client'
+import {
+  ApiError,
+  fetchSamples,
+  reconcile,
+  reconcileSample,
+  sampleImageUrl,
+  saveScan,
+  setToken,
+} from './api/client'
 import {
   clearSession,
   loadSession,
@@ -16,7 +24,7 @@ import { Dictionary } from './pages/Dictionary'
 import { History } from './pages/History'
 import { HowItWorks } from './pages/HowItWorks'
 import { Overview } from './pages/Overview'
-import type { ReconciliationResult, SampleSummary } from './types/api'
+import type { ReconciliationResult, SampleSummary, ScanDetail } from './types/api'
 
 type Stage = 'upload' | 'processing' | 'result'
 
@@ -26,6 +34,9 @@ interface Images {
 }
 
 const restored = loadSession()
+// The token is what the server trusts; the stored session is only a convenience
+// for redrawing the shell without a round trip.
+if (restored?.token) setToken(restored.token)
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(restored)
@@ -44,6 +55,9 @@ export default function App() {
   // the desk is not always the person the account belongs to.
   const [employeeName, setEmployeeName] = useState(restored?.name ?? '')
   const [employeeNumber, setEmployeeNumber] = useState(restored?.employeeNumber ?? '')
+  /** A reopened history record is read-only: it is a record of what was reported. */
+  const [readOnly, setReadOnly] = useState(false)
+  const [historyKey, setHistoryKey] = useState(0)
 
   useEffect(() => {
     fetchSamples()
@@ -56,6 +70,7 @@ export default function App() {
       <Login
         onSignIn={(next) => {
           saveSession(next)
+          setToken(next.token)
           setSession(next)
           setEmployeeName(next.name)
           setEmployeeNumber(next.employeeNumber)
@@ -67,6 +82,7 @@ export default function App() {
 
   const signOut = () => {
     clearSession()
+    setToken(null)
     setSession(null)
     setResult(null)
     setStage('upload')
@@ -79,16 +95,46 @@ export default function App() {
   const goToNew = () => {
     setView('new')
     setStage('upload')
+    setReadOnly(false)
   }
 
-  const run = async (task: () => Promise<ReconciliationResult>, next: Images) => {
+  /** Reopen a stored scan exactly as it was reported. */
+  const openScan = (detail: ScanDetail) => {
+    setResult(detail.result)
+    setImages({ prescription: null, bill: null })
+    setReadOnly(true)
+    setStage('result')
+    setView('new')
+  }
+
+  const run = async (
+    task: () => Promise<ReconciliationResult>,
+    next: Images,
+    filenames: { prescription: string; bill: string },
+  ) => {
     setError(null)
+    setReadOnly(false)
     setStage('processing')
     try {
       const outcome = await task()
       setImages(next)
       setResult(outcome)
       setStage('result')
+      // Recorded after the fact. A failed save must not lose the result the
+      // user is already looking at, so it is reported and otherwise ignored.
+      try {
+        await saveScan({
+          employee_name: employeeName,
+          employee_number: employeeNumber,
+          prescription_filename: filenames.prescription,
+          bill_filename: filenames.bill,
+          extraction_runs: runs,
+          result: outcome,
+        })
+        setHistoryKey((key) => key + 1)
+      } catch {
+        setError(new Error('The result is shown below but could not be saved to history.'))
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error(String(caught)))
       setStage('upload')
@@ -97,18 +143,26 @@ export default function App() {
 
   const onReconcile = () => {
     if (!prescriptionFile || !billFile) return
-    void run(() => reconcile(prescriptionFile, billFile, runs), {
-      prescription: URL.createObjectURL(prescriptionFile),
-      bill: URL.createObjectURL(billFile),
-    })
+    void run(
+      () => reconcile(prescriptionFile, billFile, runs),
+      {
+        prescription: URL.createObjectURL(prescriptionFile),
+        bill: URL.createObjectURL(billFile),
+      },
+      { prescription: prescriptionFile.name, bill: billFile.name },
+    )
   }
 
   const onSample = (sample: SampleSummary) => {
     setView('new')
-    void run(() => reconcileSample(sample.sample_id, runs), {
-      prescription: sampleImageUrl(sample.sample_id, 'prescription'),
-      bill: sampleImageUrl(sample.sample_id, 'bill'),
-    })
+    void run(
+      () => reconcileSample(sample.sample_id, runs),
+      {
+        prescription: sampleImageUrl(sample.sample_id, 'prescription'),
+        bill: sampleImageUrl(sample.sample_id, 'bill'),
+      },
+      { prescription: sample.prescription, bill: sample.bill },
+    )
   }
 
   const readyToRun =
@@ -184,9 +238,11 @@ export default function App() {
           result={result}
           prescriptionImage={images.prescription}
           billImage={images.bill}
+          readOnly={readOnly}
           onReset={() => {
             setStage('upload')
             setResult(null)
+            setReadOnly(false)
             setPrescriptionFile(null)
             setBillFile(null)
           }}
@@ -196,9 +252,9 @@ export default function App() {
   )
 
   const pages: Record<View, React.ReactNode> = {
-    overview: <Overview session={session} onStart={goToNew} />,
+    overview: <Overview key={historyKey} session={session} onStart={goToNew} onOpen={openScan} />,
     new: newReconciliation,
-    history: <History session={session} onStart={goToNew} />,
+    history: <History key={historyKey} session={session} onStart={goToNew} onOpen={openScan} />,
     dictionary: <Dictionary />,
     how: <HowItWorks />,
   }

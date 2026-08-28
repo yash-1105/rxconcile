@@ -175,11 +175,14 @@ export function Result({
   prescriptionImage,
   billImage,
   onReset,
+  readOnly = false,
 }: {
   result: ReconciliationResult
   prescriptionImage: string | null
   billImage: string | null
   onReset: () => void
+  /** True when reopened from history: a record of what was reported, not a new run. */
+  readOnly?: boolean
 }) {
   const [technical, setTechnical] = useState(false)
   const [highlight, setHighlight] = useState<{ side: DocSide; itemId: string } | null>(null)
@@ -236,6 +239,12 @@ export function Result({
 
   return (
     <div className="space-y-10">
+      {readOnly ? (
+        <p className="t-small rounded bg-ink-100 px-4 py-2.5 text-muted">
+          Reopened from history. This is the result exactly as it was reported at the time;
+          the source images are not stored, so the audit panel has no page to show.
+        </p>
+      ) : null}
       <VerdictHeader result={result} grouped={grouped} technical={technical} />
 
       {grouped.discrepancies.length > 0 ? (
@@ -341,9 +350,9 @@ export function Result({
         <button
           type="button"
           onClick={onReset}
-          className="rounded bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+          className="rounded bg-seal px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
         >
-          Reconcile another
+          {readOnly ? 'Back to a new reconciliation' : 'Reconcile another'}
         </button>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-500">
           <input

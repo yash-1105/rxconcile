@@ -42,36 +42,28 @@ export interface Session {
   name: string
   employeeNumber: string
   role: Role
+  /**
+   * Issued by the server. This, not the role below, is what the API trusts —
+   * the server looks the role up from the email the token was bound to, so a
+   * client claiming 'admin' here changes nothing about what it can see.
+   */
+  token: string
 }
 
 const STORAGE_KEY = 'rxconcile.demo-session'
-
-export function authenticate(email: string, password: string): Session | null {
-  const match = DEMO_ACCOUNTS.find(
-    (account) =>
-      account.email.toLowerCase() === email.trim().toLowerCase() &&
-      account.password === password,
-  )
-  if (!match) return null
-  return {
-    email: match.email,
-    name: match.name,
-    employeeNumber: match.employeeNumber,
-    role: match.role,
-  }
-}
 
 export function loadSession(): Session | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<Session>
-    if (!parsed.email || !parsed.role) return null
+    if (!parsed.email || !parsed.role || !parsed.token) return null
     return {
       email: parsed.email,
       name: parsed.name ?? parsed.email,
       employeeNumber: parsed.employeeNumber ?? '',
       role: parsed.role,
+      token: parsed.token,
     }
   } catch {
     return null

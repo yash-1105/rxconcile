@@ -1,4 +1,11 @@
-import type { ApiErrorBody, ReconciliationResult, SampleSummary } from '../types/api'
+import type {
+  ApiErrorBody,
+  DemoSession,
+  ReconciliationResult,
+  SampleSummary,
+  ScanDetail,
+  ScanSummary,
+} from '../types/api'
 
 // Empty means same-origin: requests go to the Vite dev server, which proxies
 // them to the API (see vite.config.ts). Set VITE_API_BASE only to point at an
@@ -67,4 +74,77 @@ export async function reconcileSample(
 
 export function sampleImageUrl(sampleId: string, which: 'prescription' | 'bill'): string {
   return `${BASE_URL}/api/samples/${encodeURIComponent(sampleId)}/image/${which}`
+}
+
+
+// --------------------------------------------------------------------------
+// Demo session and scan history
+// --------------------------------------------------------------------------
+
+let token: string | null = null
+
+export function setToken(next: string | null): void {
+  token = next
+}
+
+/**
+ * The token is all the server is told. It never receives a role from here —
+ * the role is looked up server-side from the email the token was issued for,
+ * because a role the caller supplies is not a filter.
+ */
+function authHeaders(): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export async function openDemoSession(
+  email: string,
+  password: string,
+): Promise<DemoSession> {
+  return unwrap<DemoSession>(
+    await fetch(`${BASE_URL}/api/demo/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }),
+  )
+}
+
+export interface ScanCreate {
+  employee_name: string
+  employee_number: string
+  prescription_filename: string
+  bill_filename: string
+  extraction_runs: number
+  result: ReconciliationResult
+}
+
+export async function saveScan(payload: ScanCreate): Promise<ScanSummary> {
+  return unwrap<ScanSummary>(
+    await fetch(`${BASE_URL}/api/scans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+
+export async function listScans(): Promise<ScanSummary[]> {
+  return unwrap<ScanSummary[]>(
+    await fetch(`${BASE_URL}/api/scans`, { headers: authHeaders() }),
+  )
+}
+
+export async function getScan(id: number): Promise<ScanDetail> {
+  return unwrap<ScanDetail>(
+    await fetch(`${BASE_URL}/api/scans/${id}`, { headers: authHeaders() }),
+  )
+}
+
+export async function deleteScan(id: number): Promise<void> {
+  await unwrap<{ deleted: number }>(
+    await fetch(`${BASE_URL}/api/scans/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }),
+  )
 }

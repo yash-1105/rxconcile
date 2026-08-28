@@ -15,19 +15,22 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Final
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from sqlmodel import Session, col, delete, select
 from starlette.responses import Response
 
 from rxconcile.config import settings
+from rxconcile.demo_auth import DemoUser, issue_token, user_from_token, verify_credentials
 from rxconcile.extract import extract_bill_async, extract_prescription_async
 from rxconcile.extract.errors import (
     ExtractionError,
@@ -38,6 +41,7 @@ from rxconcile.gcp import health_snapshot
 from rxconcile.gcp.errors import ModelResolutionError, VertexUnavailableError
 from rxconcile.models import PharmacyBill, Prescription, ReconciliationResult
 from rxconcile.reconcile import reconcile
+from rxconcile.store import ScanRecord, get_session, summarise
 
 logger: Final = logging.getLogger(__name__)
 
@@ -368,6 +372,220 @@ SAMPLES: Final[tuple[SampleSummary, ...]] = (
         note="Typed text, not handwriting. Exercises the pipeline, not accuracy.",
     ),
 )
+
+
+# --------------------------------------------------------------------------
+# Demo identity
+#
+# NOT AUTHENTICATION. See rxconcile/demo_auth.py -- credentials and signing
+# secret are both committed. The only property this buys is that the server
+# decides who the caller is from a token it issued, rather than believing a role
+# the caller asserts. A caller-supplied role would be no filter at all.
+# --------------------------------------------------------------------------
+
+
+class DemoSessionRequest(BaseModel):
+    email: str
+    password: str
+
+
+class DemoSessionResponse(BaseModel):
+    token: str
+    email: str
+    name: str
+    employee_number: str
+    role: str
+
+
+def current_user(authorization: str | None = Header(default=None)) -> DemoUser:
+    """Resolve the caller from the bearer token. The role is never taken from input."""
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    user = user_from_token(token) if token else None
+    if user is None:
+        raise ApiError(
+            status_code=401,
+            error_code="NOT_SIGNED_IN",
+            message="No valid demo session was presented.",
+            hint="Sign in on the demo screen again; the session ends when the tab closes.",
+        )
+    return user
+
+
+@app.post("/api/demo/session")
+async def demo_session(request: DemoSessionRequest) -> DemoSessionResponse:
+    """Exchange demo credentials for a token bound to the email."""
+    user = verify_credentials(request.email, request.password)
+    if user is None:
+        raise ApiError(
+            status_code=401,
+            error_code="BAD_DEMO_CREDENTIALS",
+            message="Those demo credentials were not recognised.",
+            hint="Use one of the fill-in buttons on the sign-in screen.",
+        )
+    return DemoSessionResponse(
+        token=issue_token(user.email),
+        email=user.email,
+        name=user.name,
+        employee_number=user.employee_number,
+        role=user.role,
+    )
+
+
+# --------------------------------------------------------------------------
+# Scan history
+# --------------------------------------------------------------------------
+
+
+class ScanCreate(BaseModel):
+    """What the client supplies when saving a completed reconciliation.
+
+    Deliberately absent: user_email and role. Both are taken from the token, so
+    a caller cannot file a scan under someone else or claim to be an admin.
+    """
+
+    employee_name: str = Field(min_length=1)
+    employee_number: str = Field(min_length=1)
+    prescription_filename: str = ""
+    bill_filename: str = ""
+    extraction_runs: int = 0
+    result: dict[str, Any]
+
+
+class ScanSummary(BaseModel):
+    """A history row. The full result is fetched only when a row is opened."""
+
+    id: int
+    created_at: str
+    employee_name: str
+    employee_number: str
+    user_email: str
+    role: str
+    prescription_filename: str
+    bill_filename: str
+    verdict: str
+    discrepancy_count: int
+    critical_count: int
+    warning_count: int
+    checks_unavailable_count: int
+    processing_ms: int
+    extraction_runs: int
+
+
+class ScanDetail(ScanSummary):
+    result: dict[str, Any]
+
+
+def _summary(record: ScanRecord) -> ScanSummary:
+    return ScanSummary(
+        id=record.id or 0,
+        created_at=record.created_at.isoformat(),
+        employee_name=record.employee_name,
+        employee_number=record.employee_number,
+        user_email=record.user_email,
+        role=record.role,
+        prescription_filename=record.prescription_filename,
+        bill_filename=record.bill_filename,
+        verdict=record.verdict,
+        discrepancy_count=record.discrepancy_count,
+        critical_count=record.critical_count,
+        warning_count=record.warning_count,
+        checks_unavailable_count=record.checks_unavailable_count,
+        processing_ms=record.processing_ms,
+        extraction_runs=record.extraction_runs,
+    )
+
+
+@app.post("/api/scans")
+async def create_scan(
+    payload: ScanCreate,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> ScanSummary:
+    """Save a completed reconciliation against the signed-in account."""
+    counts = summarise(payload.result)
+    record = ScanRecord(
+        employee_name=payload.employee_name,
+        employee_number=payload.employee_number,
+        user_email=user.email,
+        role=user.role,
+        prescription_filename=payload.prescription_filename,
+        bill_filename=payload.bill_filename,
+        verdict=str(payload.result.get("verdict", "unknown")),
+        result_json=json.dumps(payload.result),
+        processing_ms=int(payload.result.get("processing_ms") or 0),
+        extraction_runs=payload.extraction_runs,
+        **counts,
+    )
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    return _summary(record)
+
+
+@app.get("/api/scans")
+async def list_scans(
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> list[ScanSummary]:
+    """List scans. An employee sees only their own; an admin sees every record.
+
+    The role comes from the token, never from the request, so narrowing it is
+    not something the caller can opt out of.
+    """
+    statement = select(ScanRecord).order_by(col(ScanRecord.created_at).desc())
+    if user.role != "admin":
+        statement = statement.where(ScanRecord.user_email == user.email)
+    return [_summary(record) for record in session.exec(statement).all()]
+
+
+@app.get("/api/scans/{scan_id}")
+async def get_scan(
+    scan_id: int,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> ScanDetail:
+    """One scan in full, including the stored result."""
+    record = session.get(ScanRecord, scan_id)
+    if record is None or (user.role != "admin" and record.user_email != user.email):
+        # Same response either way: an employee probing ids learns nothing about
+        # whether a record belongs to someone else.
+        raise ApiError(
+            status_code=404,
+            error_code="SCAN_NOT_FOUND",
+            message=f"No scan with id {scan_id}.",
+            hint="Open it from the History screen, which lists the scans you can see.",
+        )
+    summary = _summary(record)
+    return ScanDetail(**summary.model_dump(), result=json.loads(record.result_json))
+
+
+@app.delete("/api/scans/{scan_id}")
+async def delete_scan(
+    scan_id: int,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    """Delete a scan. Admin only."""
+    if user.role != "admin":
+        raise ApiError(
+            status_code=403,
+            error_code="NOT_PERMITTED_IN_DEMO",
+            message="Only the admin demo account can delete scans.",
+            hint="Sign in with admin@gmail.com to remove a record.",
+        )
+    record = session.get(ScanRecord, scan_id)
+    if record is None:
+        raise ApiError(
+            status_code=404,
+            error_code="SCAN_NOT_FOUND",
+            message=f"No scan with id {scan_id}.",
+            hint="It may already have been deleted.",
+        )
+    session.exec(delete(ScanRecord).where(col(ScanRecord.id) == scan_id))
+    session.commit()
+    return {"deleted": scan_id}
 
 
 @app.get("/health")

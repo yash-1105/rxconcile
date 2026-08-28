@@ -31,3 +31,6 @@ npm-debug.log*
 
 # Extraction cache
 .cache/
+
+# Local demo database
+api/data/

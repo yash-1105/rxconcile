@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { authenticate, DEMO_ACCOUNTS, type Session } from '../auth/session'
+import { openDemoSession } from '../api/client'
+import { DEMO_ACCOUNTS, type Session } from '../auth/session'
 import { SpineRule } from './Spine'
 
 export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
@@ -7,15 +8,27 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const submit = (event: React.FormEvent) => {
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    const session = authenticate(email, password)
-    if (!session) {
+    setBusy(true)
+    try {
+      // The server issues the token and decides the role; nothing here does.
+      const demo = await openDemoSession(email, password)
+      setError(null)
+      onSignIn({
+        email: demo.email,
+        name: demo.name,
+        employeeNumber: demo.employee_number,
+        role: demo.role,
+        token: demo.token,
+      })
+    } catch {
       setError('Those demo credentials were not recognised. Use one of the buttons below.')
-      return
+    } finally {
+      setBusy(false)
     }
-    setError(null)
-    onSignIn(session)
   }
 
   return (
@@ -37,7 +50,7 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
           <SpineRule className="hidden self-stretch md:block" />
 
           <section className="md:pl-12">
-            <form onSubmit={submit} className="rounded bg-surface p-6">
+            <form onSubmit={(event) => void submit(event)} className="rounded bg-surface p-6">
               <h2 className="t-title text-ink">Demo access</h2>
               <p className="t-small mt-1 text-muted">Not a secure login.</p>
 
@@ -69,9 +82,10 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
 
               <button
                 type="submit"
-                className="mt-5 w-full rounded bg-seal px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                disabled={busy}
+                className="mt-5 w-full rounded bg-seal px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
               >
-                Continue
+                {busy ? 'Signing in…' : 'Continue'}
               </button>
 
               {/* The credentials are on the screen on purpose: someone demoing
