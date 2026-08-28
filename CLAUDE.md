@@ -83,6 +83,14 @@ comment naming why, **even when nothing in this codebase imports them.** `reques
 with `The requests library is not installed`. **Do not prune the dependency list based on static
 import analysis alone** — verify with `make smoke`, which exercises real credential refresh.
 
+### 8. The demo login is labelled a demo, everywhere
+Credentials are hardcoded and readable by anyone who opens devtools, and role filtering happens
+client-side. **It is not access control.** A persistent, quiet marker in the UI must say so, on
+every screen, and it must never be described as security in any copy, README line or code comment.
+
+Write "demo login", never "sign in securely". Write "view filtering", never "permissions". If a
+sentence would mislead a client into thinking their data is protected here, it is wrong.
+
 ---
 
 ## DEFAULT: commit and push at the end of every prompt
@@ -96,12 +104,21 @@ or unverified, **stop and say so instead of committing.** Report what is uncommi
 
 ## SCOPE RULE
 
-**Do not add features that were not asked for.** No auth, no database, no user accounts, no deployment
-config, no Docker — unless explicitly requested. When a task is ambiguous, implement the smaller thing
-and ask.
+**Do not add features that were not asked for.** No deployment config, no Docker, no network
+exposure — unless explicitly requested. When a task is ambiguous, implement the smaller thing and
+ask.
 
-**`/health` is not an endpoint yet.** `health_snapshot()` in `api/rxconcile/gcp/health.py` returns the
-data; prompt 6 wraps it in a route. **Do not add an HTTP layer before then.**
+**AMENDED (demo).** A demo authentication layer and local persistence are now in scope, **for
+demonstration only**. Specifically permitted: SQLite via SQLModel for scan history, a hardcoded
+two-account demo login, and role-based view filtering.
+
+**STILL FORBIDDEN:** real user registration, password hashing presented as security,
+network-exposed deployment config, Docker, and any claim in the UI or docs that this
+authentication is secure.
+
+This amendment adds a shell around the product; it changes nothing about the product. Hard rules
+1–7 stand in full — the LLM still extracts and never judges, nothing is guessed, and a check that
+could not run must never render as a check that passed.
 
 ---
 
