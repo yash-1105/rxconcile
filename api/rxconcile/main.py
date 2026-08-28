@@ -31,12 +31,14 @@ from starlette.responses import Response
 
 from rxconcile.config import settings
 from rxconcile.demo_auth import DemoUser, issue_token, user_from_token, verify_credentials
+from rxconcile.export import ExportContext, build_json, build_pdf, build_xlsx
 from rxconcile.extract import extract_bill_async, extract_prescription_async
 from rxconcile.extract.errors import (
     ExtractionError,
     ImageTooLargeError,
     UnreadableImageError,
 )
+from rxconcile.extract.preprocess import prepare_image
 from rxconcile.gcp import health_snapshot
 from rxconcile.gcp.errors import ModelResolutionError, VertexUnavailableError
 from rxconcile.models import PharmacyBill, Prescription, ReconciliationResult
@@ -469,6 +471,10 @@ class ScanSummary(BaseModel):
     critical_count: int
     warning_count: int
     checks_unavailable_count: int
+    #: Reimbursement supported by the prescription. Derived from result_json on
+    #: read rather than stored, so it can never drift from the result.
+    eligible_total: str = "0"
+    currency: str = "INR"
     processing_ms: int
     extraction_runs: int
 
@@ -478,6 +484,13 @@ class ScanDetail(ScanSummary):
 
 
 def _summary(record: ScanRecord) -> ScanSummary:
+    # Derived on read from the stored result, never written independently, so a
+    # summary column cannot drift from the result it describes.
+    money: dict[str, Any] = {}
+    try:
+        money = json.loads(record.result_json).get("reimbursement") or {}
+    except ValueError:
+        money = {}
     return ScanSummary(
         id=record.id or 0,
         created_at=record.created_at.isoformat(),
@@ -492,18 +505,64 @@ def _summary(record: ScanRecord) -> ScanSummary:
         critical_count=record.critical_count,
         warning_count=record.warning_count,
         checks_unavailable_count=record.checks_unavailable_count,
+        eligible_total=str(money.get("eligible_total", "0")),
+        currency=str(money.get("currency", "INR")),
         processing_ms=record.processing_ms,
         extraction_runs=record.extraction_runs,
     )
 
 
+def _prepared(raw: bytes | None) -> bytes | None:
+    """Preprocess a page the same way extraction did, or give up quietly.
+
+    The PREPROCESSED bytes are what gets stored: bounding boxes are normalised
+    against those dimensions, so a highlight only lands correctly on the image
+    the model actually saw. A page that will not preprocess must never cost a
+    caller their saved result, so failure returns None.
+    """
+    if not raw:
+        return None
+    try:
+        return prepare_image(raw).data
+    except Exception:  # noqa: BLE001 - storing pages is best-effort
+        logger.warning("could not preprocess a page for storage", exc_info=True)
+        return None
+
+
 @app.post("/api/scans")
 async def create_scan(
-    payload: ScanCreate,
+    payload_json: str = Form(..., alias="payload"),
+    prescription: UploadFile | None = File(default=None),
+    bill: UploadFile | None = File(default=None),
+    sample_id: str | None = Form(default=None),
     user: DemoUser = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> ScanSummary:
-    """Save a completed reconciliation against the signed-in account."""
+    """Save a completed reconciliation, with the pages it was run against.
+
+    Multipart rather than JSON because the source pages travel with it. They
+    are optional: a save must not fail for want of an image. When a bundled
+    sample was used the client sends ``sample_id`` instead of the files, and
+    the pages are read from disk here.
+    """
+    try:
+        payload = ScanCreate.model_validate_json(payload_json)
+    except ValueError as exc:
+        raise ApiError(
+            status_code=422,
+            error_code="INVALID_PAYLOAD",
+            message="The scan payload could not be read.",
+            hint="Send the ScanCreate object as a JSON string in the 'payload' field.",
+        ) from exc
+
+    rx_bytes = await prescription.read() if prescription is not None else None
+    bill_bytes = await bill.read() if bill is not None else None
+    if sample_id and not (rx_bytes or bill_bytes):
+        sample = next((s for s in SAMPLES if s.sample_id == sample_id), None)
+        if sample is not None:
+            rx_bytes = (SAMPLES_DIR / sample.prescription).read_bytes()
+            bill_bytes = (SAMPLES_DIR / sample.bill).read_bytes()
+
     counts = summarise(payload.result)
     record = ScanRecord(
         employee_name=payload.employee_name,
@@ -514,6 +573,8 @@ async def create_scan(
         bill_filename=payload.bill_filename,
         verdict=str(payload.result.get("verdict", "unknown")),
         result_json=json.dumps(payload.result),
+        prescription_image=_prepared(rx_bytes),
+        bill_image=_prepared(bill_bytes),
         processing_ms=int(payload.result.get("processing_ms") or 0),
         extraction_runs=payload.extraction_runs,
         **counts,
@@ -559,6 +620,111 @@ async def get_scan(
         )
     summary = _summary(record)
     return ScanDetail(**summary.model_dump(), result=json.loads(record.result_json))
+
+
+EXPORTS: Final[dict[str, tuple[str, str]]] = {
+    "pdf": ("application/pdf", "pdf"),
+    "xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+    "json": ("application/json", "json"),
+}
+
+
+def _export_context(record: ScanRecord) -> ExportContext:
+    """Rebuild a report's inputs from a stored scan.
+
+    The stored blob is validated here rather than trusted: a record written
+    before a schema addition is missing fields, and pydantic fills those with
+    the same defaults a fresh result would carry.
+    """
+    try:
+        result = ReconciliationResult.model_validate(json.loads(record.result_json))
+    except ValueError as exc:
+        raise ApiError(
+            status_code=422,
+            error_code="EXPORT_UNAVAILABLE",
+            message="This record cannot be exported: its stored result no longer validates.",
+            hint="Re-run the reconciliation to produce an exportable record.",
+        ) from exc
+    return ExportContext(
+        result=result,
+        employee_name=record.employee_name,
+        employee_number=record.employee_number,
+        created_at=record.created_at,
+        prescription_filename=record.prescription_filename,
+        bill_filename=record.bill_filename,
+        scan_id=record.id,
+        extraction_runs=record.extraction_runs,
+        prescription_image=record.prescription_image,
+        bill_image=record.bill_image,
+    )
+
+
+def _owned_scan(scan_id: int, user: DemoUser, session: Session) -> ScanRecord:
+    record = session.get(ScanRecord, scan_id)
+    if record is None or (user.role != "admin" and record.user_email != user.email):
+        # Same response either way: an employee probing ids learns nothing
+        # about whether a record belongs to someone else.
+        raise ApiError(
+            status_code=404,
+            error_code="SCAN_NOT_FOUND",
+            message=f"No scan with id {scan_id}.",
+            hint="Call GET /api/scans for the records visible to this account.",
+        )
+    return record
+
+
+@app.get("/api/scans/{scan_id}/image/{which}")
+async def scan_image(
+    scan_id: int,
+    which: str,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> Response:
+    """A stored source page, as the extractor saw it after preprocessing."""
+    record = _owned_scan(scan_id, user, session)
+    data = record.prescription_image if which == "prescription" else record.bill_image
+    if which not in {"prescription", "bill"} or data is None:
+        raise ApiError(
+            status_code=404,
+            error_code="IMAGE_NOT_STORED",
+            message="That page was not stored with this scan.",
+            hint="Scans recorded before source pages were kept have no image to show.",
+        )
+    return Response(content=data, media_type=record.image_media_type)
+
+
+@app.get("/api/scans/{scan_id}/export.{fmt}")
+async def export_scan(
+    scan_id: int,
+    fmt: str,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Export one scan as PDF, Excel or JSON.
+
+    Every format carries the same disclaimer the screen does, and every one
+    reports what could NOT be checked. A report outlives the session it came
+    from; omitting that would let a later reader assume everything was
+    examined.
+    """
+    if fmt not in EXPORTS:
+        raise ApiError(
+            status_code=404,
+            error_code="UNKNOWN_FORMAT",
+            message=f"{fmt!r} is not an export format.",
+            hint=f"Use one of: {', '.join(sorted(EXPORTS))}.",
+        )
+    record = _owned_scan(scan_id, user, session)
+    context = _export_context(record)
+    builder = {"pdf": build_pdf, "xlsx": build_xlsx, "json": build_json}[fmt]
+    media_type, suffix = EXPORTS[fmt]
+    stamp = record.created_at.strftime("%Y%m%d-%H%M")
+    filename = f"rxconcile-{record.id}-{stamp}.{suffix}"
+    return Response(
+        content=builder(context),
+        media_type=media_type,
+        headers={"content-disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.delete("/api/scans/{scan_id}")

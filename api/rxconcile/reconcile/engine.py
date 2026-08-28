@@ -59,6 +59,7 @@ from rxconcile.normalize.matcher import entry_for
 from rxconcile.normalize.units import strengths_equal
 from rxconcile.reconcile._findings import finding, unavailable
 from rxconcile.reconcile.lab import reconcile_tests
+from rxconcile.reconcile.reimbursement import assess
 
 logger: Final = logging.getLogger(__name__)
 
@@ -1134,6 +1135,12 @@ def reconcile(
         unmatched_prescribed=unmatched_rx,
         unmatched_billed=unmatched_bill,
         canonical=canonical,
+        reimbursement=assess(
+            bill,
+            findings,
+            matched_billed_ids={p.billed_id for p in pairs}
+            | {p.billed_id for p in lab.matched},
+        ),
         matched_tests=lab.matched,
         unmatched_prescribed_tests=lab.unmatched_prescribed,
         unmatched_billed_tests=lab.unmatched_billed,

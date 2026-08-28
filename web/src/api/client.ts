@@ -118,14 +118,71 @@ export interface ScanCreate {
   result: ReconciliationResult
 }
 
-export async function saveScan(payload: ScanCreate): Promise<ScanSummary> {
+/**
+ * Save a completed reconciliation, with the pages it was run against.
+ *
+ * Multipart because the source pages travel with it. The server preprocesses
+ * them exactly as extraction did, so the stored image is what the model saw and
+ * bounding boxes land correctly on it. Both are optional: a save must never
+ * fail for want of an image, and a bundled sample sends its id instead.
+ */
+export async function saveScan(
+  payload: ScanCreate,
+  pages?: { prescription?: File | null; bill?: File | null; sampleId?: string | null },
+): Promise<ScanSummary> {
+  const form = new FormData()
+  form.append('payload', JSON.stringify(payload))
+  if (pages?.prescription) form.append('prescription', pages.prescription)
+  if (pages?.bill) form.append('bill', pages.bill)
+  if (pages?.sampleId) form.append('sample_id', pages.sampleId)
   return unwrap<ScanSummary>(
     await fetch(`${BASE_URL}/api/scans`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify(payload),
+      headers: authHeaders(),
+      body: form,
     }),
   )
+}
+
+/** Fetch a report and hand it to the browser as a download. */
+export async function downloadExport(
+  scanId: number,
+  format: 'pdf' | 'xlsx' | 'json',
+): Promise<void> {
+  const response = await fetch(`${BASE_URL}/api/scans/${scanId}/export.${format}`, {
+    headers: authHeaders(),
+  })
+  if (!response.ok) throw new Error(`export failed: ${response.status}`)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download =
+    response.headers
+      .get('content-disposition')
+      ?.match(/filename="([^"]+)"/)?.[1] ?? `rxconcile-${scanId}.${format}`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * A stored source page as an object URL, for the audit panel on a reopened scan.
+ *
+ * Fetched rather than pointed at: the endpoint needs the bearer token, and an
+ * `<img src>` cannot carry one. Returns null when the scan predates stored
+ * pages, which is a normal outcome, not an error.
+ */
+export async function fetchScanImage(
+  scanId: number,
+  which: 'prescription' | 'bill',
+): Promise<string | null> {
+  const response = await fetch(`${BASE_URL}/api/scans/${scanId}/image/${which}`, {
+    headers: authHeaders(),
+  })
+  if (!response.ok) return null
+  return URL.createObjectURL(await response.blob())
 }
 
 export async function listScans(): Promise<ScanSummary[]> {

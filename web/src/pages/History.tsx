@@ -168,7 +168,7 @@ export function History({
             <table className="w-full min-w-[46rem] border-collapse">
               <thead>
                 <tr className="border-b border-ink-200 text-left">
-                  {['Verdict', 'Date', 'Employee', 'Discrepancies', 'Time', ''].map((head) => (
+                  {['Verdict', 'Date', 'Employee', 'Discrepancies', 'Supported', 'Time', ''].map((head) => (
                     <th key={head} className="t-micro px-4 py-3 text-muted">
                       {head}
                     </th>
@@ -228,6 +228,18 @@ export function History({
                           +{scan.checks_unavailable_count} not checked
                         </span>
                       ) : null}
+                    </td>
+                    {/* What the prescription supports. Not an insurance
+                        determination, and never labelled as one. */}
+                    <td
+                      className="t-data px-4 py-3 text-ink"
+                      title="Billed lines with a prescription line behind them. Not an insurance determination."
+                    >
+                      {scan.currency ?? 'INR'}{' '}
+                      {Number(scan.eligible_total ?? 0).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </td>
                     <td className="t-data px-4 py-3 text-muted">
                       {(scan.processing_ms / 1000).toFixed(1)}s

@@ -18,6 +18,8 @@ import { documentGaps, groupFindings, headline, phrase, type Grouped } from '../
 import type { DocSide, Finding, ReconciliationResult } from '../types/api'
 import { AuditPanel } from './Audit'
 import { SpineMark, type SpineState } from './Spine'
+import { ExportBar } from './Export'
+import { Reimbursement } from './Reimbursement'
 import { LabTestsTable, MedicinesTable } from './Tables'
 
 /** Whether a finding's source line could be pointed at on the image. */
@@ -194,6 +196,7 @@ export function Result({
   billImage,
   onReset,
   readOnly = false,
+  scanId = null,
 }: {
   result: ReconciliationResult
   prescriptionImage: string | null
@@ -201,6 +204,8 @@ export function Result({
   onReset: () => void
   /** True when reopened from history: a record of what was reported, not a new run. */
   readOnly?: boolean
+  /** The stored record exports are built from. Null until the save completes. */
+  scanId?: number | null
 }) {
   const [technical, setTechnical] = useState(false)
   const [highlight, setHighlight] = useState<{ side: DocSide; itemId: string } | null>(null)
@@ -261,8 +266,7 @@ export function Result({
     <div className="space-y-10">
       {readOnly ? (
         <p className="t-small rounded bg-ink-100 px-4 py-2.5 text-muted">
-          Reopened from history. This is the result exactly as it was reported at the time; the
-          source images are not stored, so the audit panel has no page to show.
+          Reopened from history. This is the result exactly as it was reported at the time.
         </p>
       ) : null}
 
@@ -331,6 +335,10 @@ export function Result({
         </div>
       ) : null}
 
+      <Section title="Reimbursement">
+        <Reimbursement summary={result.reimbursement} />
+      </Section>
+
       {/* 3 — TABLES */}
       <Section title="Medicines">
         <div className="rounded border border-ink-200 bg-surface px-5 py-4">
@@ -352,6 +360,7 @@ export function Result({
         >
           {readOnly ? 'Back to a new reconciliation' : 'Reconcile another'}
         </button>
+        <ExportBar scanId={scanId} />
         <label className="t-small flex cursor-pointer items-center gap-2 text-muted">
           <input
             type="checkbox"

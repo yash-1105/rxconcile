@@ -301,3 +301,46 @@ An unresolved line appears with `method: "unresolved"` and null name and salt,
 rather than being omitted — so a caller can tell "looked up, no match" from
 "never looked up".
 
+---
+
+## 10. Reimbursement assessment
+
+`ReconciliationResult.reimbursement` sorts every billed line -- medicines and
+lab lines alike -- into exactly one of three buckets, each traceable to the
+lines that built it.
+
+**No insurance calculation is attempted.** Copay tiers, coverage rules, policy
+limits and exclusions appear in none of the documents this system reads.
+Modelling them would be the never-guess rule broken at the level of money,
+which is the worst place to break it. The words "approved", "claim" and
+"settlement" are absent from the copy by design, and a test pins that.
+
+| Bucket | Rule |
+| --- | --- |
+| `eligible` | paired to a prescribed line with nothing against it |
+| `not_eligible` | `BILL_NOT_PRESCRIBED`, `SCHEDULE_H_UNBACKED` or `TEST_NOT_PRESCRIBED` |
+| `needs_review` | a check on the line could not run, or the line carries a discrepancy |
+
+Precedence is `not_eligible` > `needs_review` > `eligible`: a line the engine
+says was never prescribed does not become "needs review" merely because some
+other check on it also failed to run.
+
+Lab lines are included. Excluding them would report zero supported against a
+diagnostic bill, which is a lab invoice read as if it were empty.
+
+### Money that cannot be added
+
+A bill line with no printed amount is counted in `lines_without_amount` and
+left out of every total, never treated as zero. A total silently missing a line
+is worse than one that says it is incomplete.
+
+### What this looks like on real bills
+
+`needs_review` is the largest bucket in practice, and that is not a defect.
+Indian pharmacy invoices price per pack and rarely state whether the quantity
+column counts packs or units, so `QUANTITY_AMBIGUOUS` attaches to most lines
+and the quantity check genuinely did not run. Measured across the bundled
+samples, `eligible` is frequently zero for exactly this reason. Treating an
+unrunnable check as support would be the same error as reporting a skipped
+check as a pass.
+

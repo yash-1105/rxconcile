@@ -45,25 +45,39 @@ EMPLOYEE = "employee@gmail.com"
 ADMIN = "admin@gmail.com"
 
 
-def result_payload(verdict: str = "mismatch") -> dict[str, Any]:
+def result_payload() -> dict[str, Any]:
+    """A complete, valid ReconciliationResult, as the API actually stores one."""
     return {
-        "verdict": verdict,
-        "score": 17.0,
-        "processing_ms": 1234,
+        "verdict": "mismatch",
+        "score": 60.0,
         "findings": [
-            {"rule_code": "STRENGTH_MISMATCH", "severity": "critical", "message": "m"},
-            {"rule_code": "FORM_MISMATCH", "severity": "warning", "message": "m"},
-            {"rule_code": "CHECK_UNAVAILABLE", "severity": "info", "message": "m"},
-            {"rule_code": "LOW_CONFIDENCE_FIELD", "severity": "info", "message": "m"},
+            {"rule_code": "STRENGTH_MISMATCH", "severity": "critical", "message": "m",
+             "prescribed_ref": None, "billed_ref": None, "detail": {}},
+            {"rule_code": "FORM_MISMATCH", "severity": "warning", "message": "m",
+             "prescribed_ref": None, "billed_ref": None, "detail": {}},
+            {"rule_code": "CHECK_UNAVAILABLE", "severity": "info", "message": "m",
+             "prescribed_ref": None, "billed_ref": None, "detail": {}},
+            {"rule_code": "LOW_CONFIDENCE_FIELD", "severity": "info", "message": "m",
+             "prescribed_ref": None, "billed_ref": None, "detail": {}},
         ],
-        "prescription": {"items": []},
-        "bill": {"items": []},
+        "matched_pairs": [],
+        "unmatched_prescribed": [],
+        "unmatched_billed": [],
+        "prescription": {"items": [], "overall_legibility": 0.9},
+        "bill": {"items": [], "currency": "INR"},
+        "processing_ms": 120,
     }
 
 
-def save(client: TestClient, email: str, **overrides: Any) -> dict[str, Any]:
+def save(
+    client: TestClient,
+    email: str,
+    *,
+    files: dict[str, Any] | None = None,
+    **overrides: Any,
+) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "employee_name": "Priya Nair",
+        "employee_name": "Yash",
         "employee_number": "EMP-4417",
         "prescription_filename": "rx.jpg",
         "bill_filename": "bill.png",
@@ -71,7 +85,14 @@ def save(client: TestClient, email: str, **overrides: Any) -> dict[str, Any]:
         "result": result_payload(),
     }
     body.update(overrides)
-    response = client.post("/api/scans", json=body, headers=auth(email))
+    # Multipart, because the source pages travel with the save. They are
+    # optional: a scan must still record when no image is supplied.
+    response = client.post(
+        "/api/scans",
+        data={"payload": json.dumps(body)},
+        files=files or {},
+        headers=auth(email),
+    )
     assert response.status_code == 200, response.text
     return dict(response.json())
 
@@ -137,14 +158,16 @@ def test_identity_comes_from_the_token_not_the_body(client: TestClient) -> None:
     """A caller cannot file a scan under someone else or claim a role."""
     response = client.post(
         "/api/scans",
-        json={
-            "employee_name": "Priya Nair",
-            "employee_number": "EMP-4417",
-            "extraction_runs": 3,
-            "result": result_payload(),
-            # Both ignored: not fields on the request model.
-            "user_email": ADMIN,
-            "role": "admin",
+        data={
+            "payload": json.dumps({
+                "employee_name": "Yash",
+                "employee_number": "EMP-4417",
+                "extraction_runs": 3,
+                "result": result_payload(),
+                # Both ignored: not fields on the request model.
+                "user_email": ADMIN,
+                "role": "admin",
+            })
         },
         headers=auth(EMPLOYEE),
     )
@@ -243,3 +266,87 @@ def test_result_json_survives_a_schema_the_columns_do_not_know_about(
     detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
     assert detail["result"]["some_future_field"]["lab_tests"][0]["name"] == "CBC"
     assert json.loads(json.dumps(detail["result"])) == payload
+
+
+# --------------------------------------------------------------------------
+# Source pages and exports
+# --------------------------------------------------------------------------
+
+
+def _jpeg() -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (300, 200), "white").save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def test_a_scan_saves_without_any_source_pages(client: TestClient) -> None:
+    """A save must never fail for want of an image."""
+    saved = save(client, EMPLOYEE)
+    response = client.get(f"/api/scans/{saved['id']}/image/prescription", headers=auth(EMPLOYEE))
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "IMAGE_NOT_STORED"
+
+
+def test_stored_pages_come_back_and_are_preprocessed(client: TestClient) -> None:
+    page = _jpeg()
+    saved = save(
+        client, EMPLOYEE,
+        files={"prescription": ("rx.jpg", page, "image/jpeg"),
+               "bill": ("bill.jpg", page, "image/jpeg")},
+    )
+    for which in ("prescription", "bill"):
+        response = client.get(f"/api/scans/{saved['id']}/image/{which}", headers=auth(EMPLOYEE))
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/")
+        # Preprocessed, not the original bytes: this is what the model saw, and
+        # what the bounding boxes are normalised against.
+        assert response.content.startswith(b"\xff\xd8")
+
+
+def test_an_employee_cannot_read_another_accounts_pages(client: TestClient) -> None:
+    page = _jpeg()
+    saved = save(client, ADMIN, files={"prescription": ("rx.jpg", page, "image/jpeg")})
+    response = client.get(f"/api/scans/{saved['id']}/image/prescription", headers=auth(EMPLOYEE))
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("fmt", "prefix"),
+    [("pdf", b"%PDF-"), ("xlsx", b"PK"), ("json", b"{")],
+)
+def test_every_export_format_downloads(client: TestClient, fmt: str, prefix: bytes) -> None:
+    saved = save(client, EMPLOYEE)
+    response = client.get(f"/api/scans/{saved['id']}/export.{fmt}", headers=auth(EMPLOYEE))
+    assert response.status_code == 200, response.text
+    assert response.content.startswith(prefix)
+    assert "attachment" in response.headers["content-disposition"]
+
+
+def test_an_unknown_export_format_is_rejected(client: TestClient) -> None:
+    saved = save(client, EMPLOYEE)
+    response = client.get(f"/api/scans/{saved['id']}/export.docx", headers=auth(EMPLOYEE))
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "UNKNOWN_FORMAT"
+
+
+def test_an_employee_cannot_export_another_accounts_scan(client: TestClient) -> None:
+    saved = save(client, ADMIN)
+    response = client.get(f"/api/scans/{saved['id']}/export.json", headers=auth(EMPLOYEE))
+    assert response.status_code == 404
+
+
+def test_an_export_of_a_legacy_record_still_builds(client: TestClient) -> None:
+    """Records written before later schema additions must still export."""
+    # The shape a record written before lab tests, canonical matches and the
+    # reimbursement assessment existed: valid, just missing later additions.
+    legacy = result_payload()
+    for later_addition in ("canonical", "reimbursement", "matched_tests"):
+        legacy.pop(later_addition, None)
+    saved = save(client, EMPLOYEE, result=legacy)
+    for fmt in ("pdf", "xlsx", "json"):
+        response = client.get(f"/api/scans/{saved['id']}/export.{fmt}", headers=auth(EMPLOYEE))
+        assert response.status_code == 200, f"{fmt}: {response.text}"

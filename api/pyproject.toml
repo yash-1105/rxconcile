@@ -27,6 +27,9 @@ dependencies = [
     # with "The requests library is not installed". Keep it pinned.
     "requests==2.34.2",
     "sqlmodel==0.0.39",
+    # Report exports. Pinned like every other runtime dependency.
+    "reportlab==4.4.4",
+    "openpyxl==3.1.5",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +39,8 @@ dev = [
     "hypothesis==6.165.10",
     "pytest==9.1.1",
     "ruff==0.16.4",
+    "types-reportlab==4.5.1.20260827",
+    "types-openpyxl==3.1.5.20260827",
     "scipy-stubs==1.17.1.5",
 ]
 

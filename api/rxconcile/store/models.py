@@ -52,6 +52,16 @@ class ScanRecord(SQLModel, table=True):
 
     result_json: str
 
+    # The PREPROCESSED pages, exactly as the model saw them (2000px, JPEG q90).
+    # Stored rather than the originals for two reasons: bounding boxes are
+    # normalised against these dimensions so highlights land correctly, and a
+    # PDF export is a far weaker claims artifact without the source pages
+    # beside the findings. Nullable because records written before this
+    # existed have none, and because a save must never fail for want of them.
+    prescription_image: bytes | None = Field(default=None)
+    bill_image: bytes | None = Field(default=None)
+    image_media_type: str = Field(default="image/jpeg")
+
     processing_ms: int = 0
     extraction_runs: int = 0
 

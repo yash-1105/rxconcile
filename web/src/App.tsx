@@ -7,6 +7,7 @@ import {
   sampleImageUrl,
   saveScan,
   setToken,
+  fetchScanImage,
 } from './api/client'
 import {
   clearSession,
@@ -48,6 +49,7 @@ export default function App() {
   const [runs, setRuns] = useState(3)
   const [samples, setSamples] = useState<SampleSummary[]>([])
   const [result, setResult] = useState<ReconciliationResult | null>(null)
+  const [scanId, setScanId] = useState<number | null>(null)
   const [images, setImages] = useState<Images>({ prescription: null, bill: null })
   const [error, setError] = useState<Error | null>(null)
 
@@ -101,7 +103,15 @@ export default function App() {
   /** Reopen a stored scan exactly as it was reported. */
   const openScan = (detail: ScanDetail) => {
     setResult(detail.result)
+    setScanId(detail.id)
+    // Source pages are stored with the scan now, so a reopened result can show
+    // its audit panel instead of an empty one. Fetched with the token rather
+    // than linked, because an <img src> cannot carry one.
     setImages({ prescription: null, bill: null })
+    void Promise.all([
+      fetchScanImage(detail.id, 'prescription'),
+      fetchScanImage(detail.id, 'bill'),
+    ]).then(([prescription, bill]) => setImages({ prescription, bill }))
     setReadOnly(true)
     setStage('result')
     setView('new')
@@ -111,9 +121,11 @@ export default function App() {
     task: () => Promise<ReconciliationResult>,
     next: Images,
     filenames: { prescription: string; bill: string },
+    pages: { prescription?: File | null; bill?: File | null; sampleId?: string | null },
   ) => {
     setError(null)
     setReadOnly(false)
+    setScanId(null)
     setStage('processing')
     try {
       const outcome = await task()
@@ -123,14 +135,19 @@ export default function App() {
       // Recorded after the fact. A failed save must not lose the result the
       // user is already looking at, so it is reported and otherwise ignored.
       try {
-        await saveScan({
-          employee_name: employeeName,
-          employee_number: employeeNumber,
-          prescription_filename: filenames.prescription,
-          bill_filename: filenames.bill,
-          extraction_runs: runs,
-          result: outcome,
-        })
+        const saved = await saveScan(
+          {
+            employee_name: employeeName,
+            employee_number: employeeNumber,
+            prescription_filename: filenames.prescription,
+            bill_filename: filenames.bill,
+            extraction_runs: runs,
+            result: outcome,
+          },
+          pages,
+        )
+        // Exports are built from the stored record, so they need its id.
+        setScanId(saved.id)
         setHistoryKey((key) => key + 1)
       } catch {
         setError(new Error('The result is shown below but could not be saved to history.'))
@@ -150,6 +167,7 @@ export default function App() {
         bill: URL.createObjectURL(billFile),
       },
       { prescription: prescriptionFile.name, bill: billFile.name },
+      { prescription: prescriptionFile, bill: billFile },
     )
   }
 
@@ -162,6 +180,9 @@ export default function App() {
         bill: sampleImageUrl(sample.sample_id, 'bill'),
       },
       { prescription: sample.prescription, bill: sample.bill },
+      // The server reads the sample pages off disk rather than the client
+      // re-uploading files it never held.
+      { sampleId: sample.sample_id },
     )
   }
 
@@ -239,9 +260,11 @@ export default function App() {
           prescriptionImage={images.prescription}
           billImage={images.bill}
           readOnly={readOnly}
+          scanId={scanId}
           onReset={() => {
             setStage('upload')
             setResult(null)
+            setScanId(null)
             setReadOnly(false)
             setPrescriptionFile(null)
             setBillFile(null)

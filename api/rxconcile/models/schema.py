@@ -553,6 +553,52 @@ def build_review_summary(
     )
 
 
+ReimbursementCategory = Literal["eligible", "not_eligible", "needs_review"]
+
+
+class ReimbursementLine(_Base):
+    """One billed line and the bucket it fell into."""
+
+    item_id: str = Field(min_length=1, description="BilledItem or BilledTest item_id.")
+    description: str = Field(description="Drug or test name, else the raw line.")
+    amount: Decimal | None = Field(
+        default=None,
+        description="line_total as printed. **Null when the bill prints no amount**, "
+        "and then excluded from every total rather than counted as zero.",
+    )
+    category: ReimbursementCategory
+    reason: str = Field(description="Why this line landed where it did, in plain words.")
+    rule_codes: list[str] = Field(default_factory=list)
+
+
+class ReimbursementSummary(_Base):
+    """Which billed items are supported by the prescription, and for how much.
+
+    **Not an insurance determination.** Copay tiers, coverage rules and policy
+    limits appear in neither document, are not modelled, and are not inferred.
+    This is an assessment of which billed lines have a prescription behind them
+    -- nothing more. Nothing here approves, settles or rejects anything.
+    """
+
+    eligible_total: Decimal = Decimal("0")
+    eligible_line_count: int = 0
+    not_eligible_total: Decimal = Decimal("0")
+    not_eligible_line_count: int = 0
+    needs_review_total: Decimal = Decimal("0")
+    needs_review_line_count: int = 0
+    lines_without_amount: int = Field(
+        default=0,
+        description="Billed lines with no printed amount. Excluded from the totals "
+        "above, and reported so a total is never quietly incomplete.",
+    )
+    currency: str = "INR"
+    lines: list[ReimbursementLine] = Field(default_factory=list)
+
+    @property
+    def assessed_total(self) -> Decimal:
+        return self.eligible_total + self.not_eligible_total + self.needs_review_total
+
+
 class ReconciliationResult(_Base):
     """The complete outcome of reconciling one prescription against one bill."""
 
@@ -572,6 +618,11 @@ class ReconciliationResult(_Base):
     )
     unmatched_billed: list[str] = Field(
         default_factory=list, description="BilledItem.item_id values with no prescribed match."
+    )
+    reimbursement: ReimbursementSummary = Field(
+        default_factory=ReimbursementSummary,
+        description="Which billed lines the prescription supports. Not an insurance "
+        "determination; see ReimbursementSummary.",
     )
     canonical: list[CanonicalMatch] = Field(
         default_factory=list,
@@ -673,6 +724,13 @@ class ReconciliationResult(_Base):
                 problems.append(
                     f"findings[{index}].billed_ref={ref!r} ({finding.rule_code}) "
                     f"is not a BilledItem.item_id"
+                )
+
+        for index, line in enumerate(self.reimbursement.lines):
+            if line.item_id not in bill_ids:
+                problems.append(
+                    f"reimbursement.lines[{index}].item_id={line.item_id!r} is not a "
+                    f"billed item_id"
                 )
 
         for index, match in enumerate(self.canonical):

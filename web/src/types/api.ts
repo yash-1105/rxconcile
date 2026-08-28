@@ -150,6 +150,38 @@ export interface PharmacyBill {
  * because prescriptions print brands rather than compositions. This is the
  * lookup result for that brand, kept separate so the two are never conflated.
  */
+export type ReimbursementCategory = 'eligible' | 'not_eligible' | 'needs_review'
+
+export interface ReimbursementLine {
+  item_id: string
+  description: string
+  /** Null when the bill prints no amount — excluded from totals, never zero. */
+  amount: string | null
+  category: ReimbursementCategory
+  reason: string
+  rule_codes: string[]
+}
+
+/**
+ * Which billed items are supported by the prescription.
+ *
+ * **Not an insurance determination.** Coverage rules, copay tiers and policy
+ * limits appear in neither document and are not modelled. Nothing here
+ * approves, settles or rejects anything.
+ */
+export interface ReimbursementSummary {
+  eligible_total: string
+  eligible_line_count: number
+  not_eligible_total: string
+  not_eligible_line_count: number
+  needs_review_total: string
+  needs_review_line_count: number
+  /** Billed lines with no printed amount: excluded from the totals above. */
+  lines_without_amount: number
+  currency: string
+  lines: ReimbursementLine[]
+}
+
 export interface CanonicalMatch {
   item_id: string
   side: DocSide
@@ -200,6 +232,7 @@ export interface ReconciliationResult {
   matched_pairs: MatchedPair[]
   unmatched_prescribed: string[]
   unmatched_billed: string[]
+  reimbursement: ReimbursementSummary
   canonical: CanonicalMatch[]
   matched_tests: MatchedPair[]
   unmatched_prescribed_tests: string[]
@@ -282,6 +315,9 @@ export interface ScanSummary {
   warning_count: number
   /** Counted separately and never folded into discrepancies. */
   checks_unavailable_count: number
+  /** Reimbursement total supported by the prescription. */
+  eligible_total: string
+  currency: string
   processing_ms: number
   extraction_runs: number
 }
