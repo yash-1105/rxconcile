@@ -83,6 +83,36 @@ class PrescribedItemDTO(_DTO):
     )
 
 
+class PrescribedTestDTO(_DTO):
+    """One ordered investigation as returned by the model. No item_id."""
+
+    raw_text: str = Field(
+        default="",
+        description="The line transcribed VERBATIM, with illegible portions marked [?].",
+    )
+    test_name: str | None = Field(
+        default=None,
+        description="Test or panel name ONLY if confidently legible, else null. "
+        "Copy the abbreviation as written -- 'LFT', not 'Liver Function Test'.",
+    )
+    panel: str | None = Field(
+        default=None,
+        description="Only if the page groups this line under a named panel. Never infer one.",
+    )
+    urgency: str | None = Field(
+        default=None,
+        description="As written: 'STAT', 'urgent', 'fasting', 'routine'. Else null.",
+    )
+    bbox: list[float] | None = Field(
+        default=None,
+        description="Bounding box as [x0, y0, x1, y1], normalised 0-1. Null if you "
+        "cannot locate the line. Do not guess a box.",
+    )
+    confidence: float = Field(
+        default=0.0, description="Handwriting legibility for THIS line, 0-1."
+    )
+
+
 class PrescriptionDTO(_DTO):
     """A prescription as returned by the model."""
 
@@ -103,6 +133,17 @@ class PrescriptionDTO(_DTO):
     diagnosis_text: str | None = Field(default=None)
     items: list[PrescribedItemDTO] = Field(
         default_factory=list, description="Every prescribed line, in document order."
+    )
+    tests: list[PrescribedTestDTO] = Field(
+        default_factory=list,
+        description="Every investigation ordered, in document order. Empty if none.",
+    )
+    investigations_present: bool | None = Field(
+        default=None,
+        description="True if the page HAS an investigations section (Adv:, Inv:, "
+        "Investigations, Lab, a list of tests) -- even if you cannot read a single "
+        "word of it. False only if you can see there is no such section. Null if you "
+        "cannot tell. This is a question about LAYOUT, not content.",
     )
     overall_legibility: float = Field(
         default=0.0, description="Whole-document handwriting legibility, 0-1."
@@ -148,6 +189,28 @@ class BilledItemDTO(_DTO):
     confidence: float = Field(default=0.0, description="Legibility for THIS line, 0-1.")
 
 
+class BilledTestDTO(_DTO):
+    """One lab line on a bill as returned by the model. No item_id."""
+
+    raw_text: str = Field(default="", description="The line transcribed VERBATIM.")
+    test_name: str | None = Field(
+        default=None, description="Test or panel name as printed, else null."
+    )
+    panel: str | None = Field(
+        default=None,
+        description="Only if the bill groups this line under a printed panel heading.",
+    )
+    quantity: float | None = Field(default=None)
+    unit_price: float | None = Field(default=None)
+    line_total: float | None = Field(default=None)
+    bbox: list[float] | None = Field(
+        default=None,
+        description="Bounding box as [x0, y0, x1, y1], normalised 0-1. Null if you "
+        "cannot locate the line. Do not guess a box.",
+    )
+    confidence: float = Field(default=0.0, description="Legibility for THIS line, 0-1.")
+
+
 class PharmacyBillDTO(_DTO):
     """A pharmacy bill as returned by the model."""
 
@@ -161,6 +224,11 @@ class PharmacyBillDTO(_DTO):
     items: list[BilledItemDTO] = Field(
         default_factory=list,
         description="EVERY line on the invoice in printed order, including non-medicine lines.",
+    )
+    tests: list[BilledTestDTO] = Field(
+        default_factory=list,
+        description="Every LAB TEST line, in printed order. A diagnostic bill may have "
+        "only these and no medicines; a pharmacy bill may have none. Both are normal.",
     )
     subtotal: float | None = Field(default=None)
     tax_total: float | None = Field(default=None, description="Total GST/tax.")

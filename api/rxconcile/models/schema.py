@@ -182,6 +182,67 @@ class BilledItem(_Base):
     )
 
 
+class PrescribedTest(_Base):
+    """One investigation ordered on a prescription.
+
+    Lab work is ordered in the "Adv:" or "Investigations:" section and is often
+    written as a panel name rather than as individual analytes.
+    """
+
+    item_id: str = Field(
+        min_length=1,
+        description="Stable ID, e.g. 'test-01'. Document order, assigned in Python.",
+    )
+    raw_text: str = Field(description="The line exactly as written. Display only.")
+    test_name: str | None = Field(
+        default=None, description="Test or panel name as written, else null."
+    )
+    panel: str | None = Field(
+        default=None, description="Panel this belongs to, if the page names one."
+    )
+    urgency: str | None = Field(
+        default=None, description="STAT, routine, fasting, as written. Else null."
+    )
+    bbox: tuple[float, float, float, float] | None = Field(
+        default=None,
+        description="Where this line sits on the image, normalised 0-1. Null when "
+        "the model could not locate it.",
+    )
+    agreement: dict[str, float] | None = Field(
+        default=None,
+        description="Per-field agreement across the N runs. **The reliability "
+        "signal.** None when N=1.",
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="The MODEL'S OWN legibility score. **Nothing may gate on this.**",
+    )
+
+
+class BilledTest(_Base):
+    """One lab line on a bill.
+
+    Lab bills and pharmacy bills are frequently separate documents, so a bill may
+    carry tests, medicines, or both.
+    """
+
+    item_id: str = Field(
+        min_length=1, description="Stable ID, e.g. 'billtest-01'. Printed order."
+    )
+    raw_text: str = Field(description="The line exactly as printed. Display only.")
+    test_name: str | None = Field(default=None)
+    panel: str | None = Field(default=None)
+    quantity: float | None = Field(default=None, ge=0)
+    unit_price: Decimal | None = Field(default=None)
+    line_total: Decimal | None = Field(default=None)
+    bbox: tuple[float, float, float, float] | None = Field(default=None)
+    agreement: dict[str, float] | None = Field(default=None)
+    confidence: float = Field(
+        ge=0.0, le=1.0, description="Model's own score. **Nothing may gate on this.**"
+    )
+
+
 class Prescription(_Base):
     """A prescription document and everything extracted from it."""
 
@@ -201,6 +262,16 @@ class Prescription(_Base):
     )
     diagnosis_text: str | None = Field(default=None)
     items: list[PrescribedItem] = Field(default_factory=list)
+    tests: list[PrescribedTest] = Field(
+        default_factory=list, description="Investigations ordered, in document order."
+    )
+    investigations_present: bool | None = Field(
+        default=None,
+        description="Whether the page carries an investigations section at all. "
+        "**Absent and unreadable are different results**: an empty `tests` list with "
+        "this True means the section exists but could not be read, which is not the "
+        "same as no tests being ordered. Null when the model could not tell.",
+    )
     overall_legibility: float = Field(
         ge=0.0,
         le=1.0,
@@ -222,10 +293,12 @@ class Prescription(_Base):
 
     @model_validator(mode="after")
     def _item_ids_unique(self) -> Self:
-        duplicated = _duplicates([item.item_id for item in self.items])
+        duplicated = _duplicates(
+            [item.item_id for item in self.items] + [test.item_id for test in self.tests]
+        )
         if duplicated:
             raise ValueError(
-                f"duplicate PrescribedItem.item_id within one prescription: {duplicated}. "
+                f"duplicate item_id within one prescription: {duplicated}. "
                 "item_id must be unique within its parent document; cross-references key "
                 "on it, so a duplicate makes findings ambiguous."
             )
@@ -233,7 +306,14 @@ class Prescription(_Base):
 
     @property
     def item_ids(self) -> frozenset[str]:
-        return frozenset(item.item_id for item in self.items)
+        """Every referenceable id on this document, medicines and tests alike."""
+        return frozenset(
+            [item.item_id for item in self.items] + [test.item_id for test in self.tests]
+        )
+
+    @property
+    def test_ids(self) -> frozenset[str]:
+        return frozenset(test.item_id for test in self.tests)
 
 
 class PharmacyBill(_Base):
@@ -247,6 +327,11 @@ class PharmacyBill(_Base):
     )
     patient_name: str | None = Field(default=None)
     items: list[BilledItem] = Field(default_factory=list)
+    tests: list[BilledTest] = Field(
+        default_factory=list,
+        description="Lab lines on this bill. Lab and pharmacy bills are often "
+        "separate documents, so this may be populated while items is empty.",
+    )
     subtotal: Decimal | None = Field(default=None)
     tax_total: Decimal | None = Field(default=None)
     grand_total: Decimal | None = Field(default=None)
@@ -265,10 +350,12 @@ class PharmacyBill(_Base):
 
     @model_validator(mode="after")
     def _item_ids_unique(self) -> Self:
-        duplicated = _duplicates([item.item_id for item in self.items])
+        duplicated = _duplicates(
+            [item.item_id for item in self.items] + [test.item_id for test in self.tests]
+        )
         if duplicated:
             raise ValueError(
-                f"duplicate BilledItem.item_id within one bill: {duplicated}. "
+                f"duplicate item_id within one bill: {duplicated}. "
                 "item_id must be unique within its parent document; cross-references key "
                 "on it, so a duplicate makes findings ambiguous."
             )
@@ -276,7 +363,14 @@ class PharmacyBill(_Base):
 
     @property
     def item_ids(self) -> frozenset[str]:
-        return frozenset(item.item_id for item in self.items)
+        """Every referenceable id on this document, medicines and tests alike."""
+        return frozenset(
+            [item.item_id for item in self.items] + [test.item_id for test in self.tests]
+        )
+
+    @property
+    def test_ids(self) -> frozenset[str]:
+        return frozenset(test.item_id for test in self.tests)
 
 
 class Finding(_Base):
@@ -448,6 +542,13 @@ class ReconciliationResult(_Base):
     unmatched_billed: list[str] = Field(
         default_factory=list, description="BilledItem.item_id values with no prescribed match."
     )
+    matched_tests: list[MatchedPair] = Field(
+        default_factory=list,
+        description="Ordered tests paired to billed lab lines, by the same shapes the "
+        "medicine side uses.",
+    )
+    unmatched_prescribed_tests: list[str] = Field(default_factory=list)
+    unmatched_billed_tests: list[str] = Field(default_factory=list)
     prescription: Prescription
     bill: PharmacyBill
     processing_ms: int = Field(ge=0)
@@ -535,6 +636,31 @@ class ReconciliationResult(_Base):
                 problems.append(
                     f"findings[{index}].billed_ref={ref!r} ({finding.rule_code}) "
                     f"is not a BilledItem.item_id"
+                )
+
+        for index, pair in enumerate(self.matched_tests):
+            if pair.prescribed_id not in rx_ids:
+                problems.append(
+                    f"matched_tests[{index}].prescribed_id={pair.prescribed_id!r} "
+                    f"is not a PrescribedTest.item_id"
+                )
+            if pair.billed_id not in bill_ids:
+                problems.append(
+                    f"matched_tests[{index}].billed_id={pair.billed_id!r} "
+                    f"is not a BilledTest.item_id"
+                )
+
+        for index, item_id in enumerate(self.unmatched_prescribed_tests):
+            if item_id not in rx_ids:
+                problems.append(
+                    f"unmatched_prescribed_tests[{index}]={item_id!r} is not a "
+                    f"PrescribedTest.item_id"
+                )
+        for index, item_id in enumerate(self.unmatched_billed_tests):
+            if item_id not in bill_ids:
+                problems.append(
+                    f"unmatched_billed_tests[{index}]={item_id!r} is not a "
+                    f"BilledTest.item_id"
                 )
 
         for index, pair in enumerate(self.matched_pairs):

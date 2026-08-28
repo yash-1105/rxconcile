@@ -15,6 +15,7 @@ from rxconcile.models import (
     MatchedPair,
     PharmacyBill,
     PrescribedItem,
+    PrescribedTest,
     Prescription,
     ReconciliationResult,
 )
@@ -160,7 +161,7 @@ def billed(item_id: str, **overrides: object) -> dict[str, Any]:
 
 
 def test_duplicate_prescribed_item_id_is_a_validation_error() -> None:
-    with pytest.raises(ValidationError, match=r"duplicate PrescribedItem.item_id"):
+    with pytest.raises(ValidationError, match=r"duplicate item_id within one prescription"):
         Prescription.model_validate(
             {
                 "overall_legibility": 0.9,
@@ -170,7 +171,7 @@ def test_duplicate_prescribed_item_id_is_a_validation_error() -> None:
 
 
 def test_duplicate_billed_item_id_is_a_validation_error() -> None:
-    with pytest.raises(ValidationError, match=r"duplicate BilledItem.item_id"):
+    with pytest.raises(ValidationError, match=r"duplicate item_id within one bill"):
         PharmacyBill.model_validate(
             {"items": [billed("bill-01"), billed("bill-01", raw_text="OTHER")]}
         )
@@ -370,3 +371,22 @@ def test_review_summary_survives_json_round_trip() -> None:
     restored = ReconciliationResult.model_validate_json(result.model_dump_json())
     assert restored.review_summary == result.review_summary
     assert restored == result
+
+
+def test_a_test_id_may_not_collide_with_an_item_id() -> None:
+    """Tests and items share one reference namespace, so ids must be unique across both."""
+    with pytest.raises(ValidationError, match=r"duplicate item_id within one prescription"):
+        Prescription(
+            overall_legibility=0.9,
+            items=[PrescribedItem(item_id="x-01", raw_text="Tab. Dolo", confidence=0.9)],
+            tests=[PrescribedTest(item_id="x-01", raw_text="Adv: CBC", confidence=0.9)],
+        )
+
+
+def test_item_ids_covers_tests_so_a_test_finding_can_reference_one() -> None:
+    rx = Prescription(
+        overall_legibility=0.9,
+        tests=[PrescribedTest(item_id="test-01", raw_text="Adv: CBC", confidence=0.9)],
+    )
+    assert rx.item_ids == {"test-01"}
+    assert rx.test_ids == {"test-01"}

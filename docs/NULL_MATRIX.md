@@ -172,3 +172,72 @@ changed is what the caller can see:
 Every one of those was previously invisible. `sample-01` in particular still
 reports `match` at score 100, and now says alongside it that one check never
 ran — which is the distinction the whole audit exists to preserve.
+
+---
+
+# Lab test fields
+
+Added with the lab-test engine and audited **as it was built**, not after. Same
+method: a baseline that reconciles cleanly (LFT ordered, seven analytes billed,
+`match`, score 100, zero test findings), then one field nulled at a time.
+
+**13 null cases probed.**
+
+| Outcome | Count | Fields |
+| --- | --- | --- |
+| (a) correct skip, finding emitted | 5 | `test_name` (both sides), `investigations_present` = true / null, unresolvable panel |
+| (b) silent skip, no finding | **0** | — |
+| no check depends on the field | 7 | `panel`, `urgency`, `unit_price`, `line_total` |
+| (c) false positive | **0** | — |
+| (d) suppression | **0** | — |
+
+`panel` and `urgency` are carried for display and for a reviewer's context; no
+rule consumes them, so nulling them skips nothing. That is a different statement
+from "the check silently passed", and the distinction is the point of this table.
+
+## What each null does
+
+| Nulled | Result | Why this is right |
+| --- | --- | --- |
+| `rx test.test_name` | falls back to `raw_text`; if that will not resolve → `TEST_UNRESOLVED` info + `CHECK_UNAVAILABLE`, and every billed line softens to **warning** | an unidentified order is not evidence that nothing was ordered |
+| `bill test.test_name` | same on the bill side; the ordered panel softens from critical to **warning** | an unidentified bill line may well be the ordered test |
+| `bill test.quantity` | `CHECK_UNAVAILABLE` (repeat test billing), once per document | **found by this audit.** Was a silent skip: a test billed with quantity 2 passed unchallenged. Now `TEST_DUPLICATE` fires on quantity > 1, and a null quantity says the check could not run rather than implying it passed |
+| `rx.investigations_present` = null, no tests read | accusations soften to **warning** + `CHECK_UNAVAILABLE` | the section's absence was never confirmed |
+| panel not in `lab_panels.py` | `TEST_UNRESOLVED` info, components stay empty, **no** `TEST_NOT_BILLED`, billed lines soften to warning | see below |
+
+## The two designed-against cases
+
+Both are the same failure — one unreadable line becoming several confident
+accusations — and both were built against rather than discovered.
+
+**Present but unreadable is not absent.** `tests = []` with
+`investigations_present = true` means the section exists and could not be read.
+Treating that as "no tests ordered" would make every billed test unauthorised.
+Only `investigations_present = false` — a positive observation that the page has
+no such section — licenses a critical.
+
+| `investigations_present` | tests read | one test billed |
+| --- | --- | --- |
+| `true` | none | **warning** + `CHECK_UNAVAILABLE`, verdict `match_with_warnings` |
+| `false` | none | **critical**, verdict `mismatch` |
+| `null` | none | **warning** + `CHECK_UNAVAILABLE` |
+
+**An unresolved panel expands to nothing, not to zero components.** An
+unresolved `LabMatch` carries an empty component tuple, and an empty set
+trivially covers nothing — so the naive reading reports every billed component
+as unprescribed. One illegible word, four criticals. The resolution is checked
+before the components are used: an unresolved order is reported as unresolved
+and is never compared, and its presence softens every billed-line accusation.
+
+`test_an_unresolvable_panel_does_not_accuse_every_billed_component` in
+`api/tests/test_lab.py` pins this: four billed LFT analytes against one
+unreadable order line yield four **warnings**, zero criticals, and a stated
+reason on each.
+
+## Property coverage
+
+`api/tests/test_null_matrix.py` generates every subset of the nullable test
+fields alongside the medicine fields, and the existing four properties now hold
+across both — in particular *absent data alone never produces a critical* and
+*a skipped check is always recorded*.
+

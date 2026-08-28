@@ -130,3 +130,75 @@ this stays honest.
   from missed. Anything coarser hides the distinction the design depends on.
 - **Watch for the labeller reading the model's output first.** It is the easiest
   way to produce an impressive and worthless number.
+
+---
+
+## Lab test reconciliation — measured on the real photographs
+
+Fresh extraction (prompt version `2026-08-28.1`, N=3, temperature 0.3) against
+the four genuine handwritten prescriptions.
+
+| Sample | `investigations_present` | Tests read | Agreement on the name |
+| --- | --- | --- | --- |
+| `p1` | true | 1 — `MRI Lumbar spine c screening whole spine` | 0.67 |
+| `p2` | true | 2 — both names **null** | 0.50, 0.33 |
+| `p3` | **false** | 0 | — |
+| `p4` | true | 1 — `CBC` | **1.00** |
+| `sample-01/02/03` | false | 0 | — |
+
+Four things in that table are the point of the feature:
+
+**`p3` reports `false`, not zero.** The dental prescription genuinely has no
+investigations section. It produces no test findings, no `CHECK_UNAVAILABLE`,
+and no score penalty — absence is not a discrepancy.
+
+**`p2` reports two tests with null names.** The line reads
+`FT4, TSH - ১½ মাস পর`, part Bengali, and agreement across runs was 0.33. The
+extractor left the name null rather than guessing and the engine treats the
+orders as unidentified, softening every accusation. This is guard case (e) on
+real data, not a constructed fixture.
+
+**`p1` orders imaging, not a lab panel.** `MRI Lumbar spine` resolves against
+nothing in `lab_panels.py`, so it is reported `TEST_UNRESOLVED` (info) with a
+`CHECK_UNAVAILABLE`. It is not silently dropped and not accused.
+
+**The three existing synthetic pairs still read zero tests** and their results
+are unchanged, so medicine-only reconciliation did not regress.
+
+### End to end: p4 against a lab bill
+
+`samples/sample-lab-bill.png` is a diagnostic-laboratory invoice — no batch
+numbers, no HSN, no pack sizes — paired with the real `p4`, whose handwriting
+orders `① CBC`. The bill itemises a Complete Blood Count the way a real lab
+does, plus one Lipid Profile nobody ordered.
+
+| | Result |
+| --- | --- |
+| Ordered | `CBC` → Complete Blood Count |
+| Billed | Haemoglobin, Total WBC Count, RBC Count, Platelet Count, Packed Cell Volume, Differential Count, Lipid Profile |
+| Test pairs | **1** |
+| Test findings | **one** — `TEST_NOT_PRESCRIBED` (critical) for the Lipid Profile |
+
+**Six billed lines matched one handwritten order and produced no findings.**
+Without panel decomposition this document would have reported one unperformed
+test and seven unordered ones. That is the whole case for the feature, measured
+on genuine handwriting rather than on a fixture.
+
+The six prescribed medicines on `p4` do not appear on a lab bill, and are
+reported as **warnings**, each saying the bill carries only lab tests and that
+the pharmacy bill is a separate document that may not have been supplied. Before
+the separate-documents guard those were six criticals.
+
+The overall verdict is `inconclusive`, correctly: `p4` returned item counts
+`[7, 6, 6]` across the three runs, so `ITEM_COUNT_UNSTABLE` fires on the
+prescription. The test findings are still computed and shown, as provisional
+observations rather than assertions.
+
+### What this does not evidence
+
+The panel dictionary is hand-compiled and unverified, and every panel in it was
+chosen by me rather than taken from a laboratory's test master. Decomposition is
+only as correct as that table. Only one real prescription in the set (`p4`)
+orders a panel this build recognises, so panel matching is evidenced by one
+genuine handwriting sample and a synthetic bill — not by a corpus.
+

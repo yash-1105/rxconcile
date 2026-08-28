@@ -42,7 +42,6 @@ from rxconcile.models import (
     Severity,
     Verdict,
 )
-from rxconcile.models.schema import CHECK_UNAVAILABLE_CODE
 from rxconcile.normalize import (
     CanonicalDrug,
     Strength,
@@ -57,6 +56,8 @@ from rxconcile.normalize import (
 from rxconcile.normalize.drug_dictionary import DrugEntry, entries_for_salt
 from rxconcile.normalize.matcher import entry_for
 from rxconcile.normalize.units import strengths_equal
+from rxconcile.reconcile._findings import finding, unavailable
+from rxconcile.reconcile.lab import reconcile_tests
 
 logger: Final = logging.getLogger(__name__)
 
@@ -254,48 +255,10 @@ def pair_items(
 # --------------------------------------------------------------------------
 
 
-def _finding(
-    rule_code: str,
-    severity: Severity,
-    message: str,
-    *,
-    prescribed_ref: str | None = None,
-    billed_ref: str | None = None,
-    detail: dict[str, Any] | None = None,
-) -> Finding:
-    return Finding(
-        rule_code=rule_code,
-        severity=severity,
-        message=message,
-        prescribed_ref=prescribed_ref,
-        billed_ref=billed_ref,
-        detail=detail or {},
-    )
-
-
-def _unavailable(
-    check: str,
-    missing: list[str],
-    *,
-    prescribed_ref: str | None = None,
-    billed_ref: str | None = None,
-    note: str = "",
-) -> Finding:
-    """Record that a named check could not run.
-
-    The engine previously had no way to say this: a rule either fired or was
-    absent, and absence rendered identically to "checked, nothing found". Every
-    silent skip in docs/NULL_MATRIX.md was that same gap.
-    """
-    joined = ", ".join(missing)
-    return _finding(
-        CHECK_UNAVAILABLE_CODE, "info",
-        f"The {check} check could not run: {joined} {'is' if len(missing) == 1 else 'are'} "
-        f"not present on the document{'.' if not note else '. ' + note}",
-        prescribed_ref=prescribed_ref,
-        billed_ref=billed_ref,
-        detail={"check": check, "missing": missing, "note": note or None},
-    )
+#: Findings are built by the shared constructors so the medicine rules and the
+#: lab rules cannot drift apart. Aliased rather than renamed at every call site.
+_finding = finding
+_unavailable = unavailable
 
 
 def _schedule_entry(drug: CanonicalDrug) -> DrugEntry | None:
@@ -684,10 +647,16 @@ def _unmatched_rules(
     unknown_bill = [i for i in unmatched_bill if not bill_drugs[i].resolved]
     unknown_rx = [i for i in unmatched_rx if not rx_drugs[i].resolved]
 
+    # Lab bills and pharmacy bills are routinely separate documents. A bill that
+    # carries lab lines and no medicines at all is a lab bill, and a lab bill is
+    # not evidence that a prescribed medicine went undispensed -- the pharmacy
+    # bill is simply a different piece of paper that was not uploaded.
+    lab_only_bill = bool(bill.tests) and not bill.items
+
     for item_id in unmatched_rx:
         rx_line = rx_by_id[item_id]
         identified = rx_drugs[item_id].resolved
-        confident = identified and not unknown_bill
+        confident = identified and not unknown_bill and not lab_only_bill
         # An unidentifiable line cannot support the claim that it was not
         # dispensed -- only that nobody could tell. Critical is reserved for a
         # drug we actually recognised.
@@ -700,6 +669,12 @@ def _unmatched_rules(
             message = (
                 f"Prescribed line {rx_line.raw_text!r} could not be identified, so "
                 "whether it was dispensed could not be determined."
+            )
+        elif lab_only_bill:
+            message = (
+                f"Prescribed item {rx_line.drug_name!r} does not appear on this bill, "
+                "but the bill carries only lab tests and no medicines at all -- the "
+                "pharmacy bill is a separate document and may not have been supplied."
             )
         else:
             message = (
@@ -718,6 +693,7 @@ def _unmatched_rules(
                     "raw_text": rx_line.raw_text,
                     "identified": identified,
                     "unidentified_billed_lines": list(unknown_bill),
+                    "lab_only_bill": lab_only_bill,
                 },
             )
         )
@@ -727,6 +703,8 @@ def _unmatched_rules(
                     "billed-counterpart",
                     ["an identifiable drug name on the prescription line"]
                     if not identified
+                    else ["any medicine line on the bill"]
+                    if lab_only_bill
                     else [f"identifiable drug names on {len(unknown_bill)} billed line(s)"],
                     prescribed_ref=item_id,
                 )
@@ -1101,6 +1079,12 @@ def reconcile(
             prescription, bill, unmatched_rx, unmatched_bill, rx_by_id, bill_by_id
         )
     )
+    # Lab tests run through their own pairing, then join the same findings list.
+    # Nothing downstream distinguishes them: the verdict and the score treat a
+    # critical test finding exactly as they treat a critical medicine finding.
+    lab = reconcile_tests(prescription, bill)
+    findings.extend(lab.findings)
+
     findings.extend(_document_rules(prescription, bill, bill_by_id))
     findings.extend(_low_agreement_findings(prescription, bill))
 
@@ -1122,8 +1106,8 @@ def reconcile(
     )
 
     logger.info(
-        "reconciled: verdict=%s score=%s pairs=%d findings=%d",
-        verdict, score, len(pairs), len(findings),
+        "reconciled: verdict=%s score=%s pairs=%d test_pairs=%d findings=%d",
+        verdict, score, len(pairs), len(lab.matched), len(findings),
     )
     return ReconciliationResult(
         verdict=verdict,
@@ -1132,6 +1116,9 @@ def reconcile(
         matched_pairs=pairs,
         unmatched_prescribed=unmatched_rx,
         unmatched_billed=unmatched_bill,
+        matched_tests=lab.matched,
+        unmatched_prescribed_tests=lab.unmatched_prescribed,
+        unmatched_billed_tests=lab.unmatched_billed,
         prescription=prescription,
         bill=bill,
         processing_ms=elapsed,

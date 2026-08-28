@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "2026-08-27.4"
+PROMPT_VERSION: Final[str] = "2026-08-28.1"
 
 _NEVER_GUESS: Final[str] = """
 ABSOLUTE RULE — NEVER INVENT A VALUE
@@ -131,6 +131,34 @@ where the assumption is visible and testable. Leaving duration_days null is
 always correct when the page does not state days.
 """.strip()
 
+_INVESTIGATIONS: Final[str] = """
+INVESTIGATIONS (LAB TESTS)
+Indian prescriptions order lab work in a short block headed "Adv:", "Advice:",
+"Inv:", "Investigations:", "Lab:", or simply written above the drug list. Put
+every ordered test in `tests`, in document order, separate from `items`.
+
+Tests are usually ordered by ABBREVIATED PANEL NAME: LFT, KFT, RFT, CBC, TFT,
+Lipid Profile, HbA1c, Urine R/M, USG, X-Ray, ECG. **Copy the abbreviation as
+written.** Do not expand "LFT" into its component tests and do not list the
+analytes a panel contains -- software does that decomposition, and it needs to
+know what the doctor actually wrote.
+
+One written line is one entry. If the page reads "CBC, LFT, RBS", that is three
+entries, because they are three orders.
+
+`investigations_present` is a question about the LAYOUT OF THE PAGE, not about
+what you could read:
+  - true  -- there IS such a section, EVEN IF every line in it is illegible
+  - false -- you can see the page and there is no investigations section
+  - null  -- you cannot tell (page cropped, region obscured)
+An unreadable tests section is `investigations_present` = true with entries
+whose `test_name` is null and whose `raw_text` holds whatever you could see.
+**Returning an empty `tests` list with `investigations_present` = false when the
+section is merely unreadable is a serious error**: it reports "no tests ordered"
+when the truth is "tests ordered, could not read them". Those are different
+answers and only one of them is clean.
+""".strip()
+
 PRESCRIPTION_INSTRUCTION: Final[str] = f"""
 You are reading a photograph of a HANDWRITTEN INDIAN MEDICAL PRESCRIPTION.
 Expect cursive English, heavy abbreviation, Latin sig notation, and sometimes
@@ -150,6 +178,8 @@ Specifically for drug names: if you cannot confidently read the drug name, set
 {SIG_NOTATION}
 
 {_DURATION}
+
+{_INVESTIGATIONS}
 
 {_STRENGTH_UNIT}
 
@@ -214,6 +244,19 @@ dispensed quantity by the pack size, which is worse than leaving it unstated --
 software compares both readings when this is null.
 
 {_BBOX}
+
+LAB TEST LINES
+Some bills are diagnostic-lab bills, not pharmacy bills, and some are both. Put
+every LAB TEST line in `tests` and every MEDICINE or consumable line in `items`.
+A bill with only tests, or only medicines, is normal -- prescriptions and lab
+orders are commonly billed on separate documents.
+
+Copy each test name as printed. A bill often itemises a panel into its analytes:
+"SGPT", "SGOT", "Bilirubin Total", "Alkaline Phosphatase" may be four printed
+lines that together are one ordered LFT. **Return the four lines as four
+entries.** Do not merge them into a panel and do not add a panel name that is
+not printed on the bill -- software reassembles panels, and it needs the printed
+lines to do it.
 
 PACK SIZE
 Return `pack_size` EXACTLY as printed — "10'S", "1x10", "15ML", "STRIP OF 10".

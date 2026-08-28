@@ -184,3 +184,91 @@ Two implementation notes for the engine:
   computed in full and `ILLEGIBLE_RX` is appended carrying the reasons.
 - **Score**: `100 − 25×criticals − 8×warnings`, floored at 0, info ignored, and
   `None` under `inconclusive`.
+
+---
+
+## 8. Lab test reconciliation
+
+Engine work of the same size as the medicine engine, reusing its machinery
+rather than paralleling it: the same never-guess rule, the same N=3 agreement
+resolution, the same `Finding` shape, the same `MatchedPair`, the same
+`CHECK_UNAVAILABLE` treatment, and the same verdict and score arithmetic. A
+critical test finding is a `mismatch` exactly as a critical medicine finding is.
+
+### 8a. Comparison happens at panel components, not written lines
+
+The two documents describe lab work at different granularities. A doctor writes
+`LFT`; the laboratory bills SGPT, SGOT, Bilirubin and Alkaline Phosphatase on
+four lines. Compared literally that is one test never performed plus four never
+ordered — **five findings against a bill that is correct.**
+
+`normalize/lab_panels.py` maps panel names common in Indian practice (LFT,
+KFT/RFT, CBC, Lipid Profile, Thyroid Profile, HbA1c, Urine R/M) to the analytes
+a bill itemises them into, and maps analyte aliases (ALT→SGPT, AST→SGOT,
+TLC→Total WBC Count, Hb→Haemoglobin) to one canonical name. Both sides are
+expanded to component sets and compared as sets.
+
+It carries the same warning as the drug dictionary: **hand-compiled,
+unverified, not for clinical use.** Panel composition varies between
+laboratories; a production system needs the reporting lab's own test master.
+
+### 8b. Rules
+
+| Code | Severity | Fires when |
+| --- | --- | --- |
+| `TEST_NOT_BILLED` | critical | an ordered test has no component on the bill |
+| `TEST_NOT_PRESCRIBED` | critical | a billed test matches no ordered test or panel |
+| `PANEL_PARTIAL` | warning | a panel is billed incompletely; the finding names the missing components |
+| `TEST_DUPLICATE` | warning | one test on two lines, or one line with quantity above 1 |
+| `TEST_UNRESOLVED` | info | a written name resolves to no known test or panel |
+
+Both criticals downgrade to **warning** whenever the counterpart document
+cannot support a confident claim — the same counterpart-confidence rule the
+medicine side already applies to `RX_NOT_BILLED`.
+
+### 8c. Absence of tests is not a discrepancy
+
+A document with no tests on either side produces no test findings at all, no
+`CHECK_UNAVAILABLE`, and no score penalty. Most prescriptions order only
+medicines and must reconcile perfectly clean.
+
+### 8d. Present-but-unreadable is not absent
+
+`tests = []` with `investigations_present = true` means the section exists and
+could not be read. Reporting that as "no tests ordered" would make every billed
+test unauthorised — one unreadable region becoming a document full of
+accusations. Only `investigations_present = false`, a positive observation that
+the page carries no such section, licenses a critical. `null` is treated as
+uncertain, not as absent.
+
+The extractor is asked for `investigations_present` as a question about
+**layout**, answerable even when no word in the section is legible, and Python
+forces it true whenever a test line was in fact read.
+
+### 8e. An unresolved panel expands to nothing, not to zero components
+
+An unresolved `LabMatch` carries an empty component tuple, and an empty set
+trivially covers nothing — so a naive reading reports every billed component as
+unprescribed. One illegible word, four criticals: the same shape as the
+unidentifiable-drug false positive fixed earlier.
+
+Resolution is therefore checked before components are used. An unresolved order
+is reported as `TEST_UNRESOLVED` plus `CHECK_UNAVAILABLE`, is never compared,
+never produces `TEST_NOT_BILLED`, and its presence softens every billed-line
+accusation to a warning carrying a stated reason.
+
+### 8f. Lab bills and pharmacy bills are separate documents
+
+The schema does not assume one file: `PharmacyBill` may carry tests, medicines,
+or both, and so may be a lab invoice with no medicines at all.
+
+The engine has to say the same thing, or a prescription reconciled against a
+lab-only bill reports every medicine as undispensed. Two symmetric guards:
+
+| Condition | Effect |
+| --- | --- |
+| bill has lab lines and no medicines | `RX_NOT_BILLED` softens to warning — a lab bill is not evidence a medicine went undispensed |
+| bill has medicines and no lab lines | `TEST_NOT_BILLED` softens to warning — a pharmacy bill says nothing about whether a test was performed |
+
+Each records a `CHECK_UNAVAILABLE` naming the document that was not supplied.
+

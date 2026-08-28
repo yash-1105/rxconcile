@@ -29,10 +29,18 @@ const DISCREPANCY_CODES = new Set([
   'DUPLICATE_THERAPY',
   'PATIENT_NAME_MISMATCH',
   'DATE_ANOMALY',
+  'TEST_NOT_BILLED',
+  'TEST_NOT_PRESCRIBED',
+  'PANEL_PARTIAL',
+  'TEST_DUPLICATE',
 ])
 
 /** Findings that say a check was attempted but could not conclude. */
-const UNVERIFIED_CODES = new Set(['QUANTITY_AMBIGUOUS', 'STRENGTH_UNIT_UNSTATED'])
+const UNVERIFIED_CODES = new Set([
+  'QUANTITY_AMBIGUOUS',
+  'STRENGTH_UNIT_UNSTATED',
+  'TEST_UNRESOLVED',
+])
 
 /** Findings that say a check never ran at all. */
 const NOT_RUN_CODES = new Set(['CHECK_UNAVAILABLE'])
@@ -158,6 +166,26 @@ export function phrase(
       )} against a pack of ${num(detail['units_per_pack'])}`
     case 'STRENGTH_UNIT_UNSTATED':
       return `${nameOf(rx)} — both documents show the same number, but only one prints a unit`
+    case 'TEST_NOT_BILLED':
+      return detail['softened_because']
+        ? `${String(detail['resolved_as'])} was ordered, but nothing on the bill could be matched to it`
+        : `${String(detail['resolved_as'])} was ordered but does not appear on the bill`
+    case 'TEST_NOT_PRESCRIBED':
+      return detail['softened_because']
+        ? `${String(detail['resolved_as'])} was billed, and what was ordered could not be established`
+        : `${String(detail['resolved_as'])} was billed but was not among the tests ordered`
+    case 'PANEL_PARTIAL': {
+      const missing = (detail['missing_components'] as string[] | undefined) ?? []
+      return `${String(detail['panel'])} was ordered but the bill is missing ${missing.join(', ')}`
+    }
+    case 'TEST_DUPLICATE':
+      return detail['quantity']
+        ? `${String(detail['test'])} is billed with a quantity of ${num(detail['quantity'])}`
+        : `${String(detail['test'])} is billed more than once`
+    case 'TEST_UNRESOLVED':
+      return `“${String(detail['written'])}” on the ${String(
+        detail['side'],
+      )} is not a test this build recognises, so it could not be checked`
     case 'CHECK_UNAVAILABLE':
       return `${String(detail['check'])} — needs ${
         (detail['missing'] as string[] | undefined)?.join(', ') ?? 'missing input'

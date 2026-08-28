@@ -21,7 +21,7 @@ from rxconcile.extract.dto import PrescriptionDTO
 from rxconcile.extract.errors import ExtractionError
 from rxconcile.extract.preprocess import PreparedImage, prepare_image
 from rxconcile.extract.prompts import PRESCRIPTION_INSTRUCTION, PROMPT_VERSION
-from rxconcile.models import PrescribedItem, Prescription
+from rxconcile.models import PrescribedItem, PrescribedTest, Prescription
 
 logger: Final = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ def _as_bbox(value: object) -> tuple[float, float, float, float] | None:
 
 DOC_TYPE: Final[str] = "prescription"
 ITEM_ID_PREFIX: Final[str] = "rx"
+TEST_ID_PREFIX: Final[str] = "test"
 
 #: Item fields carried through consensus. ``item_id`` is assigned by Python and
 #: ``confidence`` is the model's own non-gating score, so neither is voted on.
@@ -52,6 +53,9 @@ ITEM_FIELDS: Final[tuple[str, ...]] = (
     "route",
     "instructions",
 )
+
+#: Test fields carried through the same consensus machinery as items.
+TEST_FIELDS: Final[tuple[str, ...]] = ("raw_text", "bbox", "test_name", "panel", "urgency")
 
 #: Document-level scalars resolved by the same majority rule.
 _DOC_FIELDS: Final[tuple[str, ...]] = (
@@ -105,6 +109,31 @@ def _build_item(cluster: consensus.ItemCluster, item_id: str) -> PrescribedItem:
     )
 
 
+def _build_test(cluster: consensus.ItemCluster, item_id: str) -> PrescribedTest:
+    resolved = {field: consensus.resolve_field(cluster, field) for field in TEST_FIELDS}
+    resolved["bbox"] = consensus.resolve_bbox(
+        [getattr(test, "bbox", None) for test in cluster.present],
+        run_count=cluster.present_count,
+    )
+    agreement = {
+        field: outcome.agreement
+        for field, outcome in resolved.items()
+        if outcome.agreement is not None
+    }
+    confidences = [float(getattr(test, "confidence", 0.0)) for test in cluster.present]
+    return PrescribedTest(
+        item_id=item_id,
+        # Never nulled, exactly as for items: raw_text is the reviewer's evidence.
+        raw_text=cluster.canonical_raw_text,
+        bbox=_as_bbox(resolved["bbox"].value),
+        test_name=resolved["test_name"].value,
+        panel=resolved["panel"].value,
+        urgency=resolved["urgency"].value,
+        agreement=agreement or None,
+        confidence=clamp_unit(sum(confidences) / len(confidences) if confidences else 0.0),
+    )
+
+
 def build_prescription(runs: list[PrescriptionDTO]) -> Prescription:
     """Resolve N extraction runs into one prescription.
 
@@ -120,6 +149,23 @@ def build_prescription(runs: list[PrescriptionDTO]) -> Prescription:
 
     item_ids = assign_ids(ITEM_ID_PREFIX, len(kept))
     items = [_build_item(cluster, item_id) for item_id, cluster in zip(item_ids, kept, strict=True)]
+
+    test_clusters = consensus.align_items([list(run.tests) for run in runs])
+    kept_tests, unstable_tests = consensus.split_clusters(test_clusters, run_count=run_count)
+    test_ids = assign_ids(TEST_ID_PREFIX, len(kept_tests))
+    tests = [
+        _build_test(cluster, test_id)
+        for test_id, cluster in zip(test_ids, kept_tests, strict=True)
+    ]
+    # A layout observation, resolved by majority like any other scalar. Only an
+    # explicit False means "no investigations section"; null stays null.
+    investigations_present = consensus.resolve_values(
+        [run.investigations_present for run in runs], run_count=run_count
+    ).value
+    if tests and investigations_present is not True:
+        # Lines were read out of a section the model did not flag. The section
+        # demonstrably exists.
+        investigations_present = True
 
     doc = {
         field: consensus.resolve_values(
@@ -143,6 +189,24 @@ def build_prescription(runs: list[PrescriptionDTO]) -> Prescription:
             f"{unnamed} of {len(items)} prescribed item(s) had no legible drug name "
             "and were left null rather than guessed."
         )
+    unnamed_tests = sum(1 for test in tests if test.test_name is None)
+    if unnamed_tests:
+        warnings.append(
+            f"{unnamed_tests} of {len(tests)} ordered test(s) had no legible name and "
+            "were left null rather than guessed."
+        )
+    if investigations_present and not tests:
+        # The distinction the whole feature turns on. Say it in words, not by
+        # an empty list that reads as a clean result.
+        warnings.append(
+            "An investigations section is present on the page but no test line could "
+            "be read from it. This is NOT the same as no tests being ordered."
+        )
+    if unstable_tests:
+        warnings.append(
+            f"{len(unstable_tests)} test line(s) appeared in some extraction runs but "
+            f"not all; test counts across runs were {[len(run.tests) for run in runs]}."
+        )
     if unstable:
         warnings.append(
             f"{len(unstable)} line(s) appeared in some extraction runs but not all; "
@@ -161,9 +225,13 @@ def build_prescription(runs: list[PrescriptionDTO]) -> Prescription:
         date_issued=date_issued,
         diagnosis_text=doc["diagnosis_text"],
         items=items,
+        tests=tests,
+        investigations_present=(
+            investigations_present if isinstance(investigations_present, bool) else None
+        ),
         overall_legibility=clamp_unit(sum(legibilities) / len(legibilities)),
         run_item_counts=[len(run.items) for run in runs],
-        unstable_lines=unstable,
+        unstable_lines=unstable + unstable_tests,
         warnings=warnings,
     )
 
@@ -222,8 +290,9 @@ def extract_prescription(
     if use_cache:
         cache.store(key, prescription.model_dump(mode="json"))
     logger.info(
-        "prescription: %d item(s) from %d run(s), counts=%s, %d unstable",
-        len(prescription.items), run_count, prescription.run_item_counts,
+        "prescription: %d item(s), %d test(s) from %d run(s), counts=%s, %d unstable",
+        len(prescription.items), len(prescription.tests), run_count,
+        prescription.run_item_counts,
         len(prescription.unstable_lines),
     )
     return prescription

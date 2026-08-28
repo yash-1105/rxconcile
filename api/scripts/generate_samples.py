@@ -144,6 +144,86 @@ def _bill(
     print(f"  wrote {path.name}  {image.size}")
 
 
+def _lab_bill(
+    *,
+    lab: str,
+    reg: str,
+    bill_no: str,
+    date_text: str,
+    patient: str,
+    rows: list[tuple[str, str, str, str]],
+    totals: list[tuple[str, str]],
+    path: Path,
+) -> None:
+    """A diagnostic laboratory invoice.
+
+    Deliberately a different document from the pharmacy bill: no batch, no HSN,
+    no pack size, and it itemises a panel into its analytes the way a real lab
+    does. The point of the sample is that the prescription orders one thing
+    ("CBC") and the bill charges for six.
+    """
+    width, height = 1100, 820
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+
+    draw.text((40, 28), lab, font=printed(34, bold=True), fill="#000")
+    draw.text((40, 76), f"Reg. No. {reg}", font=printed(19), fill="#333")
+    draw.text((40, 104), f"Invoice: {bill_no}        Date: {date_text}", font=printed(21))
+    draw.text((40, 136), f"Patient: {patient}", font=printed(21), fill="#000")
+    draw.line([(35, 176), (width - 35, 176)], fill="#000", width=2)
+
+    headers = ["#", "INVESTIGATION", "QTY", "RATE", "AMOUNT"]
+    xs = [40, 90, 660, 790, 930]
+    for x, header in zip(xs, headers, strict=True):
+        draw.text((x, 190), header, font=printed(18, bold=True), fill="#000")
+    draw.line([(35, 216), (width - 35, 216)], fill="#000", width=1)
+
+    y = 232
+    for index, row in enumerate(rows, start=1):
+        for x, cell in zip(xs, (str(index), *row), strict=True):
+            draw.text((x, y), cell, font=printed(18), fill="#000")
+        y += 38
+    draw.line([(35, y + 8), (width - 35, y + 8)], fill="#000", width=1)
+
+    y += 28
+    for label, value in totals:
+        bold = label.lower().startswith("grand")
+        draw.text((760, y), label, font=printed(20, bold=bold), fill="#000")
+        draw.text((930, y), value, font=printed(20, bold=bold), fill="#000")
+        y += 32
+    image.save(path)
+    print(f"  wrote {path.name}  {image.size}")
+
+
+def sample_lab() -> None:
+    """A lab bill for p4, whose real handwriting orders "CBC".
+
+    Six of the rows are the analytes a Complete Blood Count decomposes into --
+    the case the panel dictionary exists for, and a match, not six findings. The
+    seventh is a Lipid Profile nobody ordered, which is a real discrepancy.
+    """
+    print("sample-lab  panel decomposition against a real prescription (p4)")
+    _lab_bill(
+        lab="SUNRISE DIAGNOSTIC LABORATORY",
+        reg="WB/PATH/2019/4471",
+        bill_no="LAB-20881",
+        date_text="24-08-2026",
+        # Matches the patient on samples/p4.jpg, which this bill is paired with.
+        patient="Dalia Kundu",
+        rows=[
+            ("Haemoglobin", "1", "120.00", "120.00"),
+            ("Total WBC Count", "1", "120.00", "120.00"),
+            ("RBC Count", "1", "120.00", "120.00"),
+            ("Platelet Count", "1", "150.00", "150.00"),
+            ("Packed Cell Volume", "1", "110.00", "110.00"),
+            ("Differential Count", "1", "140.00", "140.00"),
+            ("Lipid Profile", "1", "800.00", "800.00"),
+        ],
+        totals=[("Sub Total", "1560.00"), ("Grand Total", "1560.00")],
+        path=SAMPLES_DIR / "sample-lab-bill.png",
+    )
+
+
 def sample_01() -> None:
     """Clean matching pair. Em-dashes, 'x 5 days', pack \"10'S\"."""
     print("sample-01  clean match")
@@ -259,6 +339,7 @@ def main() -> int:
     sample_01()
     sample_02()
     sample_03()
+    sample_lab()
     print("\nNote: synthetic pages render glyphs cleanly. Real handwriting is")
     print("materially harder and these samples do not evidence accuracy on it.")
     return 0

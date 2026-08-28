@@ -18,9 +18,11 @@ from hypothesis import strategies as st
 
 from rxconcile.models import (
     BilledItem,
+    BilledTest,
     Finding,
     PharmacyBill,
     PrescribedItem,
+    PrescribedTest,
     Prescription,
     ReconciliationResult,
 )
@@ -37,7 +39,11 @@ BILL_NULLABLE = (
     "drug_name", "salt", "strength_value", "strength_unit", "form", "quantity",
     "pack_size", "units_basis", "unit_price", "line_total", "batch_no", "hsn_code",
 )
-DOC_NULLABLE = ("patient_name", "date_issued")
+#: Nullable fields on an ordered test and a billed test line. raw_text is
+#: absent from both lists on purpose: it is never nulled, on either side.
+TEST_NULLABLE = ("test_name", "panel", "urgency")
+BILLTEST_NULLABLE = ("test_name", "panel", "quantity", "unit_price", "line_total")
+DOC_NULLABLE = ("patient_name", "date_issued", "investigations_present")
 BILLDOC_NULLABLE = ("patient_name", "bill_date")
 
 RX_FULL: dict[str, Any] = {
@@ -56,26 +62,45 @@ BILL_FULL: dict[str, Any] = {
 }
 
 
+RX_TEST_FULL: dict[str, Any] = {
+    "item_id": "test-01", "raw_text": "Adv: [?] (fasting)", "test_name": "SGPT",
+    "panel": None, "urgency": "fasting", "confidence": 0.9,
+    "agreement": {"test_name": 1.0},
+}
+BILL_TEST_FULL: dict[str, Any] = {
+    "item_id": "billtest-01", "raw_text": "[?] .......... 250.00", "test_name": "SGPT",
+    "panel": None, "quantity": 1.0, "unit_price": "250.00", "line_total": "250.00",
+    "confidence": 0.9, "agreement": {"test_name": 1.0},
+}
+
+
 def build(
     rx_nulls: frozenset[str],
     bill_nulls: frozenset[str],
     doc_nulls: frozenset[str],
     billdoc_nulls: frozenset[str],
+    test_nulls: frozenset[str] = frozenset(),
+    billtest_nulls: frozenset[str] = frozenset(),
 ) -> ReconciliationResult:
     rx = {**RX_FULL, **dict.fromkeys(rx_nulls)}
     bl = {**BILL_FULL, **dict.fromkeys(bill_nulls)}
+    rx_test = {**RX_TEST_FULL, **dict.fromkeys(test_nulls)}
+    bill_test = {**BILL_TEST_FULL, **dict.fromkeys(billtest_nulls)}
     prescription = Prescription(
         patient_name=None if "patient_name" in doc_nulls else "A. Kulkarni",
         date_issued=None if "date_issued" in doc_nulls else dt.date(2026, 3, 14),
         overall_legibility=0.9,
         run_item_counts=[3, 3, 3],
         items=[PrescribedItem(**rx)],
+        tests=[PrescribedTest(**rx_test)],
+        investigations_present=None if "investigations_present" in doc_nulls else True,
     )
     bill = PharmacyBill(
         patient_name=None if "patient_name" in billdoc_nulls else "A. Kulkarni",
         bill_date=None if "bill_date" in billdoc_nulls else dt.date(2026, 3, 14),
         run_item_counts=[3, 3, 3],
         items=[BilledItem(**bl)],
+        tests=[BilledTest(**bill_test)],
     )
     return engine.reconcile(prescription, bill, processing_ms=0)
 
@@ -84,6 +109,8 @@ subsets = st.frozensets(st.sampled_from(RX_NULLABLE))
 bill_subsets = st.frozensets(st.sampled_from(BILL_NULLABLE))
 doc_subsets = st.frozensets(st.sampled_from(DOC_NULLABLE))
 billdoc_subsets = st.frozensets(st.sampled_from(BILLDOC_NULLABLE))
+test_subsets = st.frozensets(st.sampled_from(TEST_NULLABLE))
+billtest_subsets = st.frozensets(st.sampled_from(BILLTEST_NULLABLE))
 
 PROPERTY_SETTINGS = settings(
     max_examples=300,
@@ -97,25 +124,29 @@ def criticals(result: ReconciliationResult) -> list[Finding]:
 
 
 @PROPERTY_SETTINGS
-@given(subsets, bill_subsets, doc_subsets, billdoc_subsets)
+@given(subsets, bill_subsets, doc_subsets, billdoc_subsets, test_subsets, billtest_subsets)
 def test_engine_never_raises_on_any_combination_of_nulls(
     rx_nulls: frozenset[str],
     bill_nulls: frozenset[str],
     doc_nulls: frozenset[str],
     billdoc_nulls: frozenset[str],
+    test_nulls: frozenset[str],
+    billtest_nulls: frozenset[str],
 ) -> None:
     """Absent data must never crash the engine."""
-    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls)
+    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls, test_nulls, billtest_nulls)
     assert result.verdict in {"match", "match_with_warnings", "mismatch", "inconclusive"}
 
 
 @PROPERTY_SETTINGS
-@given(subsets, bill_subsets, doc_subsets, billdoc_subsets)
+@given(subsets, bill_subsets, doc_subsets, billdoc_subsets, test_subsets, billtest_subsets)
 def test_absent_data_alone_never_produces_a_critical(
     rx_nulls: frozenset[str],
     bill_nulls: frozenset[str],
     doc_nulls: frozenset[str],
     billdoc_nulls: frozenset[str],
+    test_nulls: frozenset[str],
+    billtest_nulls: frozenset[str],
 ) -> None:
     """Nulling fields on an otherwise-matching pair must not manufacture a critical.
 
@@ -124,7 +155,7 @@ def test_absent_data_alone_never_produces_a_critical(
     missing data -- which is how an illegible drug name became a confident
     'not dispensed'.
     """
-    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls)
+    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls, test_nulls, billtest_nulls)
     offenders = [f.rule_code for f in criticals(result)]
     assert not offenders, (
         f"critical finding(s) {offenders} from absent data alone; "
@@ -133,19 +164,21 @@ def test_absent_data_alone_never_produces_a_critical(
 
 
 @PROPERTY_SETTINGS
-@given(subsets, bill_subsets, doc_subsets, billdoc_subsets)
+@given(subsets, bill_subsets, doc_subsets, billdoc_subsets, test_subsets, billtest_subsets)
 def test_a_skipped_check_is_always_recorded(
     rx_nulls: frozenset[str],
     bill_nulls: frozenset[str],
     doc_nulls: frozenset[str],
     billdoc_nulls: frozenset[str],
+    test_nulls: frozenset[str],
+    billtest_nulls: frozenset[str],
 ) -> None:
     """If an input a check needs is absent, the result must say the check did not run.
 
     This is the invariant the whole audit exists to protect: 'we checked and
     found nothing' and 'we could not check' must never be indistinguishable.
     """
-    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls)
+    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls, test_nulls, billtest_nulls)
     unavailable = {
         str(f.detail.get("check"))
         for f in result.findings
@@ -193,15 +226,17 @@ def test_a_skipped_check_is_always_recorded(
 
 
 @PROPERTY_SETTINGS
-@given(subsets, bill_subsets, doc_subsets, billdoc_subsets)
+@given(subsets, bill_subsets, doc_subsets, billdoc_subsets, test_subsets, billtest_subsets)
 def test_checks_unavailable_counts_match_the_findings(
     rx_nulls: frozenset[str],
     bill_nulls: frozenset[str],
     doc_nulls: frozenset[str],
     billdoc_nulls: frozenset[str],
+    test_nulls: frozenset[str],
+    billtest_nulls: frozenset[str],
 ) -> None:
     """The headline count must equal the findings it summarises."""
-    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls)
+    result = build(rx_nulls, bill_nulls, doc_nulls, billdoc_nulls, test_nulls, billtest_nulls)
     expected = sum(1 for f in result.findings if f.rule_code == CHECK_UNAVAILABLE_CODE)
     assert result.review_summary.checks_unavailable == expected
 

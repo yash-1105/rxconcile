@@ -22,7 +22,7 @@ from rxconcile.extract.dto import PharmacyBillDTO
 from rxconcile.extract.errors import ExtractionError
 from rxconcile.extract.preprocess import PreparedImage, prepare_image
 from rxconcile.extract.prompts import BILL_INSTRUCTION, PROMPT_VERSION
-from rxconcile.models import BilledItem, PharmacyBill
+from rxconcile.models import BilledItem, BilledTest, PharmacyBill
 
 logger: Final = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ def _as_bbox(value: object) -> tuple[float, float, float, float] | None:
 
 DOC_TYPE: Final[str] = "bill"
 ITEM_ID_PREFIX: Final[str] = "bill"
+TEST_ID_PREFIX: Final[str] = "billtest"
 DEFAULT_CURRENCY: Final[str] = "INR"
 
 ITEM_FIELDS: Final[tuple[str, ...]] = (
@@ -51,6 +52,16 @@ ITEM_FIELDS: Final[tuple[str, ...]] = (
     "line_total",
     "batch_no",
     "hsn_code",
+)
+
+TEST_FIELDS: Final[tuple[str, ...]] = (
+    "raw_text",
+    "bbox",
+    "test_name",
+    "panel",
+    "quantity",
+    "unit_price",
+    "line_total",
 )
 
 _DOC_FIELDS: Final[tuple[str, ...]] = (
@@ -111,6 +122,36 @@ def _build_item(cluster: consensus.ItemCluster, item_id: str) -> BilledItem:
     )
 
 
+def _build_test(cluster: consensus.ItemCluster, item_id: str) -> BilledTest:
+    resolved = {field: consensus.resolve_field(cluster, field) for field in TEST_FIELDS}
+    resolved["bbox"] = consensus.resolve_bbox(
+        [getattr(test, "bbox", None) for test in cluster.present],
+        run_count=cluster.present_count,
+    )
+    agreement = {
+        field: outcome.agreement
+        for field, outcome in resolved.items()
+        if outcome.agreement is not None
+    }
+    confidences = [float(getattr(test, "confidence", 0.0)) for test in cluster.present]
+    quantity = resolved["quantity"].value
+    if isinstance(quantity, int | float) and quantity < 0:
+        quantity = None
+
+    return BilledTest(
+        item_id=item_id,
+        raw_text=cluster.canonical_raw_text,
+        bbox=_as_bbox(resolved["bbox"].value),
+        test_name=resolved["test_name"].value,
+        panel=resolved["panel"].value,
+        quantity=quantity,
+        unit_price=to_decimal(resolved["unit_price"].value),
+        line_total=to_decimal(resolved["line_total"].value),
+        agreement=agreement or None,
+        confidence=clamp_unit(sum(confidences) / len(confidences) if confidences else 0.0),
+    )
+
+
 def build_bill(runs: list[PharmacyBillDTO]) -> PharmacyBill:
     """Resolve N extraction runs into one bill."""
     if not runs:
@@ -122,6 +163,14 @@ def build_bill(runs: list[PharmacyBillDTO]) -> PharmacyBill:
 
     item_ids = assign_ids(ITEM_ID_PREFIX, len(kept))
     items = [_build_item(cluster, item_id) for item_id, cluster in zip(item_ids, kept, strict=True)]
+
+    test_clusters = consensus.align_items([list(run.tests) for run in runs])
+    kept_tests, unstable_tests = consensus.split_clusters(test_clusters, run_count=run_count)
+    test_ids = assign_ids(TEST_ID_PREFIX, len(kept_tests))
+    tests = [
+        _build_test(cluster, test_id)
+        for test_id, cluster in zip(test_ids, kept_tests, strict=True)
+    ]
 
     doc = {
         field: consensus.resolve_values(
@@ -138,6 +187,17 @@ def build_bill(runs: list[PharmacyBillDTO]) -> PharmacyBill:
                 warnings.append(warning)
     if date_warning:
         warnings.append(date_warning)
+    unnamed_tests = sum(1 for test in tests if test.test_name is None)
+    if unnamed_tests:
+        warnings.append(
+            f"{unnamed_tests} of {len(tests)} billed test line(s) had no legible name "
+            "and were left null rather than guessed."
+        )
+    if unstable_tests:
+        warnings.append(
+            f"{len(unstable_tests)} test line(s) appeared in some extraction runs but "
+            f"not all; test counts across runs were {[len(run.tests) for run in runs]}."
+        )
     if unstable:
         warnings.append(
             f"{len(unstable)} line(s) appeared in some extraction runs but not all; "
@@ -151,12 +211,13 @@ def build_bill(runs: list[PharmacyBillDTO]) -> PharmacyBill:
         bill_date=bill_date,
         patient_name=doc["patient_name"],
         items=items,
+        tests=tests,
         subtotal=to_decimal(doc["subtotal"]),
         tax_total=to_decimal(doc["tax_total"]),
         grand_total=to_decimal(doc["grand_total"]),
         currency=_currency(doc["currency"]),
         run_item_counts=[len(run.items) for run in runs],
-        unstable_lines=unstable,
+        unstable_lines=unstable + unstable_tests,
         warnings=warnings,
     )
 
