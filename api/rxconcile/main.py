@@ -42,6 +42,8 @@ from rxconcile.extract.preprocess import prepare_image
 from rxconcile.gcp import health_snapshot
 from rxconcile.gcp.errors import ModelResolutionError, VertexUnavailableError
 from rxconcile.models import PharmacyBill, Prescription, ReconciliationResult
+from rxconcile.normalize import lab_panels
+from rxconcile.normalize.drug_dictionary import load_entries
 from rxconcile.reconcile import reconcile
 from rxconcile.store import ScanRecord, get_session, summarise
 
@@ -811,6 +813,90 @@ async def sample_image(sample_id: str, which: str) -> FileResponse:
             hint="Check the samples/ directory in the repository is intact.",
         )
     return FileResponse(path)
+
+
+class DictionaryDrug(BaseModel):
+    """One brand as the dictionary screen shows it."""
+
+    brand_name: str
+    salt_composition: str
+    common_strengths: list[str]
+    form: str
+    therapeutic_class: str
+    schedule: str
+
+
+class DictionaryPanel(BaseModel):
+    """One lab panel and the analytes a bill itemises it into."""
+
+    name: str
+    components: list[str]
+    written_as: list[str]
+
+
+class DictionaryResponse(BaseModel):
+    """Both reference tables, served from the files the engine itself reads.
+
+    Deliberately not duplicated into the frontend: a drifting copy of reference
+    data is worse than a missing screen, because it looks authoritative while
+    disagreeing with what the matcher actually did.
+    """
+
+    #: Reproduced from the module docstrings so the screen cannot fall out of
+    #: step with the warning the code itself carries.
+    warning: str
+    drugs: list[DictionaryDrug]
+    panels: list[DictionaryPanel]
+    therapeutic_classes: list[str]
+    schedules: list[str]
+
+
+DICTIONARY_WARNING: Final[str] = (
+    "Illustrative proof-of-concept data, not a validated drug database or laboratory "
+    "reference. These entries were hand-compiled to exercise brand-to-salt resolution "
+    "and panel decomposition on realistic Indian documents. They have not been verified "
+    "against any regulatory source, the strengths listed are indicative rather than "
+    "exhaustive, the schedule classifications are approximate, and panel compositions "
+    "vary between laboratories. Do not use this data to make any clinical, dispensing "
+    "or billing decision."
+)
+
+
+@app.get("/api/dictionary")
+async def dictionary() -> DictionaryResponse:
+    """The reference data the engine matches against, read from its own files."""
+    entries = load_entries()
+    drugs = [
+        DictionaryDrug(
+            brand_name=entry.brand_name,
+            salt_composition=entry.salt_composition,
+            common_strengths=list(entry.common_strengths),
+            form=entry.form,
+            therapeutic_class=entry.therapeutic_class,
+            schedule=entry.schedule,
+        )
+        for entry in entries
+    ]
+
+    written: dict[str, list[str]] = {}
+    for alias, canonical in lab_panels.PANEL_ALIASES.items():
+        written.setdefault(canonical, []).append(alias)
+    panels = [
+        DictionaryPanel(
+            name=name,
+            components=list(components),
+            written_as=sorted(written.get(name, [])),
+        )
+        for name, components in lab_panels.PANELS.items()
+    ]
+
+    return DictionaryResponse(
+        warning=DICTIONARY_WARNING,
+        drugs=drugs,
+        panels=panels,
+        therapeutic_classes=sorted({d.therapeutic_class for d in drugs if d.therapeutic_class}),
+        schedules=sorted({d.schedule for d in drugs if d.schedule}),
+    )
 
 
 @app.post("/api/reconcile")

@@ -325,3 +325,38 @@ export interface ScanSummary {
 export interface ScanDetail extends ScanSummary {
   result: ReconciliationResult
 }
+
+// --------------------------------------------------------------------------
+// Reference data
+// --------------------------------------------------------------------------
+
+export interface DictionaryDrug {
+  brand_name: string
+  salt_composition: string
+  common_strengths: string[]
+  form: string
+  therapeutic_class: string
+  schedule: string
+}
+
+export interface DictionaryPanel {
+  name: string
+  components: string[]
+  /** How the panel is written on a real prescription. */
+  written_as: string[]
+}
+
+/**
+ * Both reference tables, served from the files the engine reads.
+ *
+ * Never copied into the frontend: a drifting copy of reference data is worse
+ * than a missing screen, because it looks authoritative while disagreeing with
+ * what the matcher actually did.
+ */
+export interface DictionaryResponse {
+  warning: string
+  drugs: DictionaryDrug[]
+  panels: DictionaryPanel[]
+  therapeutic_classes: string[]
+  schedules: string[]
+}

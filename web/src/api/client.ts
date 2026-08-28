@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   DemoSession,
+  DictionaryResponse,
   ReconciliationResult,
   SampleSummary,
   ScanDetail,
@@ -39,6 +40,10 @@ async function unwrap<T>(response: Response): Promise<T> {
     }
   }
   throw new ApiError(body)
+}
+
+export async function fetchDictionary(): Promise<DictionaryResponse> {
+  return unwrap<DictionaryResponse>(await fetch(`${BASE_URL}/api/dictionary`))
 }
 
 export async function fetchSamples(): Promise<SampleSummary[]> {

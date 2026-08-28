@@ -567,3 +567,56 @@ def test_transient_429s_are_absorbed_by_retry_without_fallback(
     # Every call recovered on the primary model; the fallback was never needed.
     assert settings.gemini_model_quota_fallback not in state["served"]
     assert state["served"].count(settings.gemini_model) == 6
+
+
+# --------------------------------------------------------------------------
+# Reference data
+# --------------------------------------------------------------------------
+
+
+def test_dictionary_serves_the_drug_list_the_matcher_reads(client: TestClient) -> None:
+    """Served from the engine's own file, never a copy that could drift."""
+    from rxconcile.normalize.drug_dictionary import load_entries
+
+    response = client.get("/api/dictionary")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["drugs"]) == len(load_entries())
+
+    dolo = next(d for d in body["drugs"] if d["brand_name"] == "Dolo")
+    assert dolo["salt_composition"] == "Paracetamol"
+    assert dolo["common_strengths"]
+    assert dolo["schedule"] == "OTC"
+
+
+def test_dictionary_serves_the_lab_panels(client: TestClient) -> None:
+    from rxconcile.normalize import lab_panels
+
+    body = client.get("/api/dictionary").json()
+    assert len(body["panels"]) == len(lab_panels.PANELS)
+
+    lft = next(p for p in body["panels"] if p["name"] == "Liver Function Test")
+    assert "SGPT" in lft["components"]
+    assert "lft" in lft["written_as"], "the screen must show how it is written on a page"
+
+
+def test_dictionary_offers_the_filters_the_screen_needs(client: TestClient) -> None:
+    body = client.get("/api/dictionary").json()
+    assert "H1" in body["schedules"], "the schedule powering the unbacked check"
+    assert len(body["therapeutic_classes"]) > 5
+    # Filter values must actually occur in the rows they filter.
+    classes = {d["therapeutic_class"] for d in body["drugs"]}
+    assert set(body["therapeutic_classes"]) <= classes
+
+
+def test_dictionary_carries_the_not_for_clinical_use_warning(client: TestClient) -> None:
+    """The screen a client is most likely to mistake for an authoritative source."""
+    warning = client.get("/api/dictionary").json()["warning"].lower()
+    for phrase in ("not a validated", "hand-compiled", "indicative", "approximate"):
+        assert phrase in warning
+    assert "do not use this data" in warning
+
+
+def test_dictionary_needs_no_session(client: TestClient) -> None:
+    """Reference data is not account-scoped; it is the same for everyone."""
+    assert client.get("/api/dictionary").status_code == 200
