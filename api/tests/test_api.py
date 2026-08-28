@@ -474,11 +474,14 @@ def test_a_429_on_one_of_six_calls_still_completes_via_fallback(
         def generate_content(
             self, *, model: str, contents: Any, config: Any
         ) -> types.GenerateContentResponse:
-            call_id = id(config)
+            # Hold the config object itself, not its id(). CPython reuses the
+            # id of a freed object, so once the first config was collected a
+            # later one could land at the same address and be treated as
+            # unlucky too -- six rejections instead of three, at random.
             with lock:
                 if state["unlucky"] is None:
-                    state["unlucky"] = call_id
-                unlucky = state["unlucky"] == call_id
+                    state["unlucky"] = config
+                unlucky = state["unlucky"] is config
                 if unlucky and model == settings.gemini_model:
                     state["rejections"] += 1
                     raise genai_errors.APIError(429, {"error": {"message": "quota"}})

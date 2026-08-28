@@ -276,3 +276,28 @@ The results screen reads either and states it at the top of the page, above the
 verdict — a reviewer must not be shown a clean-looking screen for lines nobody
 examined.
 
+---
+
+## 9. The response reports the dictionary match
+
+`ReconciliationResult.canonical` carries, for every medicine line on both
+documents, what `normalize.matcher` resolved it to: canonical name, salt
+composition, score and method.
+
+The engine computed this on every run from the beginning and had no way to
+report it. A salt therefore reached a client only as a **side effect** of a
+`BRAND_SUBSTITUTION` or `SCHEDULE_H_UNBACKED` finding happening to fire and
+stashing one in its detail. Augmentin, Pan-D, Montair-LC and Zerodol-SP all
+resolve perfectly against the dictionary and still showed nothing wherever no
+such finding was raised.
+
+It is deliberately a separate object rather than a value written onto
+`PrescribedItem.salt`. That field is what the model **read off the page**, and
+is usually null because prescriptions print brand names. Conflating a value
+transcribed from a document with a value looked up in a dictionary is exactly
+what the identity rule exists to prevent.
+
+An unresolved line appears with `method: "unresolved"` and null name and salt,
+rather than being omitted — so a caller can tell "looked up, no match" from
+"never looked up".
+

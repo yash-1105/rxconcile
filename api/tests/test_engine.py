@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from rxconcile.models import (
     BilledItem,
+    CanonicalMatch,
     PharmacyBill,
     PrescribedItem,
     Prescription,
@@ -734,3 +736,72 @@ def test_both_units_stated_and_different_still_fires() -> None:
     )
     assert "STRENGTH_MISMATCH" in codes(result)
     assert "STRENGTH_UNIT_UNSTATED" not in codes(result)
+
+
+# ---------------------------------------------------------------------------
+# Canonical matches on the response
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_carries_the_salt_for_every_line() -> None:
+    """The salt used to escape only when a particular finding happened to fire.
+
+    Augmentin, Pan-D, Montair-LC and Zerodol-SP are all in the dictionary and
+    all resolve; before this was reported, a row with no BRAND_SUBSTITUTION or
+    SCHEDULE_H_UNBACKED finding reached the client with no salt anywhere.
+    """
+    brands = ["Augmentin", "Pan-D", "Montair-LC", "Zerodol-SP"]
+    prescription = Prescription(
+        overall_legibility=0.9,
+        items=[
+            PrescribedItem(item_id=f"rx-{i:02d}", raw_text=name, drug_name=name, confidence=0.9)
+            for i, name in enumerate(brands, start=1)
+        ],
+    )
+    bill = PharmacyBill(
+        currency="INR",
+        items=[
+            BilledItem(item_id=f"bill-{i:02d}", raw_text=name, drug_name=name, confidence=0.9)
+            for i, name in enumerate(brands, start=1)
+        ],
+    )
+    result = engine.reconcile(prescription, bill, processing_ms=0)
+
+    by_id = {c.item_id: c for c in result.canonical}
+    assert set(by_id) == {f"rx-{i:02d}" for i in range(1, 5)} | {
+        f"bill-{i:02d}" for i in range(1, 5)
+    }
+    salts = {by_id[f"rx-{i:02d}"].salt for i in range(1, 5)}
+    assert None not in salts, "every one of these brands is in the dictionary"
+    assert "Amoxicillin+Clavulanic Acid" in salts
+    assert "Pantoprazole+Domperidone" in salts
+    assert "Montelukast+Levocetirizine" in salts
+
+
+def test_an_unresolved_line_is_reported_as_unresolved_not_omitted() -> None:
+    """'Looked up, no match' and 'never looked up' must be distinguishable."""
+    prescription = Prescription(
+        overall_legibility=0.9,
+        items=[
+            PrescribedItem(item_id="rx-01", raw_text="Zzqx [?]", drug_name=None, confidence=0.4)
+        ],
+    )
+    bill = PharmacyBill(currency="INR", items=[])
+    result = engine.reconcile(prescription, bill, processing_ms=0)
+
+    entry = next(c for c in result.canonical if c.item_id == "rx-01")
+    assert entry.method == "unresolved"
+    assert entry.resolved is False
+    assert entry.salt is None
+    assert entry.name is None
+
+
+def test_canonical_ids_must_reference_real_lines() -> None:
+    prescription = Prescription(overall_legibility=0.9, items=[])
+    bill = PharmacyBill(currency="INR", items=[])
+    with pytest.raises(ValidationError, match=r"canonical\[0\].item_id"):
+        ReconciliationResult(
+            verdict="match", score=100.0, findings=[], matched_pairs=[],
+            canonical=[CanonicalMatch(item_id="rx-99", side="prescription")],
+            prescription=prescription, bill=bill, processing_ms=1,
+        )

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { openDemoSession } from '../api/client'
-import { DEMO_ACCOUNTS, type Session } from '../auth/session'
+import { type Session } from '../auth/session'
 import { SpineRule } from './Spine'
 
 export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
@@ -25,7 +25,7 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
         token: demo.token,
       })
     } catch {
-      setError('Those demo credentials were not recognised. Use one of the buttons below.')
+      setError('Those demo credentials were not recognised.')
     } finally {
       setBusy(false)
     }
@@ -62,7 +62,7 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
                   onChange={(event) => setEmail(event.target.value)}
                   autoComplete="off"
                   className="t-data mt-1.5 w-full rounded bg-ink-50 px-3 py-2 text-ink placeholder:text-ink-400"
-                  placeholder="employee@gmail.com"
+                  placeholder="you@example.com"
                 />
               </label>
 
@@ -74,7 +74,6 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="off"
                   className="t-data mt-1.5 w-full rounded bg-ink-50 px-3 py-2 text-ink"
-                  placeholder="employee123"
                 />
               </label>
 
@@ -88,29 +87,6 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
                 {busy ? 'Signing in…' : 'Continue'}
               </button>
 
-              {/* The credentials are on the screen on purpose: someone demoing
-                  this should not have to be told the password, and hiding them
-                  would imply they are protecting something. */}
-              <div className="mt-6 border-t border-ink-200 pt-4">
-                <p className="t-micro text-muted">Fill in a demo account</p>
-                <div className="mt-2 grid gap-2">
-                  {DEMO_ACCOUNTS.map((account) => (
-                    <button
-                      key={account.email}
-                      type="button"
-                      onClick={() => {
-                        setEmail(account.email)
-                        setPassword(account.password)
-                        setError(null)
-                      }}
-                      className="flex items-baseline justify-between gap-3 rounded bg-ink-50 px-3 py-2 text-left hover:bg-ink-100"
-                    >
-                      <span className="t-data text-ink">{account.email}</span>
-                      <span className="t-data text-muted">{account.password}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </form>
           </section>
         </div>

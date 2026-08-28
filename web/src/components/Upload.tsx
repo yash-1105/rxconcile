@@ -126,29 +126,33 @@ export function DropZone({
 
 export function RunsToggle({ runs, onChange }: { runs: number; onChange: (n: number) => void }) {
   return (
-    <div
-      className="flex items-center gap-2"
-      title={
-        runs === 1
-          ? 'N=1 extracts each document once. Agreement cannot be measured from a single run, so it is reported as not measured rather than as perfect. For cheap iteration only.'
-          : 'N=3 extracts each document three times and resolves each field by agreement across the runs. This is the reliability signal; the model\'s own confidence score carries no information.'
-      }
-    >
-      <span className="text-xs text-ink-400">Runs</span>
-      <div className="flex overflow-hidden rounded border border-ink-300">
-        {[1, 3].map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => onChange(option)}
-            className={`px-2.5 py-1 font-mono text-xs ${
-              runs === option ? 'bg-accent text-white' : 'bg-white text-ink-500 hover:bg-ink-100'
-            }`}
-          >
-            {option}
-          </button>
-        ))}
+    <div>
+      <div className="flex items-center gap-2">
+        <span className="t-micro text-muted">Runs</span>
+        <div className="flex overflow-hidden rounded border border-ink-300">
+          {[1, 3].map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onChange(option)}
+              aria-pressed={runs === option}
+              className={`t-data px-2.5 py-1 ${
+                runs === option ? 'bg-seal text-white' : 'bg-white text-muted hover:bg-ink-100'
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
       </div>
+      {/* Stated on the screen rather than in a tooltip: someone switching to
+          N=1 is giving up the only reliability signal this product has, and
+          should not have to hover to find that out. */}
+      <p className="t-small mt-2 max-w-md text-muted">
+        {runs === 1
+          ? 'N=1 reads each document once, so agreement cannot be measured and is reported as not measured rather than as perfect. Faster, and without the reliability check.'
+          : 'N=3 reads each document three times and resolves every field by agreement across the runs. That agreement is the reliability signal — the model’s own confidence score carries no information.'}
+      </p>
     </div>
   )
 }

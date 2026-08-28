@@ -373,6 +373,37 @@ class PharmacyBill(_Base):
         return frozenset(test.item_id for test in self.tests)
 
 
+class CanonicalMatch(_Base):
+    """What the dictionary matcher resolved one line to.
+
+    **Derived, not transcribed.** ``PrescribedItem.salt`` is what the model read
+    off the page and is usually null, because prescriptions print brand names,
+    not compositions. This is what ``normalize.matcher`` resolved that brand to,
+    and it is deliberately a separate object: conflating a value read off a
+    document with a value looked up in a dictionary is exactly the confusion the
+    identity rule exists to prevent.
+
+    The engine computed this on every run from the beginning; it simply had no
+    way to report it, so a salt reached the client only as a side effect of a
+    BRAND_SUBSTITUTION or SCHEDULE_H_UNBACKED finding happening to fire.
+    """
+
+    item_id: str = Field(min_length=1, description="The line this resolves.")
+    side: Literal["prescription", "bill"]
+    name: str | None = Field(
+        default=None,
+        description="Canonical name: the brand for a brand match, the ingredient "
+        "for a salt match, null when unresolved.",
+    )
+    salt: str | None = Field(default=None, description="Composition, null when unresolved.")
+    match_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    method: str = Field(default="unresolved")
+
+    @property
+    def resolved(self) -> bool:
+        return self.method != "unresolved"
+
+
 class Finding(_Base):
     """One machine-readable discrepancy.
 
@@ -542,6 +573,12 @@ class ReconciliationResult(_Base):
     unmatched_billed: list[str] = Field(
         default_factory=list, description="BilledItem.item_id values with no prescribed match."
     )
+    canonical: list[CanonicalMatch] = Field(
+        default_factory=list,
+        description="The dictionary match behind every medicine line, both sides. "
+        "Unresolved lines appear with null name and salt rather than being omitted, "
+        "so a caller can tell 'looked up, no match' from 'never looked up'.",
+    )
     matched_tests: list[MatchedPair] = Field(
         default_factory=list,
         description="Ordered tests paired to billed lab lines, by the same shapes the "
@@ -636,6 +673,14 @@ class ReconciliationResult(_Base):
                 problems.append(
                     f"findings[{index}].billed_ref={ref!r} ({finding.rule_code}) "
                     f"is not a BilledItem.item_id"
+                )
+
+        for index, match in enumerate(self.canonical):
+            pool = rx_ids if match.side == "prescription" else bill_ids
+            if match.item_id not in pool:
+                problems.append(
+                    f"canonical[{index}].item_id={match.item_id!r} is not an item_id "
+                    f"on the {match.side}"
                 )
 
         for index, pair in enumerate(self.matched_tests):

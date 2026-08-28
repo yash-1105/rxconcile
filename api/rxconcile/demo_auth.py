@@ -43,8 +43,8 @@ class DemoUser:
 DEMO_USERS: Final[dict[str, DemoUser]] = {
     user.email: user
     for user in (
-        DemoUser("employee@gmail.com", "employee123", "Priya Nair", "EMP-4417", "employee"),
-        DemoUser("admin@gmail.com", "admin123", "Rahul Mehta", "ADM-0001", "admin"),
+        DemoUser("employee@gmail.com", "employee123", "Yash", "EMP-4417", "employee"),
+        DemoUser("admin@gmail.com", "admin123", "Ishan", "ADM-0001", "admin"),
     )
 }
 

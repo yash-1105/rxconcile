@@ -56,8 +56,9 @@ web: ## Run only the web dev server
 # Checks
 # --------------------------------------------------------------------------
 
-test: ## Run the Python test suite
+test: ## Run the Python and web test suites
 	$(PY) -m pytest api/tests -q
+	cd web && npm test
 
 typecheck: ## mypy (strict, verified) + tsc
 	@./api/scripts/verify_mypy_strict.sh $(MYPY_CONF) $(PY)
@@ -76,6 +77,9 @@ check: test typecheck lint build ## Everything CI would run
 # --------------------------------------------------------------------------
 # Vertex and samples
 # --------------------------------------------------------------------------
+
+warm: ## Pre-compute the extraction cache for the bundled samples so the demo is instant
+	$(PY) api/scripts/warm_samples.py
 
 samples: ## Regenerate the synthetic sample pairs
 	$(PY) api/scripts/generate_samples.py

@@ -176,23 +176,37 @@ export function History({
                 </tr>
               </thead>
               <tbody>
-                {visible.map((scan) => (
-                  <tr key={scan.id} className="border-b border-ink-100 last:border-b-0">
+                {visible.map((scan) => {
+                  const open = () => {
+                    getScan(scan.id)
+                      .then(onOpen)
+                      .catch(() => setError('Could not open that scan.'))
+                  }
+                  return (
+                  // The whole row is the target. It was clickable before, but
+                  // only on the verdict link and with no cursor or hover state,
+                  // so nothing on screen said so.
+                  <tr
+                    key={scan.id}
+                    onClick={open}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        open()
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Open the ${VERDICT_LABEL[scan.verdict]} scan from ${formatDate(scan.created_at)}`}
+                    className="cursor-pointer border-b border-ink-100 last:border-b-0 hover:bg-paper focus-visible:bg-paper"
+                  >
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          getScan(scan.id).then(onOpen).catch(() => setError('Could not open that scan.'))
-                        }}
-                        className="flex items-center gap-2.5 text-left"
-                      >
+                      <span className="flex items-center gap-2.5 text-left">
                         <span className="flex w-3.5 justify-center">
                           <SpineMark state={verdictState(scan.verdict)} />
                         </span>
-                        <span className="t-small text-ink underline decoration-ink-300 underline-offset-4">
-                          {VERDICT_LABEL[scan.verdict]}
-                        </span>
-                      </button>
+                        <span className="t-small text-ink">{VERDICT_LABEL[scan.verdict]}</span>
+                      </span>
                     </td>
                     <td className="t-small px-4 py-3 text-muted">
                       {formatDate(scan.created_at)}
@@ -222,7 +236,9 @@ export function History({
                       {admin ? (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(event) => {
+                            // Never open the scan we are deleting.
+                            event.stopPropagation()
                             deleteScan(scan.id)
                               .then(load)
                               .catch(() => setError('Could not delete that scan.'))
@@ -234,7 +250,8 @@ export function History({
                       ) : null}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

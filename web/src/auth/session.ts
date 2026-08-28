@@ -1,41 +1,16 @@
 /**
  * Demo access. Not a secure login.
  *
- * Credentials are hardcoded in this file and therefore readable by anyone who
- * opens devtools, and the role only filters what the client renders. Nothing
- * here restricts access to anything. Storing the demo password in plain sight
- * is the honest option: hashing it would imply a protection that does not exist.
+ * The credentials live on the server, in api/rxconcile/demo_auth.py, and are
+ * hardcoded there. The role only filters what the client renders, and nothing
+ * here restricts access to anything. This file no longer carries the passwords
+ * -- not because that would protect them, but because the sign-in form has no
+ * reason to know them.
  *
  * Session lives in sessionStorage, so closing the tab ends it.
  */
 
 export type Role = 'employee' | 'admin'
-
-export interface Account {
-  email: string
-  password: string
-  name: string
-  employeeNumber: string
-  role: Role
-}
-
-/** Both demo accounts, shown on the sign-in screen as fill-in buttons. */
-export const DEMO_ACCOUNTS: readonly Account[] = [
-  {
-    email: 'employee@gmail.com',
-    password: 'employee123',
-    name: 'Priya Nair',
-    employeeNumber: 'EMP-4417',
-    role: 'employee',
-  },
-  {
-    email: 'admin@gmail.com',
-    password: 'admin123',
-    name: 'Rahul Mehta',
-    employeeNumber: 'ADM-0001',
-    role: 'admin',
-  },
-]
 
 export interface Session {
   email: string

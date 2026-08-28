@@ -33,6 +33,7 @@ from scipy.optimize import linear_sum_assignment
 
 from rxconcile.models import (
     BilledItem,
+    CanonicalMatch,
     Finding,
     MatchedPair,
     PharmacyBill,
@@ -1088,6 +1089,22 @@ def reconcile(
     findings.extend(_document_rules(prescription, bill, bill_by_id))
     findings.extend(_low_agreement_findings(prescription, bill))
 
+    # The matcher resolved these on the way in; report them rather than letting
+    # a salt escape only when a particular finding happens to fire.
+    canonical: list[CanonicalMatch] = []
+    sides: tuple[tuple[Literal["prescription", "bill"], dict[str, CanonicalDrug]], ...] = (
+        ("prescription", rx_by_id),
+        ("bill", bill_by_id),
+    )
+    for side, table in sides:
+        canonical.extend(
+            CanonicalMatch(
+                item_id=item_id, side=side, name=drug.name, salt=drug.salt,
+                match_score=drug.match_score, method=drug.method,
+            )
+            for item_id, drug in table.items()
+        )
+
     verdict, reasons = decide_verdict(prescription, bill, findings)
     if verdict == "inconclusive":
         findings.append(
@@ -1116,6 +1133,7 @@ def reconcile(
         matched_pairs=pairs,
         unmatched_prescribed=unmatched_rx,
         unmatched_billed=unmatched_bill,
+        canonical=canonical,
         matched_tests=lab.matched,
         unmatched_prescribed_tests=lab.unmatched_prescribed,
         unmatched_billed_tests=lab.unmatched_billed,

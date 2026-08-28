@@ -265,7 +265,12 @@ export default function App() {
       view={view}
       onNavigate={(next) => {
         setView(next)
-        if (next === 'new' && stage === 'result') setStage('result')
+        // "New reconciliation" starts a new one. The previous result is not
+        // lost by this: every run is saved to history the moment it completes.
+        if (next === 'new' && stage === 'result') {
+          setStage('upload')
+          setResult(null)
+        }
       }}
       onSignOut={signOut}
     >

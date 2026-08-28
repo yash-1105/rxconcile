@@ -143,6 +143,23 @@ export interface PharmacyBill {
   warnings: string[]
 }
 
+/**
+ * What the dictionary matcher resolved one line to. **Derived, not transcribed.**
+ *
+ * `PrescribedItem.salt` is what the model read off the page and is usually null,
+ * because prescriptions print brands rather than compositions. This is the
+ * lookup result for that brand, kept separate so the two are never conflated.
+ */
+export interface CanonicalMatch {
+  item_id: string
+  side: DocSide
+  name: string | null
+  salt: string | null
+  match_score: number
+  /** "unresolved" means looked up and not found — not "never looked up". */
+  method: string
+}
+
 export interface Finding {
   rule_code: string
   severity: Severity
@@ -183,6 +200,7 @@ export interface ReconciliationResult {
   matched_pairs: MatchedPair[]
   unmatched_prescribed: string[]
   unmatched_billed: string[]
+  canonical: CanonicalMatch[]
   matched_tests: MatchedPair[]
   unmatched_prescribed_tests: string[]
   unmatched_billed_tests: string[]

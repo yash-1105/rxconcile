@@ -13,37 +13,18 @@
  */
 
 import { remark, testRemark } from '../lib/phrasing'
+import { statusFrom } from '../lib/rowStatus'
 import type {
   BilledItem,
   BilledTest,
+  CanonicalMatch,
   Finding,
   PrescribedItem,
   PrescribedTest,
   ReconciliationResult,
+  Severity,
 } from '../types/api'
 import { SpineMark, type SpineState } from './Spine'
-
-const UNCHECKED_CODES = new Set([
-  'QUANTITY_AMBIGUOUS',
-  'STRENGTH_UNIT_UNSTATED',
-  'TEST_UNRESOLVED',
-  'CHECK_UNAVAILABLE',
-])
-
-/**
- * A row's status, driven by the severity the ENGINE assigned.
- *
- * Deliberately not derived from the rule code alone: BRAND_SUBSTITUTION is an
- * `info`, because a generic dispensed against its brand at the same salt is a
- * legal substitution and not something to flag. Colouring it amber here would
- * contradict the same finding rendered grey in the analysis list above.
- */
-function statusFrom(codes: string[], findings: Finding[]): SpineState {
-  if (findings.some((f) => f.severity === 'critical')) return 'problem'
-  if (findings.some((f) => f.severity === 'warning')) return 'warning'
-  if (codes.some((c) => UNCHECKED_CODES.has(c))) return 'unchecked'
-  return 'clean'
-}
 
 const STATUS_LABEL: Record<SpineState, string> = {
   clean: 'Matches',
@@ -98,6 +79,8 @@ interface MedRow {
   findings: Finding[]
   codes: string[]
   status: SpineState
+  /** A check on this row could not be concluded. A marker, never a downgrade. */
+  partial: boolean
 }
 
 function medicineRows(result: ReconciliationResult): MedRow[] {
@@ -112,8 +95,18 @@ function medicineRows(result: ReconciliationResult): MedRow[] {
     similarity: number | null,
     findings: Finding[],
   ): MedRow => {
-    const codes = findings.map((f) => f.rule_code)
-    return { key, prescribed, billed, similarity, findings, codes, status: statusFrom(codes, findings) }
+    const paired = prescribed !== null && billed !== null
+    const { state, partial } = statusFrom(findings, { paired })
+    return {
+      key,
+      prescribed,
+      billed,
+      similarity,
+      findings,
+      codes: findings.map((f) => f.rule_code),
+      status: state,
+      partial,
+    }
   }
 
   for (const pair of result.matched_pairs) {
@@ -142,19 +135,67 @@ function medicineRows(result: ReconciliationResult): MedRow[] {
 }
 
 /**
- * The salt behind a row.
+ * The salt behind a row, from the canonical match the ENGINE resolved.
  *
- * Prefers the canonical salt the matcher resolved (carried on a
- * BRAND_SUBSTITUTION or DUPLICATE_THERAPY finding), then the salt transcribed
- * off either document. When the drug was never resolved and neither page prints
- * a salt, the cell is an em-dash — never an inference from the brand name.
+ * This used to read the salt out of finding details, so it only appeared when a
+ * BRAND_SUBSTITUTION or SCHEDULE_H_UNBACKED happened to fire — Augmentin, Pan-D
+ * and Montair-LC resolve perfectly in the dictionary and still showed nothing.
+ * The response now reports the match for every line.
+ *
+ * The transcribed `salt` is the fallback, not the source: it is what the model
+ * read off the page, which is usually null. An unresolved drug stays an
+ * em-dash; a salt is never inferred from a brand the dictionary does not know.
  */
-function saltOf(row: MedRow): string | null {
-  for (const found of row.findings) {
-    const value = found.detail['salt']
-    if (typeof value === 'string' && value) return value
+function saltOf(row: MedRow, canonical: Map<string, CanonicalMatch>): string | null {
+  const resolved =
+    canonical.get(row.prescribed?.item_id ?? '')?.salt ??
+    canonical.get(row.billed?.item_id ?? '')?.salt
+  return resolved ?? row.prescribed?.salt ?? row.billed?.salt ?? null
+}
+
+/**
+ * Which cells a finding points at, and how loudly.
+ *
+ * Severity comes from the engine, so the existing discipline holds without
+ * restating it: red only for criticals, amber only for warnings, grey for
+ * anything unverifiable. Nothing unverifiable is ever painted as a finding.
+ */
+const FIELD_OF: Record<string, 'drug' | 'strength' | 'form' | 'qty'> = {
+  STRENGTH_MISMATCH: 'strength',
+  STRENGTH_UNIT_UNSTATED: 'strength',
+  FORM_MISMATCH: 'form',
+  QUANTITY_SHORT: 'qty',
+  QUANTITY_EXCESS: 'qty',
+  QUANTITY_AMBIGUOUS: 'qty',
+  BRAND_SUBSTITUTION: 'drug',
+  SALT_DIFFERENT_CLASS: 'drug',
+  DUPLICATE_THERAPY: 'drug',
+  SCHEDULE_H_UNBACKED: 'drug',
+}
+
+const MARK_CLASS: Record<Severity, string> = {
+  critical: 'bg-flag/10 ring-1 ring-flag/40',
+  warning: 'bg-caution/10 ring-1 ring-caution/40',
+  info: 'bg-ink-100',
+}
+
+/** The loudest marking any finding puts on one field of a row. */
+function marksFor(findings: Finding[]): Partial<Record<'drug' | 'strength' | 'form' | 'qty', Severity>> {
+  const rank: Record<Severity, number> = { critical: 0, warning: 1, info: 2 }
+  const out: Partial<Record<'drug' | 'strength' | 'form' | 'qty', Severity>> = {}
+  for (const found of findings) {
+    const field = FIELD_OF[found.rule_code]
+    if (!field) continue
+    const current = out[field]
+    if (current === undefined || rank[found.severity] < rank[current]) {
+      out[field] = found.severity
+    }
   }
-  return row.prescribed?.salt ?? row.billed?.salt ?? null
+  return out
+}
+
+function mark(severity: Severity | undefined): string {
+  return severity ? `rounded px-1.5 ${MARK_CLASS[severity]}` : ''
 }
 
 function GroupHead({
@@ -188,20 +229,36 @@ function SubHead({ label, side }: { label: string; side?: 'rx' | 'bill' }) {
   )
 }
 
-function StatusCell({ status }: { status: SpineState }) {
+function StatusCell({ status, partial }: { status: SpineState; partial: boolean }) {
   return (
     <td className="px-3 py-2.5 align-top whitespace-nowrap">
       <span className="inline-flex items-center gap-2">
         <SpineMark state={status} />
         <span className="t-micro text-muted">{STATUS_LABEL[status]}</span>
+        {partial ? (
+          <span
+            className="t-micro text-unknown"
+            title="One check on this line could not be concluded. It is not a discrepancy."
+            aria-label="one check could not be concluded"
+          >
+            *
+          </span>
+        ) : null}
       </span>
     </td>
   )
 }
 
+/**
+ * Remark is pinned to the right edge.
+ *
+ * It is the column a non-technical reviewer actually reads, and it was the
+ * first thing to scroll off-screen on a wide table. Sticky keeps it in view
+ * while the value columns scroll underneath it.
+ */
 function RemarkCell({ text }: { text: string }) {
   return (
-    <td className="min-w-[13rem] border-l border-ink-200 px-3 py-2.5 align-top">
+    <td className="sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-3 py-2.5 align-top shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]">
       {text ? (
         <span className="t-small text-ink">{text}</span>
       ) : (
@@ -221,6 +278,7 @@ export function MedicinesTable({
   technical?: boolean
 }) {
   const rows = medicineRows(result)
+  const canonical = new Map((result.canonical ?? []).map((c) => [c.item_id, c]))
   if (rows.length === 0) {
     return (
       <p className="t-small text-muted">
@@ -230,21 +288,29 @@ export function MedicinesTable({
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[62rem] border-collapse">
+      <table className="w-full min-w-[54rem] border-collapse">
         <thead>
           <tr>
             <th rowSpan={2} scope="col" className="t-micro px-3 pb-2 text-left text-muted">
               Status
             </th>
             <GroupHead label="Drug" />
-            <th rowSpan={2} scope="col" className="t-micro border-l border-ink-200 px-3 pb-2 text-left text-muted">
+            <th
+              rowSpan={2}
+              scope="col"
+              className="t-micro max-w-[13rem] border-l border-ink-200 px-3 pb-2 text-left text-muted"
+            >
               Salt
             </th>
             <GroupHead label="Strength" />
             <GroupHead label="Form" />
             <GroupHead label="Quantity" />
             {technical ? <GroupHead label="Ids" /> : null}
-            <th rowSpan={2} scope="col" className="t-micro border-l border-ink-200 px-3 pb-2 text-left text-muted">
+            <th
+              rowSpan={2}
+              scope="col"
+              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-3 pb-2 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
+            >
               Remark
             </th>
           </tr>
@@ -268,6 +334,13 @@ export function MedicinesTable({
         <tbody>
           {rows.map((row) => {
             const quiet = row.status === 'clean'
+            const m = marksFor(row.findings)
+            // Only mark a pair when both halves exist: on an unmatched line the
+            // row status already says everything, and painting a lone cell
+            // would imply a comparison that never happened.
+            const pair = row.prescribed !== null && row.billed !== null
+            const at = (field: 'drug' | 'strength' | 'form' | 'qty') =>
+              pair ? mark(m[field]) : ''
             return (
               <tr
                 key={row.key}
@@ -282,33 +355,49 @@ export function MedicinesTable({
                   quiet ? 'opacity-65' : ''
                 }`}
               >
-                <StatusCell status={row.status} />
+                <StatusCell status={row.status} partial={row.partial} />
                 <td className="border-l border-ink-200 px-3 py-2.5">
-                  <Val muted={quiet}>{row.prescribed?.drug_name}</Val>
+                  <span className={at('drug')}>
+                    <Val muted={quiet}>{row.prescribed?.drug_name}</Val>
+                  </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <Val muted={quiet}>{row.billed?.drug_name}</Val>
+                  <span className={at('drug')}>
+                    <Val muted={quiet}>{row.billed?.drug_name}</Val>
+                  </span>
+                </td>
+                <td className="max-w-[13rem] border-l border-ink-200 px-3 py-2.5 break-words">
+                  <Val muted>{saltOf(row, canonical)}</Val>
                 </td>
                 <td className="border-l border-ink-200 px-3 py-2.5">
-                  <Val muted>{saltOf(row)}</Val>
-                </td>
-                <td className="border-l border-ink-200 px-3 py-2.5">
-                  <Val muted={quiet}>{strengthOf(row.prescribed)}</Val>
+                  <span className={at('strength')}>
+                    <Val muted={quiet}>{strengthOf(row.prescribed)}</Val>
+                  </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <Val muted={quiet}>{strengthOf(row.billed)}</Val>
+                  <span className={at('strength')}>
+                    <Val muted={quiet}>{strengthOf(row.billed)}</Val>
+                  </span>
                 </td>
                 <td className="border-l border-ink-200 px-3 py-2.5">
-                  <Val muted={quiet}>{row.prescribed?.form}</Val>
+                  <span className={at('form')}>
+                    <Val muted={quiet}>{row.prescribed?.form}</Val>
+                  </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <Val muted={quiet}>{row.billed?.form}</Val>
+                  <span className={at('form')}>
+                    <Val muted={quiet}>{row.billed?.form}</Val>
+                  </span>
                 </td>
                 <td className="border-l border-ink-200 px-3 py-2.5">
-                  <Val muted={quiet}>{expectedQty(row.findings)}</Val>
+                  <span className={at('qty')}>
+                    <Val muted={quiet}>{expectedQty(row.findings)}</Val>
+                  </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <Val muted={quiet}>{billedQty(row.billed)}</Val>
+                  <span className={at('qty')}>
+                    <Val muted={quiet}>{billedQty(row.billed)}</Val>
+                  </span>
                 </td>
                 {technical ? (
                   <>
@@ -342,6 +431,7 @@ interface TestRow {
   findings: Finding[]
   codes: string[]
   status: SpineState
+  partial: boolean
 }
 
 function testRows(result: ReconciliationResult): TestRow[] {
@@ -357,8 +447,17 @@ function testRows(result: ReconciliationResult): TestRow[] {
     billed: BilledTest | null,
     findings: Finding[],
   ): TestRow => {
-    const codes = findings.map((f) => f.rule_code)
-    return { key, prescribed, billed, findings, codes, status: statusFrom(codes, findings) }
+    const paired = prescribed !== null && billed !== null
+    const { state, partial } = statusFrom(findings, { paired })
+    return {
+      key,
+      prescribed,
+      billed,
+      findings,
+      codes: findings.map((f) => f.rule_code),
+      status: state,
+      partial,
+    }
   }
 
   for (const pair of result.matched_tests ?? []) {
@@ -395,7 +494,9 @@ function testRows(result: ReconciliationResult): TestRow[] {
       billed: test,
       findings: [],
       codes: [],
+      // Covered by a panel that was ordered: a positive result, not an absence.
       status: 'clean',
+      partial: false,
     })
   }
   for (const id of result.unmatched_prescribed_tests ?? []) {
@@ -496,7 +597,11 @@ export function LabTestsTable({
               Panel
             </th>
             {technical ? <GroupHead label="Ids" /> : null}
-            <th rowSpan={2} scope="col" className="t-micro border-l border-ink-200 px-3 pb-2 text-left text-muted">
+            <th
+              rowSpan={2}
+              scope="col"
+              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-3 pb-2 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
+            >
               Remark
             </th>
           </tr>
@@ -528,7 +633,7 @@ export function LabTestsTable({
                   quiet ? 'opacity-65' : ''
                 }`}
               >
-                <StatusCell status={row.status} />
+                <StatusCell status={row.status} partial={row.partial} />
                 <td className="border-l border-ink-200 px-3 py-2.5">
                   <Val muted={quiet}>{row.prescribed?.test_name}</Val>
                 </td>

@@ -3,6 +3,7 @@
 from rxconcile.models.schema import (
     BilledItem,
     BilledTest,
+    CanonicalMatch,
     Finding,
     MatchedPair,
     PharmacyBill,
@@ -17,6 +18,7 @@ from rxconcile.models.schema import (
 
 __all__ = [
     "BilledItem",
+    "CanonicalMatch",
     "BilledTest",
     "Finding",
     "MatchedPair",
