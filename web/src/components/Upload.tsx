@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SampleSummary } from '../types/api'
+import { SpineRule } from './Spine'
 
 const ACCEPTED = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
 
@@ -200,6 +201,83 @@ export function SamplePicker({
             {sample.note ? <p className="mt-2 text-sm text-ink-500">{sample.note}</p> : null}
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * Who is running this reconciliation. Prefilled from the signed-in demo account
+ * and editable, because in practice the person at the desk is not always the
+ * person the account belongs to.
+ */
+export function EmployeeFields({
+  name,
+  employeeNumber,
+  onNameChange,
+  onNumberChange,
+}: {
+  name: string
+  employeeNumber: string
+  onNameChange: (value: string) => void
+  onNumberChange: (value: string) => void
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <label className="block">
+        <span className="t-micro text-muted">Employee name</span>
+        <input
+          value={name}
+          onChange={(event) => onNameChange(event.target.value)}
+          required
+          className="t-body mt-1.5 w-full rounded bg-surface px-3 py-2 text-ink placeholder:text-ink-400"
+          placeholder="Who is running this"
+        />
+      </label>
+      <label className="block">
+        <span className="t-micro text-muted">Employee number</span>
+        <input
+          value={employeeNumber}
+          onChange={(event) => onNumberChange(event.target.value)}
+          required
+          className="t-data mt-1.5 w-full rounded bg-surface px-3 py-2 text-ink placeholder:text-ink-400"
+          placeholder="EMP-0000"
+        />
+      </label>
+    </div>
+  )
+}
+
+/** The two zones with the spine between them: left prescription, right bill. */
+export function DropZonePair({
+  prescription,
+  bill,
+  onPrescription,
+  onBill,
+  onClearPrescription,
+  onClearBill,
+}: {
+  prescription: File | null
+  bill: File | null
+  onPrescription: (file: File) => void
+  onBill: (file: File) => void
+  onClearPrescription: () => void
+  onClearBill: () => void
+}) {
+  return (
+    <div className="grid items-stretch gap-6 md:grid-cols-[1fr_auto_1fr] md:gap-0">
+      <div className="md:pr-8">
+        <DropZone
+          label="Prescription"
+          file={prescription}
+          onSelect={onPrescription}
+          onClear={onClearPrescription}
+        />
+      </div>
+      <SpineRule className="hidden self-stretch md:block" />
+      <div className="md:pl-8">
+        <DropZone label="Pharmacy Bill" file={bill} onSelect={onBill} onClear={onClearBill} />
       </div>
     </div>
   )
