@@ -396,3 +396,149 @@ def test_a_lab_only_bill_does_not_accuse_prescribed_medicines() -> None:
     assert [f.severity for f in not_billed] == ["warning"]
     assert not_billed[0].detail["lab_only_bill"] is True
     assert result.verdict != "mismatch"
+
+
+# ---------------------------------------------------------------------------
+# Panel/component notation, as laboratories actually print it
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("written", "canonical"),
+    [
+        ("Lipid Profile — Total Cholesterol", "Total Cholesterol"),
+        ("Lipid Profile – HDL", "HDL Cholesterol"),
+        ("Lipid Profile - LDL", "LDL Cholesterol"),
+        ("Lipid Profile: Triglycerides", "Triglycerides"),
+        ("Liver Function Test — SGPT", "SGPT"),
+    ],
+)
+def test_a_panel_component_line_resolves_to_the_component(
+    written: str, canonical: str
+) -> None:
+    """The bill charged for one analyte, so the line is that analyte.
+
+    Resolving it to the whole panel would satisfy an order six lines early.
+    """
+    match = lab_panels.resolve(written)
+    assert match.kind == "test"
+    assert match.name == canonical
+
+
+@pytest.mark.parametrize(
+    ("written", "canonical"),
+    [
+        ("Thyroid Profile (T3, T4, TSH)", "Thyroid Profile"),
+        ("Lipid Profile (Total Cholesterol, HDL, LDL)", "Lipid Profile"),
+        ("Complete Blood Count [CBC]", "Complete Blood Count"),
+    ],
+)
+def test_a_parenthetical_component_list_is_stripped_before_lookup(
+    written: str, canonical: str
+) -> None:
+    match = lab_panels.resolve(written)
+    assert match.kind == "panel"
+    assert match.name == canonical
+
+
+def test_a_panel_with_an_unreadable_component_stays_unresolved() -> None:
+    """A panel line with an unreadable analyte is not the whole panel."""
+    match = lab_panels.resolve("Lipid Profile — Zzz Unknown Analyte")
+    assert not match.resolved
+    assert match.components == ()
+
+
+def test_compound_parsing_never_loosens_an_unknown_name() -> None:
+    for written in ("Qqq Panel — Www Assay", "Zzz — Yyy", "Not A Test At All"):
+        assert not lab_panels.resolve(written).resolved
+
+
+def test_a_hyphenated_name_is_not_torn_in_half() -> None:
+    """A plain hyphen splits only when spaced."""
+    assert lab_panels.resolve("Urine R/M").name == "Urine Routine and Microscopy"
+    assert lab_panels.resolve("HbA1c").name == "HbA1c"
+
+
+# ---------------------------------------------------------------------------
+# The Apollo/Sri Balaji pair, end to end
+# ---------------------------------------------------------------------------
+
+
+def test_the_real_pair_reconciles_correctly() -> None:
+    """Lipid Profile ordered and billed as four analytes; two orders missing.
+
+    Reproduces the pair that was reporting eight rows and zero findings.
+    """
+    rx = prescription("Lipid Profile", "HbA1c", "Serum Creatinine")
+    bl = bill(
+        "Lipid Profile — Total Cholesterol",
+        "Lipid Profile — HDL",
+        "Lipid Profile — LDL",
+        "Lipid Profile — Triglycerides",
+        "Thyroid Profile (T3, T4, TSH)",
+    )
+    result = run(rx, bl)
+
+    assert codes(result, "TEST_NOT_BILLED") == ["critical", "critical"], (
+        "HbA1c and Serum Creatinine were ordered and not billed"
+    )
+    assert codes(result, "TEST_NOT_PRESCRIBED") == ["critical"], "Thyroid Profile"
+    assert not codes(result, "TEST_UNRESOLVED"), "every billed line is recognisable"
+    assert not codes(result, "PANEL_PARTIAL"), "all four lipid components were billed"
+
+    # The panel decomposition case: one matched pair, no finding against it.
+    assert len(result.matched_tests) == 1
+    assert result.matched_tests[0].prescribed_id == "test-01"
+
+    not_billed = {
+        f.detail["resolved_as"] for f in result.findings if f.rule_code == "TEST_NOT_BILLED"
+    }
+    assert not_billed == {"HbA1c", "Creatinine"}
+
+
+def test_no_finding_on_this_pair_claims_a_missing_lab_bill() -> None:
+    """THE REGRESSION GUARD: a bill with lab lines is never a missing lab bill."""
+    rx = prescription("Lipid Profile", "HbA1c", "Serum Creatinine")
+    bl = bill("Lipid Profile — HDL", "Thyroid Profile (T3, T4, TSH)")
+    result = run(rx, bl)
+    for found in result.findings:
+        assert found.detail.get("softened_code") != "no_lab_bill"
+
+
+def test_a_bill_with_any_lab_line_is_never_treated_as_a_missing_lab_bill() -> None:
+    """Even when nothing on it can be identified.
+
+    The screen once read "no lab bill supplied" against a bill carrying five
+    lab lines. Unreadable is not absent.
+    """
+    from rxconcile.models import BilledItem
+
+    for billed_names in (
+        ["Zzz Unknown Assay"],
+        ["Qqq Panel — Www Assay", "Another Unknown"],
+        ["CBC"],
+    ):
+        bl = bill(*billed_names)
+        bl = PharmacyBill(
+            currency="INR",
+            items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
+                              confidence=0.9)],
+            tests=bl.tests,
+        )
+        result = run(prescription("HbA1c"), bl)
+        reasons = {f.detail.get("softened_code") for f in result.findings}
+        assert "no_lab_bill" not in reasons, f"failed for {billed_names}"
+
+
+def test_a_bill_with_no_lab_lines_at_all_still_reports_the_missing_document() -> None:
+    """The other half: the guard must still fire when it genuinely applies."""
+    from rxconcile.models import BilledItem
+
+    bl = PharmacyBill(
+        currency="INR",
+        items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
+                          confidence=0.9)],
+    )
+    result = run(prescription("HbA1c"), bl)
+    reasons = {f.detail.get("softened_code") for f in result.findings}
+    assert "no_lab_bill" in reasons

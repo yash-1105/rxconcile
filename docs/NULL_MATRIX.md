@@ -241,3 +241,39 @@ fields alongside the medicine fields, and the existing four properties now hold
 across both — in particular *absent data alone never produces a critical* and
 *a skipped check is always recorded*.
 
+---
+
+## Panel/component parsing (lab_panels)
+
+Added when billed lines printed as ``Lipid Profile — Total Cholesterol`` and
+``Thyroid Profile (T3, T4, TSH)`` failed to resolve while the bare names on the
+prescription resolved fine. Audited the same way: one input at a time, and what
+changes.
+
+**11 degenerate inputs probed. 0 raised, 0 resolved to anything.**
+
+| Input | Result | Why this is right |
+| --- | --- | --- |
+| `None`, `""`, `"   "` | unresolved | nothing to look up |
+| `"—"`, `" - "`, `":"`, `"\|"`, `"— —"` | unresolved | a separator with nothing either side of it names no test |
+| `"()"` | unresolved | an empty parenthetical strips to nothing |
+| `"(T3)"` | `T3` | the parenthetical IS the name here, and it resolves exactly |
+| 300 characters | unresolved | far below the fuzzy threshold, as it should be |
+| `"Lipid Profile — Zzz Unknown"` | **unresolved** | a panel with an unreadable component is not the whole panel |
+
+That last row is the one that matters. Resolving a half-readable panel line to
+the panel would let one line satisfy an order of six, which is the panel
+decomposition feature firing in reverse. The threshold was never lowered: what
+was added is parsing of how laboratories print a line, not tolerance for a weak
+match.
+
+| Nulled | Result |
+| --- | --- |
+| `rx test.test_name` with a resolvable billed line | `TEST_UNRESOLVED` + 3 `CHECK_UNAVAILABLE`, **0 criticals** |
+| `bill test.test_name` with a resolvable order | softened `TEST_NOT_BILLED` + 2 `CHECK_UNAVAILABLE`, **0 criticals** |
+| both nulled | 4 `CHECK_UNAVAILABLE`, **0 criticals**, verdict `match` |
+
+`softened_code` is present on every softened `TEST_NOT_BILLED` and
+`TEST_NOT_PRESCRIBED`, `None` when the finding is confident, and never absent.
+`required_components()` on an unknown panel returns `()` rather than raising.
+

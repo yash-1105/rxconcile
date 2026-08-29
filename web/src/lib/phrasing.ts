@@ -358,17 +358,44 @@ export function remark(codes: string[], findings: Finding[]): string {
 }
 
 /** The same, for a lab test row. */
+/**
+ * Why a softened test finding was softened.
+ *
+ * Read from the engine's own code, never inferred. Matching on the prose put
+ * "Not assessed — no lab bill supplied" against a bill that carried five lab
+ * lines, because two different reasons shared one sentence shape.
+ */
+const SOFTENED_TEST_NOT_BILLED: Record<string, string> = {
+  no_lab_bill: 'Not assessed — no lab bill supplied',
+  unidentified_billed_lines: 'Not assessed — some billed lab lines could not be read',
+}
+
+const SOFTENED_TEST_NOT_PRESCRIBED: Record<string, string> = {
+  orders_unreadable: 'Billed — the ordered tests could not be read',
+  orders_unconfirmed: 'Billed — no investigations section could be confirmed',
+  unidentified_orders: 'Billed — some ordered tests could not be read',
+}
+
 export function testRemark(codes: string[], findings: Finding[]): string {
   const has = (code: string) => codes.includes(code)
-  const softened = (code: string) =>
-    Boolean(findings.find((f) => f.rule_code === code)?.detail['softened_because'])
+  const softenedCode = (code: string): string | null => {
+    const detail = findings.find((f) => f.rule_code === code)?.detail
+    const value = detail?.['softened_code']
+    return typeof value === 'string' ? value : null
+  }
   if (has('TEST_NOT_PRESCRIBED')) {
-    return softened('TEST_NOT_PRESCRIBED')
-      ? 'Billed — what was ordered could not be established'
-      : 'Not found in prescription'
+    const reason = softenedCode('TEST_NOT_PRESCRIBED')
+    if (reason) {
+      return SOFTENED_TEST_NOT_PRESCRIBED[reason] ?? 'Billed — this could not be fully checked'
+    }
+    return 'Not found in prescription'
   }
   if (has('TEST_NOT_BILLED')) {
-    return softened('TEST_NOT_BILLED') ? 'Not assessed — no lab bill supplied' : 'Not done'
+    const reason = softenedCode('TEST_NOT_BILLED')
+    if (reason) {
+      return SOFTENED_TEST_NOT_BILLED[reason] ?? 'Ordered — this could not be fully checked'
+    }
+    return 'Not done'
   }
   if (has('PANEL_PARTIAL')) {
     const found = findings.find((f) => f.rule_code === 'PANEL_PARTIAL')
@@ -423,10 +450,7 @@ export function documentGaps(result: ReconciliationResult): DocumentGap[] {
   }
 
   const unassessedTests = result.findings.filter(
-    (f) =>
-      f.rule_code === 'TEST_NOT_BILLED' &&
-      typeof f.detail['softened_because'] === 'string' &&
-      (f.detail['softened_because'] as string).includes('only medicines'),
+    (f) => f.rule_code === 'TEST_NOT_BILLED' && f.detail['softened_code'] === 'no_lab_bill',
   )
   if (unassessedTests.length > 0) {
     gaps.push({

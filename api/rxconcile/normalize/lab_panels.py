@@ -17,6 +17,7 @@ five findings where there is no discrepancy at all.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from typing import Final, Literal
 
@@ -178,6 +179,36 @@ TEST_ALIASES: Final[dict[str, str]] = {
     "epithelial cells": "Urine Epithelial Cells",
 }
 
+#: A parenthetical component list: "Thyroid Profile (T3, T4, TSH)".
+#:
+#: Removed WHOLE before lookup. ``normalise`` only strips the bracket
+#: characters, which left "thyroid profile t3 t4 tsh" -- a string too long to
+#: fuzzy-match the panel it plainly names.
+_PARENTHETICAL: Final[re.Pattern[str]] = re.compile(r"\([^)]*\)|\[[^\]]*\]")
+
+#: Panel/component notation: "Lipid Profile — Total Cholesterol".
+#:
+#: Em-dash, en-dash, figure dash, minus, colon and pipe always split. A plain
+#: hyphen splits only when spaced, so a hyphenated name is not torn in half.
+_SEPARATOR: Final[re.Pattern[str]] = re.compile(r"\s*[\u2014\u2013\u2012\u2212:|]\s*|\s+-\s+")
+
+#: Analytes a laboratory CALCULATES rather than assays and bills separately.
+#:
+#: VLDL is derived from triglycerides, so a lipid profile billed as four lines
+#: is complete, not partial. Without this a correct bill raises PANEL_PARTIAL
+#: for a component no laboratory would ever charge for.
+#:
+#: Kept in the panel above rather than deleted: a report DOES list VLDL, and a
+#: bill that itemises it should still count as covering it. This only stops its
+#: absence being called a shortfall.
+DERIVED_COMPONENTS: Final[frozenset[str]] = frozenset({"VLDL Cholesterol"})
+
+
+def required_components(panel: str) -> tuple[str, ...]:
+    """Components whose absence from a bill is a genuine shortfall."""
+    return tuple(c for c in PANELS.get(panel, ()) if c not in DERIVED_COMPONENTS)
+
+
 Kind = Literal["panel", "test", "unresolved"]
 
 
@@ -226,16 +257,8 @@ def _test_keys() -> tuple[str, ...]:
     return tuple(TEST_ALIASES.keys())
 
 
-def resolve(raw: str | None) -> LabMatch:
-    """Resolve a written name to a panel or a single test.
-
-    Exact alias first, then fuzzy above :data:`MIN_SCORE`. Anything weaker is
-    left unresolved rather than forced: a mis-resolved panel silently changes
-    which tests are considered ordered.
-    """
-    if raw is None:
-        return UNRESOLVED
-    key = normalise(raw)
+def _lookup(key: str) -> LabMatch:
+    """Exact alias, then fuzzy above :data:`MIN_SCORE`. Nothing weaker."""
     if not key:
         return UNRESOLVED
 
@@ -262,6 +285,66 @@ def resolve(raw: str | None) -> LabMatch:
         name = TEST_ALIASES[alias]
         return LabMatch(kind="test", name=name, components=(name,), score=float(score),
                         method="fuzzy")
+
+    return UNRESOLVED
+
+
+def _component_of(panel: LabMatch, component: LabMatch) -> LabMatch | None:
+    """The analyte a "Panel — Component" line actually bills.
+
+    Returns the COMPONENT, not the panel: the bill charged for one analyte, and
+    reporting the whole panel from one line would satisfy an order six lines
+    early.
+    """
+    if panel.kind != "panel" or component.kind != "test" or component.name is None:
+        return None
+    return component.model_copy(update={"method": "panel_component"})
+
+
+def resolve(raw: str | None) -> LabMatch:
+    """Resolve a written name to a panel or a single test.
+
+    Three passes, each stricter than guessing. **The threshold is never
+    lowered** -- what is added here is parsing of how laboratories actually
+    print a line, not tolerance for a weak match:
+
+    1. The name as written.
+    2. With a parenthetical component list removed, so "Thyroid Profile
+       (T3, T4, TSH)" is looked up as the panel it names.
+    3. Split on a panel/component separator, so "Lipid Profile — HDL" resolves
+       to HDL, which is what that line actually bills.
+
+    Anything still unmatched stays unresolved. A mis-resolved panel silently
+    changes which tests are considered ordered, which is worse than admitting
+    a line could not be read.
+    """
+    if raw is None:
+        return UNRESOLVED
+
+    direct = _lookup(normalise(raw))
+    if direct.resolved:
+        return direct
+
+    without_parens = _PARENTHETICAL.sub(" ", raw)
+    if without_parens != raw:
+        stripped = _lookup(normalise(without_parens))
+        if stripped.resolved:
+            return stripped.model_copy(update={"method": f"{stripped.method}_parenthetical"})
+
+    parts = [part for part in _SEPARATOR.split(without_parens) if part.strip()]
+    if len(parts) >= 2:
+        resolved = [_lookup(normalise(part)) for part in parts]
+        panels = [m for m in resolved if m.kind == "panel"]
+        tests = [m for m in resolved if m.kind == "test"]
+        if panels and tests:
+            component = _component_of(panels[0], tests[0])
+            if component is not None:
+                return component
+        # Only one side is recognisable. A panel with an unreadable component
+        # is NOT the whole panel -- claiming it would satisfy an order from a
+        # single line -- and an orphan component keeps its own identity.
+        if tests and not panels:
+            return tests[0].model_copy(update={"method": "component_only"})
 
     return UNRESOLVED
 

@@ -92,9 +92,7 @@ def document_gaps(result: ReconciliationResult) -> list[tuple[str, str]]:
 
     tests_unassessed = [
         f for f in result.findings
-        if f.rule_code == "TEST_NOT_BILLED"
-        and isinstance(f.detail.get("softened_because"), str)
-        and "only medicines" in str(f.detail.get("softened_because"))
+        if f.rule_code == "TEST_NOT_BILLED" and f.detail.get("softened_code") == "no_lab_bill"
     ]
     if tests_unassessed:
         count = len(tests_unassessed)

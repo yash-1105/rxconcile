@@ -245,6 +245,24 @@ The extractor is asked for `investigations_present` as a question about
 **layout**, answerable even when no word in the section is legible, and Python
 forces it true whenever a test line was in fact read.
 
+### 8d-bis. How a laboratory actually prints a line
+
+A bill rarely prints a bare analyte name. Two forms are parsed before lookup,
+both without lowering the match threshold:
+
+| Written | Resolves to | Why |
+| --- | --- | --- |
+| `Thyroid Profile (T3, T4, TSH)` | the **panel** | the parenthetical lists what it contains |
+| `Lipid Profile — Total Cholesterol` | the **component** | the bill charged for one analyte |
+
+A component line resolves to the component, never the panel: resolving it to
+the panel would let one billed line satisfy an order of six.
+
+Separators handled: em-dash, en-dash, figure dash, minus, colon, pipe, and a
+spaced hyphen. A plain unspaced hyphen does not split, so a hyphenated name is
+not torn in half. If either side is unrecognisable the line stays **unresolved**
+rather than being partially matched.
+
 ### 8e. An unresolved panel expands to nothing, not to zero components
 
 An unresolved `LabMatch` carries an empty component tuple, and an empty set
@@ -256,6 +274,17 @@ Resolution is therefore checked before components are used. An unresolved order
 is reported as `TEST_UNRESOLVED` plus `CHECK_UNAVAILABLE`, is never compared,
 never produces `TEST_NOT_BILLED`, and its presence softens every billed-line
 accusation to a warning carrying a stated reason.
+
+### 8e-bis. Derived analytes are not a shortfall
+
+`lab_panels.DERIVED_COMPONENTS` marks analytes a laboratory calculates rather
+than assays and bills. VLDL is derived from triglycerides, so a lipid profile
+billed as four lines is complete, not partial. Without this a correct bill
+raised `PANEL_PARTIAL` for a component no laboratory would ever charge for.
+
+It stays listed in the panel rather than being deleted — a report does show
+VLDL, and a bill that itemises it should still count as covering it. This only
+stops its *absence* being called a shortfall.
 
 ### 8f. Lab bills and pharmacy bills are separate documents
 
@@ -271,7 +300,10 @@ lab-only bill reports every medicine as undispensed. Two symmetric guards:
 | bill has medicines and no lab lines | `TEST_NOT_BILLED` softens to warning — a pharmacy bill says nothing about whether a test was performed |
 
 The medicine-side guard records a paired `CHECK_UNAVAILABLE` naming the missing
-document; the lab-side one carries its reason on the softened finding itself.
+document; the lab-side one carries its reason on the softened finding itself,
+as a stable `softened_code` alongside the prose. Callers branch on the code: a
+screen once read "no lab bill supplied" against a bill carrying five lab lines,
+because it matched on the sentence and two different reasons shared its shape.
 The results screen reads either and states it at the top of the page, above the
 verdict — a reviewer must not be shown a clean-looking screen for lines nobody
 examined.

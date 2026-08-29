@@ -78,26 +78,32 @@ def _resolve(test: PrescribedTest | BilledTest) -> lab_panels.LabMatch:
     return lab_panels.resolve(_written(test))
 
 
-def _orders_uncertain(prescription: Prescription, unresolved_orders: int) -> str | None:
+def _orders_uncertain(
+    prescription: Prescription, unresolved_orders: int
+) -> tuple[str, str] | None:
     """Why billed-but-not-ordered accusations cannot be made confidently, if so.
 
-    Returns a reason, or None when the orders side was read well enough to
-    support a confident accusation.
+    Returns ``(code, reason)`` or None. The CODE is what callers branch on: a
+    reader once saw "no lab bill supplied" on a bill carrying five lab lines,
+    because the UI matched on prose and the prose had two possible meanings.
     """
     if unresolved_orders:
         return (
+            "unidentified_orders",
             f"{unresolved_orders} ordered investigation(s) on the prescription could "
-            "not be identified, so this test may well have been among them"
+            "not be identified, so this test may well have been among them",
         )
     if prescription.investigations_present and not prescription.tests:
         return (
+            "orders_unreadable",
             "the prescription has an investigations section that could not be read, "
-            "so what was ordered is unknown"
+            "so what was ordered is unknown",
         )
     if prescription.investigations_present is None and not prescription.tests:
         return (
+            "orders_unconfirmed",
             "no investigations section was found on the prescription, but its "
-            "presence could not be confirmed either"
+            "presence could not be confirmed either",
         )
     return None
 
@@ -174,16 +180,26 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
         components = _components(match)
         covering = [cid for component in components for cid in offered.get(component, [])]
         billed_components = [c for c in components if offered.get(c)]
-        missing = [c for c in components if not offered.get(c)]
+        # Derived analytes are calculated by the laboratory, not billed, so
+        # their absence is not a shortfall. See lab_panels.DERIVED_COMPONENTS.
+        required = (
+            lab_panels.required_components(match.name)
+            if match.kind == "panel" and match.name
+            else components
+        )
+        missing = [c for c in required if not offered.get(c)]
 
         if not billed_components:
-            uncertain = None
+            uncertain: str | None = None
+            uncertain_code: str | None = None
             if pharmacy_only_bill:
+                uncertain_code = "no_lab_bill"
                 uncertain = (
                     "this bill carries only medicines and no lab lines at all, so the "
                     "lab bill is a separate document that may not have been supplied"
                 )
             elif unresolved_bills:
+                uncertain_code = "unidentified_billed_lines"
                 uncertain = (
                     f"{len(unresolved_bills)} billed lab line(s) could not be identified, "
                     "so one of them may be this test"
@@ -202,6 +218,7 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
                         "kind": match.kind,
                         "components": list(components),
                         "softened_because": uncertain,
+                        "softened_code": uncertain_code,
                     },
                 )
             )
@@ -209,7 +226,7 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
 
         consumed.update(covering)
         primary = covering[0]
-        coverage = len(billed_components) / len(components)
+        coverage = len(billed_components) / len(required) if required else 1.0
         matched.append(
             MatchedPair(
                 prescribed_id=test.item_id,
@@ -223,7 +240,7 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
                 finding(
                     "PANEL_PARTIAL", "warning",
                     f"{match.name} was ordered as a panel but the bill covers only "
-                    f"{len(billed_components)} of its {len(components)} components. "
+                    f"{len(billed_components)} of its {len(required)} billable components. "
                     f"Not billed: {', '.join(missing)}.",
                     prescribed_ref=test.item_id,
                     billed_ref=primary,
@@ -237,7 +254,9 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
             )
 
     # ---- billed lines nothing accounted for -----------------------------
-    uncertain_orders = _orders_uncertain(prescription, len(unresolved_orders))
+    orders_doubt = _orders_uncertain(prescription, len(unresolved_orders))
+    orders_code = orders_doubt[0] if orders_doubt else None
+    uncertain_orders = orders_doubt[1] if orders_doubt else None
     unmatched_bill: list[str] = []
     for billed in bill_tests:
         if billed.item_id in consumed:
@@ -279,6 +298,7 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
                     "written": _written(billed),
                     "resolved_as": match.name,
                     "softened_because": uncertain_orders,
+                    "softened_code": orders_code,
                 },
             )
         )
