@@ -124,39 +124,6 @@ export function DropZone({
   )
 }
 
-export function RunsToggle({ runs, onChange }: { runs: number; onChange: (n: number) => void }) {
-  return (
-    <div>
-      <div className="flex items-center gap-2">
-        <span className="t-micro text-muted">Runs</span>
-        <div className="flex overflow-hidden rounded border border-ink-300">
-          {[1, 3].map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => onChange(option)}
-              aria-pressed={runs === option}
-              className={`t-data px-2.5 py-1 ${
-                runs === option ? 'bg-seal text-white' : 'bg-white text-muted hover:bg-ink-100'
-              }`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      </div>
-      {/* Stated on the screen rather than in a tooltip: someone switching to
-          N=1 is giving up the only reliability signal this product has, and
-          should not have to hover to find that out. */}
-      <p className="t-small mt-2 max-w-md text-muted">
-        {runs === 1
-          ? 'N=1 reads each document once, so agreement cannot be measured and is reported as not measured rather than as perfect. Faster, and without the reliability check.'
-          : 'N=3 reads each document three times and resolves every field by agreement across the runs. That agreement is the reliability signal — the model’s own confidence score carries no information.'}
-      </p>
-    </div>
-  )
-}
-
 export function SamplePicker({
   samples,
   onPick,
@@ -245,7 +212,7 @@ export function EmployeeFields({
           value={employeeNumber}
           onChange={(event) => onNumberChange(event.target.value)}
           required
-          className="t-data mt-1.5 w-full rounded bg-surface px-3 py-2 text-ink placeholder:text-ink-400"
+          className="t-body mt-1.5 w-full rounded bg-surface px-3 py-2.5 text-ink placeholder:text-ink-400"
           placeholder="EMP-0000"
         />
       </label>

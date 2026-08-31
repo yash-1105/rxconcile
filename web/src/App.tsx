@@ -20,7 +20,7 @@ import { Processing } from './components/Processing'
 import { Result } from './components/Result'
 import { EmptyState, PageHeader, Shell } from './components/Shell'
 import type { View } from './lib/nav'
-import { DropZonePair, EmployeeFields, RunsToggle, SamplePicker } from './components/Upload'
+import { DropZonePair, EmployeeFields, SamplePicker } from './components/Upload'
 import { Dictionary } from './pages/Dictionary'
 import { History } from './pages/History'
 import { HowItWorks } from './pages/HowItWorks'
@@ -46,7 +46,8 @@ export default function App() {
   const [stage, setStage] = useState<Stage>('upload')
   const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null)
   const [billFile, setBillFile] = useState<File | null>(null)
-  const [runs, setRuns] = useState(3)
+  // Always three. The backend still takes a parameter, for tests.
+  const runs = 3
   const [samples, setSamples] = useState<SampleSummary[]>([])
   const [result, setResult] = useState<ReconciliationResult | null>(null)
   const [scanId, setScanId] = useState<number | null>(null)
@@ -197,14 +198,13 @@ export default function App() {
       {stage === 'upload' ? (
         <>
           <PageHeader
-            title="New reconciliation"
+            title="Verify"
             lede="Add the prescription and the pharmacy bill it was dispensed against."
-            actions={<RunsToggle runs={runs} onChange={setRuns} />}
           />
 
           {error ? (
             <div className="mb-6 rounded bg-surface px-5 py-4">
-              <p className="t-data text-flag">
+              <p className="t-small text-flag">
                 {error instanceof ApiError ? error.code : 'REQUEST_FAILED'}
               </p>
               <p className="t-body mt-1 font-medium text-ink">{error.message}</p>
@@ -288,7 +288,7 @@ export default function App() {
       view={view}
       onNavigate={(next) => {
         setView(next)
-        // "New reconciliation" starts a new one. The previous result is not
+        // "Verify" starts a new one. The previous result is not
         // lost by this: every run is saved to history the moment it completes.
         if (next === 'new' && stage === 'result') {
           setStage('upload')

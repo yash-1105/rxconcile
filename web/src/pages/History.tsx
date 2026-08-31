@@ -210,13 +210,13 @@ export function History({
                     </td>
                     <td className="t-small px-4 py-3 text-muted">
                       {formatDate(scan.created_at)}
-                      <span className="t-data ml-2 text-ink-400">
+                      <span className="t-small ml-2 text-ink-400">
                         {formatTime(scan.created_at)}
                       </span>
                     </td>
                     <td className="t-small px-4 py-3 text-ink">
                       {scan.employee_name}
-                      <span className="t-data ml-2 text-muted">{scan.employee_number}</span>
+                      <span className="t-small ml-2 text-muted">{scan.employee_number}</span>
                     </td>
                     <td className="t-data px-4 py-3 text-ink">
                       {scan.discrepancy_count}

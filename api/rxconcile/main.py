@@ -876,15 +876,10 @@ class DictionaryResponse(BaseModel):
     schedules: list[str]
 
 
-DICTIONARY_WARNING: Final[str] = (
-    "Illustrative proof-of-concept data, not a validated drug database or laboratory "
-    "reference. These entries were hand-compiled to exercise brand-to-salt resolution "
-    "and panel decomposition on realistic Indian documents. They have not been verified "
-    "against any regulatory source, the strengths listed are indicative rather than "
-    "exhaustive, the schedule classifications are approximate, and panel compositions "
-    "vary between laboratories. Do not use this data to make any clinical, dispensing "
-    "or billing decision."
-)
+#: The screen shows a single line. The full caveat still lives where an
+#: engineer will meet it -- the docstrings on drug_dictionary and lab_panels --
+#: and is not repeated at a client.
+DICTIONARY_WARNING: Final[str] = "Reference data for demonstration."
 
 
 @app.get("/api/dictionary")

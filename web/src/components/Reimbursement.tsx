@@ -126,7 +126,7 @@ function Bucket({
             aria-expanded={open}
             className="t-small mt-3 flex items-center gap-2 text-muted hover:text-ink"
           >
-            <span className="t-data w-3 text-unknown">{open ? '−' : '+'}</span>
+            <span className="t-small w-3 text-unknown">{open ? '−' : '+'}</span>
             {open ? 'Hide the lines' : 'Show the lines'}
           </button>
           {open ? (
@@ -134,7 +134,7 @@ function Bucket({
               {lines.map((line) => (
                 <li key={line.item_id} className="flex items-baseline justify-between gap-4">
                   <span className="min-w-0">
-                    <span className="t-data text-ink">{line.description}</span>
+                    <span className="t-body text-ink">{line.description}</span>
                     {category === 'needs_review' && !hasDiscrepancy(line) ? (
                       <span
                         className="t-micro ml-2 text-unknown"

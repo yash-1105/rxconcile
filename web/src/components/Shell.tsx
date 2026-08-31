@@ -24,20 +24,22 @@ export function Shell({
       {/* Sticky: the demo marker and sign-out must stay in view on long pages,
           not scroll away with the content. */}
       <aside
-        className={`sticky top-0 flex h-screen shrink-0 flex-col bg-paper transition-[width] duration-150 ${
-          collapsed ? 'w-14' : 'w-60'
+        // Narrow screens get the collapsed rail whatever the toggle says: a
+        // 240px sidebar beside content on a 380px screen leaves neither room.
+        className={`sticky top-0 flex h-screen shrink-0 flex-col bg-paper transition-[width] duration-150 w-14 ${
+          collapsed ? 'sm:w-14' : 'sm:w-60'
         }`}
       >
         <div className="flex items-center justify-between px-4 py-4">
           {!collapsed ? (
-            <span className="t-title font-display tracking-tight text-ink">rxconcile</span>
+            <span className="t-title hidden tracking-tight text-ink sm:inline">rxconcile</span>
           ) : null}
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="t-data rounded px-1.5 py-1 text-muted hover:bg-ink-100 hover:text-ink"
+            className="t-small rounded px-1.5 py-1 text-muted hover:bg-ink-100 hover:text-ink"
           >
             {collapsed ? '»' : '«'}
           </button>
@@ -66,7 +68,9 @@ export function Shell({
                         active ? 'bg-seal' : 'bg-transparent'
                       }`}
                     />
-                    {!collapsed ? <span className="truncate">{item.label}</span> : null}
+                    {!collapsed ? (
+                      <span className="hidden truncate sm:inline">{item.label}</span>
+                    ) : null}
                   </button>
                 </li>
               )
@@ -76,7 +80,7 @@ export function Shell({
 
         <div className="px-4 py-4">
           {!collapsed ? (
-            <>
+            <div className="hidden sm:block">
               <p className="t-body font-medium text-ink">{session.name}</p>
               <p className="t-small text-muted">
                 {roleLabel(session.role)} · {session.employeeNumber}
@@ -88,16 +92,16 @@ export function Shell({
               >
                 Sign out
               </button>
-              {/* Persistent and quiet, on every screen. */}
-              <p className="t-small mt-4 text-muted">Demo access. Not a secure login.</p>
-            </>
+              {/* One quiet line, per the amended hard rule 8. */}
+              <p className="t-small mt-4 text-muted">Demo access</p>
+            </div>
           ) : (
             <button
               type="button"
               onClick={onSignOut}
               title="Sign out"
               aria-label="Sign out"
-              className="t-data text-muted hover:text-ink"
+              className="t-small text-muted hover:text-ink"
             >
               ⏻
             </button>

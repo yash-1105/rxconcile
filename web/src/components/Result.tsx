@@ -77,7 +77,7 @@ function Disclosure({
         aria-expanded={open}
         className="flex w-full items-center gap-2 text-left text-muted hover:text-ink"
       >
-        <span className="t-data w-3 shrink-0 text-unknown">{open ? '−' : '+'}</span>
+        <span className="t-small w-3 shrink-0 text-unknown">{open ? '−' : '+'}</span>
         <span className="t-small">{summary}</span>
       </button>
       {open ? <div className="mt-3 pl-5">{children}</div> : null}
@@ -204,8 +204,8 @@ function FindingRow({
             <span className="t-small ml-2 text-muted">(+{extra} more)</span>
           ) : null}
         </span>
-        {technical ? <span className="t-data text-unknown">{lead.rule_code}</span> : null}
-        <span className="t-data shrink-0 text-unknown">{open ? '−' : '+'}</span>
+        {technical ? <span className="t-small text-unknown">{lead.rule_code}</span> : null}
+        <span className="t-small shrink-0 text-unknown">{open ? '−' : '+'}</span>
       </button>
       {open ? (
         <div className="space-y-4 pb-3 pl-6">
@@ -226,7 +226,7 @@ function FindingRow({
           {findings.map((finding, index) => (
             <div key={`${finding.rule_code}-${index}`}>
               <p className="t-small text-ink">
-                <span className="t-data mr-2 text-unknown">{finding.rule_code}</span>
+                <span className="t-small mr-2 text-unknown">{finding.rule_code}</span>
                 {finding.message}
               </p>
               {Object.keys(finding.detail).length > 0 ? (
@@ -426,7 +426,7 @@ export function Result({
           onClick={onReset}
           className="t-small rounded bg-seal px-5 py-2.5 font-semibold text-white hover:opacity-90"
         >
-          {readOnly ? 'Back to a new reconciliation' : 'Reconcile another'}
+          {readOnly ? 'Verify another' : 'Verify another'}
         </button>
         <ExportBar scanId={scanId} />
         <label className="t-small flex cursor-pointer items-center gap-2 text-muted">
@@ -478,7 +478,7 @@ export function Result({
                 <ul className="space-y-1">
                   {grouped.quality.map((finding, index) => (
                     <li key={`q-${index}`} className="t-small text-muted">
-                      <span className="t-data text-unknown">{finding.rule_code}</span>{' '}
+                      <span className="t-small text-unknown">{finding.rule_code}</span>{' '}
                       {finding.message}
                     </li>
                   ))}

@@ -16,7 +16,7 @@ export interface NavItem {
  */
 export const NAV: readonly NavItem[] = [
   { view: 'overview', label: 'Overview', roles: ['employee', 'admin'] },
-  { view: 'new', label: 'New reconciliation', roles: ['employee', 'admin'] },
+  { view: 'new', label: 'Verify', roles: ['employee', 'admin'] },
   { view: 'history', label: 'History', roles: ['employee', 'admin'] },
   { view: 'dictionary', label: 'Medicine dictionary', roles: ['employee', 'admin'] },
   { view: 'how', label: 'How it works', roles: ['employee', 'admin'] },

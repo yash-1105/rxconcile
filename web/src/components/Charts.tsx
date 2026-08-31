@@ -33,7 +33,7 @@ export function BarList({
         <li key={row.label}>
           <div className="flex items-baseline justify-between gap-3">
             <span className="t-small truncate text-ink">{row.label}</span>
-            <span className="t-data text-muted">{row.value}</span>
+            <span className="t-small text-muted">{row.value}</span>
           </div>
           <div className="mt-1 h-1.5 w-full rounded-full bg-ink-100">
             <div

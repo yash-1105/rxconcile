@@ -204,7 +204,7 @@ function GroupHead({
     <th
       colSpan={span}
       scope="colgroup"
-      className="t-micro border-b border-l border-ink-200 px-3 pt-2 pb-1 text-center text-muted first:border-l-0"
+      className="t-micro border-b border-l border-ink-200 px-4 pt-3 pb-1.5 text-center text-muted first:border-l-0"
     >
       {label}
     </th>
@@ -226,7 +226,7 @@ function SubHead({ label, side }: { label: string; side?: 'rx' | 'bill' }) {
 
 function StatusCell({ status, partial }: { status: SpineState; partial: boolean }) {
   return (
-    <td className="px-3 py-2.5 align-top whitespace-nowrap">
+    <td className="px-4 py-4 align-top whitespace-nowrap">
       <span className="inline-flex items-center gap-2">
         <SpineMark state={status} />
         <span className="t-micro text-muted">{STATUS_LABEL[status]}</span>
@@ -253,7 +253,7 @@ function StatusCell({ status, partial }: { status: SpineState; partial: boolean 
  */
 function RemarkCell({ text }: { text: string }) {
   return (
-    <td className="sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-3 py-2.5 align-top shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]">
+    <td className="sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-4 py-4 align-top shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]">
       {text ? (
         <span className="t-small text-ink">{text}</span>
       ) : (
@@ -286,14 +286,14 @@ export function MedicinesTable({
       <table className="w-full min-w-[54rem] border-collapse">
         <thead>
           <tr>
-            <th rowSpan={2} scope="col" className="t-micro px-3 pb-2 text-left text-muted">
+            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
               Status
             </th>
             <GroupHead label="Drug" />
             <th
               rowSpan={2}
               scope="col"
-              className="t-micro max-w-[13rem] border-l border-ink-200 px-3 pb-2 text-left text-muted"
+              className="t-micro max-w-[13rem] border-l border-ink-200 px-4 pb-3 text-left text-muted"
             >
               Salt
             </th>
@@ -304,7 +304,7 @@ export function MedicinesTable({
             <th
               rowSpan={2}
               scope="col"
-              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-3 pb-2 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
+              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-4 pb-3 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
             >
               Remark
             </th>
@@ -351,57 +351,57 @@ export function MedicinesTable({
                 }`}
               >
                 <StatusCell status={row.status} partial={row.partial} />
-                <td className="border-l border-ink-200 px-3 py-2.5">
+                <td className="border-l border-ink-200 px-4 py-4">
                   <span className={at('drug')}>
                     <Val muted={quiet}>{row.prescribed?.drug_name}</Val>
                   </span>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-4">
                   <span className={at('drug')}>
                     <Val muted={quiet}>{row.billed?.drug_name}</Val>
                   </span>
                 </td>
-                <td className="max-w-[13rem] border-l border-ink-200 px-3 py-2.5 break-words">
+                <td className="max-w-[13rem] border-l border-ink-200 px-4 py-4 break-words">
                   <Val muted>{saltOf(row, canonical)}</Val>
                 </td>
-                <td className="border-l border-ink-200 px-3 py-2.5">
+                <td className="border-l border-ink-200 px-4 py-4">
                   <span className={at('strength')}>
                     <Val muted={quiet}>{strengthOf(row.prescribed)}</Val>
                   </span>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-4">
                   <span className={at('strength')}>
                     <Val muted={quiet}>{strengthOf(row.billed)}</Val>
                   </span>
                 </td>
-                <td className="border-l border-ink-200 px-3 py-2.5">
+                <td className="border-l border-ink-200 px-4 py-4">
                   <span className={at('form')}>
                     <Val muted={quiet}>{row.prescribed?.form}</Val>
                   </span>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-4">
                   <span className={at('form')}>
                     <Val muted={quiet}>{row.billed?.form}</Val>
                   </span>
                 </td>
-                <td className="border-l border-ink-200 px-3 py-2.5">
+                <td className="border-l border-ink-200 px-4 py-4">
                   <span className={at('qty')}>
                     <Val muted={quiet}>{expectedQty(row.findings)}</Val>
                   </span>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-4">
                   <span className={at('qty')}>
                     <Val muted={quiet}>{billedQty(row.billed)}</Val>
                   </span>
                 </td>
                 {technical ? (
                   <>
-                    <td className="border-l border-ink-200 px-3 py-2.5">
+                    <td className="border-l border-ink-200 px-4 py-4">
                       <span className="t-data text-muted" title={row.prescribed?.raw_text}>
                         {row.prescribed?.item_id ?? '—'}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-4 py-4">
                       <span className="t-data text-muted" title={row.billed?.raw_text}>
                         {row.billed?.item_id ?? '—'}
                         {row.similarity !== null ? ` · ${row.similarity.toFixed(2)}` : ''}
@@ -584,18 +584,18 @@ export function LabTestsTable({
       <table className="w-full min-w-[40rem] border-collapse">
         <thead>
           <tr>
-            <th rowSpan={2} scope="col" className="t-micro px-3 pb-2 text-left text-muted">
+            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
               Status
             </th>
             <GroupHead label="Test" />
-            <th rowSpan={2} scope="col" className="t-micro border-l border-ink-200 px-3 pb-2 text-left text-muted">
+            <th rowSpan={2} scope="col" className="t-micro border-l border-ink-200 px-4 pb-3 text-left text-muted">
               Panel
             </th>
             {technical ? <GroupHead label="Ids" /> : null}
             <th
               rowSpan={2}
               scope="col"
-              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-3 pb-2 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
+              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-4 pb-3 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
             >
               Remark
             </th>
@@ -629,23 +629,23 @@ export function LabTestsTable({
                 }`}
               >
                 <StatusCell status={row.status} partial={row.partial} />
-                <td className="border-l border-ink-200 px-3 py-2.5">
+                <td className="border-l border-ink-200 px-4 py-4">
                   <Val muted={quiet}>{row.prescribed?.test_name}</Val>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-4 py-4">
                   <Val muted={quiet}>{row.billed?.test_name}</Val>
                 </td>
-                <td className="border-l border-ink-200 px-3 py-2.5">
+                <td className="border-l border-ink-200 px-4 py-4">
                   <Val muted>{panelOf(row)}</Val>
                 </td>
                 {technical ? (
                   <>
-                    <td className="border-l border-ink-200 px-3 py-2.5">
+                    <td className="border-l border-ink-200 px-4 py-4">
                       <span className="t-data text-muted" title={row.prescribed?.raw_text}>
                         {row.prescribed?.item_id ?? '—'}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-4 py-4">
                       <span className="t-data text-muted" title={row.billed?.raw_text}>
                         {row.billed?.item_id ?? '—'}
                       </span>

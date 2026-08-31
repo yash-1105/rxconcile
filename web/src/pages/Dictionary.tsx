@@ -15,20 +15,6 @@ import { fetchDictionary } from '../api/client'
 import { PageHeader } from '../components/Shell'
 import type { DictionaryResponse } from '../types/api'
 
-function Warning({ text }: { text: string }) {
-  return (
-    <section
-      // Not dismissable on purpose. Nothing here may ever be read as a
-      // validated drug master.
-      role="note"
-      className="rounded border-2 border-dashed border-caution bg-ink-50 px-5 py-4"
-    >
-      <h2 className="t-title text-ink">Reference data — not for clinical use</h2>
-      <p className="t-small mt-1.5 max-w-4xl text-muted">{text}</p>
-    </section>
-  )
-}
-
 function Field({
   label,
   value,
@@ -97,7 +83,7 @@ export function Dictionary() {
         lede="The lists the engine matches against: brands to salts, so a generic substitution is recognised rather than reported as a missing item, and lab panels to the analytes a bill itemises them into."
       />
 
-      {data ? <Warning text={data.warning} /> : null}
+      <p className="t-small text-muted">Reference data for demonstration.</p>
       {error ? <p className="t-small mt-6 text-flag">{error}</p> : null}
 
       {data ? (
@@ -137,7 +123,7 @@ export function Dictionary() {
                 <tr className="border-b border-ink-200">
                   {['Brand', 'Salt', 'Common strengths', 'Form', 'Class', 'Schedule'].map(
                     (head) => (
-                      <th key={head} className="t-micro px-4 py-2.5 text-left text-muted">
+                      <th key={head} className="t-micro px-4 py-3.5 text-left text-muted">
                         {head}
                       </th>
                     ),
@@ -147,16 +133,16 @@ export function Dictionary() {
               <tbody>
                 {drugs.map((drug) => (
                   <tr key={drug.brand_name} className="border-b border-ink-100 last:border-b-0">
-                    <td className="t-data px-4 py-2.5 text-ink">{drug.brand_name}</td>
-                    <td className="t-data px-4 py-2.5 text-muted">{drug.salt_composition}</td>
-                    <td className="t-data px-4 py-2.5 text-muted">
+                    <td className="t-data px-4 py-3.5 text-ink">{drug.brand_name}</td>
+                    <td className="t-data px-4 py-3.5 text-muted">{drug.salt_composition}</td>
+                    <td className="t-data px-4 py-3.5 text-muted">
                       {drug.common_strengths.join(', ') || '—'}
                     </td>
-                    <td className="t-data px-4 py-2.5 text-muted">{drug.form || '—'}</td>
-                    <td className="t-small px-4 py-2.5 text-muted">
+                    <td className="t-data px-4 py-3.5 text-muted">{drug.form || '—'}</td>
+                    <td className="t-small px-4 py-3.5 text-muted">
                       {drug.therapeutic_class.replaceAll('_', ' ') || '—'}
                     </td>
-                    <td className="t-data px-4 py-2.5">
+                    <td className="t-data px-4 py-3.5">
                       <span
                         className={
                           drug.schedule === 'OTC' ? 'text-muted' : 'font-semibold text-ink'
@@ -185,7 +171,7 @@ export function Dictionary() {
 
           <h2 className="t-micro mt-10 text-muted">Lab panels</h2>
           <p className="t-small mt-1 max-w-3xl text-muted">
-            A prescription orders <span className="t-data">LFT</span>; the laboratory bills seven
+            A prescription orders <span className="font-medium text-ink">LFT</span>; the laboratory bills seven
             analytes. Without this table that reads as one test never performed plus seven never
             ordered — seven findings against a correct bill.
           </p>
@@ -194,7 +180,7 @@ export function Dictionary() {
               <thead>
                 <tr className="border-b border-ink-200">
                   {['Panel', 'Written as', 'Decomposes into'].map((head) => (
-                    <th key={head} className="t-micro px-4 py-2.5 text-left text-muted">
+                    <th key={head} className="t-micro px-4 py-3.5 text-left text-muted">
                       {head}
                     </th>
                   ))}
@@ -203,11 +189,11 @@ export function Dictionary() {
               <tbody>
                 {data.panels.map((panel) => (
                   <tr key={panel.name} className="border-b border-ink-100 last:border-b-0">
-                    <td className="t-data px-4 py-2.5 text-ink">{panel.name}</td>
-                    <td className="t-data px-4 py-2.5 text-muted">
+                    <td className="t-data px-4 py-3.5 text-ink">{panel.name}</td>
+                    <td className="t-data px-4 py-3.5 text-muted">
                       {panel.written_as.join(', ') || '—'}
                     </td>
-                    <td className="t-small px-4 py-2.5 text-muted">
+                    <td className="t-small px-4 py-3.5 text-muted">
                       {panel.components.join(', ')}
                     </td>
                   </tr>

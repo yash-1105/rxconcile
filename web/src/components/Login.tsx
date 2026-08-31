@@ -41,18 +41,13 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
               Compares a pharmacy bill against the prescription it was dispensed from, and
               reports exactly where the two documents disagree.
             </p>
-            <p className="t-small mt-6 max-w-sm text-muted">
-              Proof of concept for medical reimbursement audit. Automated document comparison
-              only — every finding needs human review.
-            </p>
           </section>
 
           <SpineRule className="hidden self-stretch md:block" />
 
           <section className="md:pl-12">
             <form onSubmit={(event) => void submit(event)} className="rounded bg-surface p-6">
-              <h2 className="t-title text-ink">Demo access</h2>
-              <p className="t-small mt-1 text-muted">Not a secure login.</p>
+              <h2 className="t-title text-ink">Sign in</h2>
 
               <label className="mt-5 block">
                 <span className="t-micro text-muted">Email</span>
@@ -61,7 +56,7 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   autoComplete="off"
-                  className="t-data mt-1.5 w-full rounded bg-ink-50 px-3 py-2 text-ink placeholder:text-ink-400"
+                  className="t-body mt-1.5 w-full rounded bg-ink-50 px-3 py-2.5 text-ink placeholder:text-ink-400"
                   placeholder="you@example.com"
                 />
               </label>
@@ -73,7 +68,7 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="off"
-                  className="t-data mt-1.5 w-full rounded bg-ink-50 px-3 py-2 text-ink"
+                  className="t-body mt-1.5 w-full rounded bg-ink-50 px-3 py-2.5 text-ink"
                 />
               </label>
 
@@ -92,15 +87,6 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
         </div>
       </main>
 
-      <footer className="px-6 py-5">
-        <div className="mx-auto max-w-5xl">
-          <p className="t-small text-muted">Demo access. Not a secure login.</p>
-          <p className="t-small mt-1 text-muted">
-            Proof of concept. Automated document comparison only, not clinical verification. All
-            findings require human review.
-          </p>
-        </div>
-      </footer>
     </div>
   )
 }

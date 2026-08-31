@@ -609,12 +609,22 @@ def test_dictionary_offers_the_filters_the_screen_needs(client: TestClient) -> N
     assert set(body["therapeutic_classes"]) <= classes
 
 
-def test_dictionary_carries_the_not_for_clinical_use_warning(client: TestClient) -> None:
-    """The screen a client is most likely to mistake for an authoritative source."""
+def test_dictionary_says_the_data_is_for_demonstration(client: TestClient) -> None:
+    """One line at a client. The full caveat still lives in the module docstrings,
+    where an engineer will meet it."""
     warning = client.get("/api/dictionary").json()["warning"].lower()
-    for phrase in ("not a validated", "hand-compiled", "indicative", "approximate"):
-        assert phrase in warning
-    assert "do not use this data" in warning
+    assert "demonstration" in warning
+    assert len(warning) < 120, "a client gets a line, not a wall"
+
+
+def test_the_full_caveat_survives_where_an_engineer_reads_it() -> None:
+    from rxconcile.normalize import drug_dictionary, lab_panels
+
+    drugs = (drug_dictionary.__doc__ or "").lower()
+    panels = (lab_panels.__doc__ or "").lower()
+    assert "not a validated" in drugs
+    assert "hand-compiled" in drugs and "hand-compiled" in panels
+    assert "not for clinical" in panels or "clinical" in drugs
 
 
 def test_dictionary_needs_no_session(client: TestClient) -> None:

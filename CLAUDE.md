@@ -83,13 +83,17 @@ comment naming why, **even when nothing in this codebase imports them.** `reques
 with `The requests library is not installed`. **Do not prune the dependency list based on static
 import analysis alone** — verify with `make smoke`, which exercises real credential refresh.
 
-### 8. The demo login is labelled a demo, everywhere
+### 8. The demo login is never described as security
 Credentials are hardcoded and readable by anyone who opens devtools, and role filtering happens
-client-side. **It is not access control.** A persistent, quiet marker in the UI must say so, on
-every screen, and it must never be described as security in any copy, README line or code comment.
+client-side. **It is not access control.**
 
-Write "demo login", never "sign in securely". Write "view filtering", never "permissions". If a
-sentence would mislead a client into thinking their data is protected here, it is wrong.
+**AMENDED.** The marker is no longer required on every screen. One quiet line in the sidebar
+footer reading "Demo access" is enough, and the login screen carries none at all.
+
+What has not changed: it must never be described as secure, anywhere. Write "demo login", never
+"sign in securely". Write "view filtering", never "permissions". If a sentence would mislead a
+client into thinking their data is protected here, it is wrong — a marker being optional is not
+a licence to claim the opposite.
 
 ---
 

@@ -188,7 +188,7 @@ export function Overview({
                   <span className="t-small flex-1 text-ink">
                     {VERDICT_LABEL[scan.verdict]}
                     {scan.discrepancy_count > 0 ? (
-                      <span className="t-data ml-2 text-muted">
+                      <span className="t-small ml-2 text-muted">
                         {scan.discrepancy_count}
                       </span>
                     ) : null}
