@@ -50,14 +50,33 @@ export async function fetchSamples(): Promise<SampleSummary[]> {
   return unwrap<SampleSummary[]>(await fetch(`${BASE_URL}/api/samples`))
 }
 
+export interface ClaimExtras {
+  labReport?: File | null
+  labBill?: File | null
+  condition?: string
+  description?: string
+}
+
+/**
+ * Four documents, two required.
+ *
+ * Which field a file went into is sent to the server, because the engine reads
+ * it to decide whether a lab bill is missing or simply was not part of this
+ * claim — rather than inferring that from what the extraction happened to find.
+ */
 export async function reconcile(
   prescription: File,
   bill: File,
   runs: number,
+  extras: ClaimExtras = {},
 ): Promise<ReconciliationResult> {
   const form = new FormData()
   form.append('prescription', prescription)
   form.append('bill', bill)
+  if (extras.labReport) form.append('lab_report', extras.labReport)
+  if (extras.labBill) form.append('lab_bill', extras.labBill)
+  if (extras.condition) form.append('condition', extras.condition)
+  if (extras.description) form.append('description', extras.description)
   form.append('runs', String(runs))
   return unwrap<ReconciliationResult>(
     await fetch(`${BASE_URL}/api/reconcile`, {
@@ -123,6 +142,8 @@ export interface ScanCreate {
   employee_number: string
   prescription_filename: string
   bill_filename: string
+  condition?: string | null
+  description?: string | null
   extraction_runs: number
   result: ReconciliationResult
 }

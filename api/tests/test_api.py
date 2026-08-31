@@ -630,3 +630,59 @@ def test_the_full_caveat_survives_where_an_engineer_reads_it() -> None:
 def test_dictionary_needs_no_session(client: TestClient) -> None:
     """Reference data is not account-scoped; it is the same for everyone."""
     assert client.get("/api/dictionary").status_code == 200
+
+
+# --------------------------------------------------------------------------
+# Four documents, two required
+# --------------------------------------------------------------------------
+
+
+def test_reconcile_accepts_four_files_and_the_claim_fields(
+    client: TestClient, stub: StubExtractor
+) -> None:
+    response = client.post(
+        "/api/reconcile",
+        files={
+            "prescription": upload(),
+            "bill": upload("b.png"),
+            "lab_report": upload("r.png"),
+            "lab_bill": upload("lb.png"),
+        },
+        data={"condition": "Diabetes", "description": "Quarterly review"},
+    )
+    assert response.status_code == 200, response.text
+    submission = response.json()["submission"]
+    assert submission["condition"] == "Diabetes"
+    assert submission["description"] == "Quarterly review"
+    assert submission["lab_report_supplied"] is True
+    assert submission["lab_bill_supplied"] is True
+
+
+def test_the_two_optional_documents_may_be_omitted(
+    client: TestClient, stub: StubExtractor
+) -> None:
+    response = client.post(
+        "/api/reconcile", files={"prescription": upload(), "bill": upload("b.png")}
+    )
+    assert response.status_code == 200
+    submission = response.json()["submission"]
+    assert submission["lab_report_supplied"] is False
+    assert submission["lab_bill_supplied"] is False
+    assert submission["condition"] is None
+
+
+def test_a_missing_mandatory_document_is_rejected(client: TestClient) -> None:
+    response = client.post("/api/reconcile", files={"prescription": upload()})
+    assert response.status_code == 422
+
+
+def test_a_blank_condition_is_stored_as_null_not_empty(
+    client: TestClient, stub: StubExtractor
+) -> None:
+    response = client.post(
+        "/api/reconcile",
+        files={"prescription": upload(), "bill": upload("b.png")},
+        data={"condition": "   ", "description": ""},
+    )
+    assert response.json()["submission"]["condition"] is None
+    assert response.json()["submission"]["description"] is None

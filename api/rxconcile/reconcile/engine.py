@@ -41,6 +41,7 @@ from rxconcile.models import (
     PrescribedItem,
     Prescription,
     ReconciliationResult,
+    Submission,
     Severity,
     Verdict,
 )
@@ -695,6 +696,7 @@ def _unmatched_rules(
     unmatched_bill: Sequence[str],
     rx_drugs: dict[str, CanonicalDrug],
     bill_drugs: dict[str, CanonicalDrug],
+    submission: Submission | None = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     rx_by_id = {item.item_id: item for item in prescription.items}
@@ -706,11 +708,14 @@ def _unmatched_rules(
     unknown_bill = [i for i in unmatched_bill if not bill_drugs[i].resolved]
     unknown_rx = [i for i in unmatched_rx if not rx_drugs[i].resolved]
 
-    # Lab bills and pharmacy bills are routinely separate documents. A bill that
-    # carries lab lines and no medicines at all is a lab bill, and a lab bill is
-    # not evidence that a prescribed medicine went undispensed -- the pharmacy
-    # bill is simply a different piece of paper that was not uploaded.
-    lab_only_bill = bool(bill.tests) and not bill.items
+    # A prescribed medicine is only "not dispensed" if a pharmacy bill was
+    # actually supplied to check it against. Stated by the operator where we
+    # have a submission, inferred from the document otherwise.
+    lab_only_bill = (
+        not submission.pharmacy_bill_supplied
+        if submission is not None
+        else bool(bill.tests) and not bill.items
+    )
 
     for item_id in unmatched_rx:
         rx_line = rx_by_id[item_id]
@@ -1295,6 +1300,7 @@ def reconcile(
     processing_ms: int | None = None,
     priors: Sequence[PriorScan] | None = None,
     history_scope: HistoryScope | None = None,
+    submission: Submission | None = None,
 ) -> ReconciliationResult:
     """Reconcile a prescription against a bill. Pure, deterministic, no LLM.
 
@@ -1310,6 +1316,9 @@ def reconcile(
         history_scope: what the caller was able to compare against, carried into
             every history finding so a report cannot imply the whole record was
             searched.
+        submission: which documents the operator uploaded, and why. Document
+            completeness reads this rather than inferring from extracted
+            content. Omit it and the engine falls back to inference.
 
     Returns:
         A :class:`ReconciliationResult`. Findings are always computed in full,
@@ -1358,13 +1367,14 @@ def reconcile(
         )
     findings.extend(
         _unmatched_rules(
-            prescription, bill, unmatched_rx, unmatched_bill, rx_by_id, bill_by_id
+            prescription, bill, unmatched_rx, unmatched_bill, rx_by_id, bill_by_id,
+            submission,
         )
     )
     # Lab tests run through their own pairing, then join the same findings list.
     # Nothing downstream distinguishes them: the verdict and the score treat a
     # critical test finding exactly as they treat a critical medicine finding.
-    lab = reconcile_tests(prescription, bill)
+    lab = reconcile_tests(prescription, bill, submission)
     findings.extend(lab.findings)
 
     findings.extend(_document_rules(prescription, bill, bill_by_id))
@@ -1410,6 +1420,7 @@ def reconcile(
         matched_pairs=pairs,
         unmatched_prescribed=unmatched_rx,
         unmatched_billed=unmatched_bill,
+        submission=submission or Submission(),
         canonical=canonical,
         reimbursement=assess(
             bill,

@@ -40,6 +40,7 @@ from rxconcile.models import (
     PharmacyBill,
     PrescribedTest,
     Prescription,
+    Submission,
 )
 from rxconcile.normalize import lab_panels
 from rxconcile.reconcile._findings import finding, unavailable
@@ -121,11 +122,20 @@ def _components(match: lab_panels.LabMatch) -> tuple[str, ...]:
     return match.components
 
 
-def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcome:
+def reconcile_tests(
+    prescription: Prescription,
+    bill: PharmacyBill,
+    submission: Submission | None = None,
+) -> LabOutcome:
     """Compare ordered investigations against billed lab lines.
 
     A document with no tests on either side produces no findings at all. The
     absence of lab work is not a discrepancy and must not render as one.
+
+    ``submission`` says which documents the operator uploaded. When it is
+    present, a missing lab bill is read from THAT rather than inferred from
+    whether the extracted bill happened to carry lab lines -- which is what
+    once put "no lab bill supplied" against a bill holding five of them.
     """
     rx_tests = list(prescription.tests)
     bill_tests = list(bill.tests)
@@ -151,9 +161,15 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
         billed for billed in bill_tests if not bill_matches[billed.item_id].resolved
     ]
 
-    # The mirror of the lab-only-bill guard on the medicine side. A pharmacy bill
-    # with no lab lines says nothing about whether the ordered tests were done.
-    pharmacy_only_bill = bool(bill.items) and not bill_tests
+    # The mirror of the lab-only-bill guard on the medicine side.
+    #
+    # With a submission, this is a FACT the operator stated: no lab bill was
+    # uploaded. Without one, fall back to the old inference so a direct caller
+    # of the engine still behaves sensibly.
+    if submission is not None:
+        no_lab_bill = not submission.lab_bill_supplied
+    else:
+        no_lab_bill = bool(bill.items) and not bill_tests
 
     consumed: set[str] = set()
     unmatched_rx: list[str] = []
@@ -201,11 +217,11 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
         if not billed_components:
             uncertain: str | None = None
             uncertain_code: str | None = None
-            if pharmacy_only_bill:
+            if no_lab_bill:
                 uncertain_code = "no_lab_bill"
                 uncertain = (
-                    "this bill carries only medicines and no lab lines at all, so the "
-                    "lab bill is a separate document that may not have been supplied"
+                    "no lab bill was uploaded, so there is nothing to check this "
+                    "against"
                 )
             elif unresolved_bills:
                 uncertain_code = "unidentified_billed_lines"

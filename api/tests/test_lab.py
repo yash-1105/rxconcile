@@ -374,7 +374,7 @@ def test_a_pharmacy_only_bill_does_not_accuse_ordered_tests() -> None:
     )
     result = run(prescription("CBC"), bl)
     assert codes(result, "TEST_NOT_BILLED") == ["warning"]
-    assert "separate document" in next(
+    assert "no lab bill was uploaded" in next(
         f.message for f in result.findings if f.rule_code == "TEST_NOT_BILLED"
     )
 
@@ -542,3 +542,70 @@ def test_a_bill_with_no_lab_lines_at_all_still_reports_the_missing_document() ->
     result = run(prescription("HbA1c"), bl)
     reasons = {f.detail.get("softened_code") for f in result.findings}
     assert "no_lab_bill" in reasons
+
+
+# ---------------------------------------------------------------------------
+# Completeness is stated, not inferred
+# ---------------------------------------------------------------------------
+
+
+def test_a_supplied_lab_bill_is_never_reported_as_missing() -> None:
+    """The structural fix for the false "no lab bill supplied".
+
+    The engine used to infer this from whether the extracted bill carried lab
+    lines. The operator now says which document is which.
+    """
+    from rxconcile.models import Submission
+
+    stated = Submission(lab_bill_supplied=True)
+    result = engine.reconcile(
+        prescription("CBC"), bill("Zzz Unrecognised Assay"),
+        processing_ms=0, submission=stated,
+    )
+    reasons = {f.detail.get("softened_code") for f in result.findings}
+    assert "no_lab_bill" not in reasons
+
+
+def test_an_absent_lab_bill_is_only_flagged_when_tests_were_ordered() -> None:
+    """No tests ordered and no lab bill is a legitimate choice, not a gap."""
+    from rxconcile.models import BilledItem, Submission
+
+    no_lab = Submission(lab_bill_supplied=False)
+    medicines_only = PharmacyBill(
+        currency="INR",
+        items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
+                          confidence=0.9)],
+    )
+    quiet = engine.reconcile(
+        prescription(present=False), medicines_only, processing_ms=0, submission=no_lab
+    )
+    assert not [f for f in quiet.findings if f.detail.get("softened_code") == "no_lab_bill"]
+    assert not [f for f in quiet.findings if f.rule_code.startswith("TEST_")]
+
+    # Tests ordered with no lab bill behind them IS a missing document.
+    flagged = engine.reconcile(
+        prescription("CBC"), medicines_only, processing_ms=0, submission=no_lab
+    )
+    assert [f for f in flagged.findings if f.detail.get("softened_code") == "no_lab_bill"]
+
+
+def test_a_supplied_pharmacy_bill_never_excuses_a_missing_medicine() -> None:
+    from rxconcile.models import BilledTest, PrescribedItem, Submission
+
+    rx = Prescription(
+        overall_legibility=0.9,
+        items=[PrescribedItem(item_id="rx-01", raw_text="Dolo", drug_name="Dolo",
+                              confidence=0.9)],
+    )
+    lab_lines = PharmacyBill(
+        currency="INR",
+        tests=[BilledTest(item_id="billtest-01", raw_text="CBC", test_name="CBC",
+                          confidence=0.9)],
+    )
+    # The operator says a pharmacy bill WAS uploaded, so a missing medicine is
+    # a real finding even though this document happens to hold only lab lines.
+    stated = Submission(pharmacy_bill_supplied=True, lab_bill_supplied=True)
+    result = engine.reconcile(rx, lab_lines, processing_ms=0, submission=stated)
+    not_billed = [f for f in result.findings if f.rule_code == "RX_NOT_BILLED"]
+    assert [f.severity for f in not_billed] == ["critical"]
+    assert not_billed[0].detail["lab_only_bill"] is False

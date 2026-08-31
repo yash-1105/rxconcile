@@ -41,6 +41,8 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
     ("prescription_image", "BLOB"),
     ("bill_image", "BLOB"),
     ("image_media_type", "VARCHAR DEFAULT 'image/jpeg'"),
+    ("condition", "VARCHAR"),
+    ("description", "VARCHAR"),
 )
 
 

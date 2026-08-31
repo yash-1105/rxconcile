@@ -41,7 +41,12 @@ from rxconcile.extract.errors import (
 from rxconcile.extract.preprocess import prepare_image
 from rxconcile.gcp import health_snapshot
 from rxconcile.gcp.errors import ModelResolutionError, VertexUnavailableError
-from rxconcile.models import PharmacyBill, Prescription, ReconciliationResult
+from rxconcile.models import (
+    PharmacyBill,
+    Prescription,
+    ReconciliationResult,
+    Submission,
+)
 from rxconcile.normalize import lab_panels
 from rxconcile.normalize.drug_dictionary import load_entries
 from rxconcile.reconcile import reconcile
@@ -472,6 +477,8 @@ class ScanCreate(BaseModel):
     employee_number: str = Field(min_length=1)
     prescription_filename: str = ""
     bill_filename: str = ""
+    condition: str | None = None
+    description: str | None = None
     extraction_runs: int = 0
     result: dict[str, Any]
 
@@ -487,6 +494,8 @@ class ScanSummary(BaseModel):
     role: str
     prescription_filename: str
     bill_filename: str
+    condition: str | None = None
+    description: str | None = None
     verdict: str
     discrepancy_count: int
     critical_count: int
@@ -521,6 +530,8 @@ def _summary(record: ScanRecord) -> ScanSummary:
         role=record.role,
         prescription_filename=record.prescription_filename,
         bill_filename=record.bill_filename,
+        condition=record.condition,
+        description=record.description,
         verdict=record.verdict,
         discrepancy_count=record.discrepancy_count,
         critical_count=record.critical_count,
@@ -592,6 +603,8 @@ async def create_scan(
         role=user.role,
         prescription_filename=payload.prescription_filename,
         bill_filename=payload.bill_filename,
+        condition=payload.condition,
+        description=payload.description,
         verdict=str(payload.result.get("verdict", "unknown")),
         result_json=json.dumps(payload.result),
         prescription_image=_prepared(rx_bytes),
@@ -797,6 +810,8 @@ async def _reconcile_bytes(
     bill_bytes: bytes,
     runs: int,
     history: tuple[list[PriorScan], HistoryScope] | None = None,
+    lab_bill_bytes: bytes | None = None,
+    submission: Submission | None = None,
 ) -> ReconciliationResult:
     """Extract both documents concurrently, then reconcile.
 
@@ -804,16 +819,33 @@ async def _reconcile_bytes(
     ``2 x N`` calls are in flight together.
     """
     started = time.monotonic()
-    prescription, bill = await asyncio.gather(
+    jobs: list[Any] = [
         extract_prescription_async(prescription_bytes, runs=runs),
         extract_bill_async(bill_bytes, runs=runs),
-    )
+    ]
+    if lab_bill_bytes is not None:
+        jobs.append(extract_bill_async(lab_bill_bytes, runs=runs))
+    extracted = await asyncio.gather(*jobs)
+    prescription, bill = extracted[0], extracted[1]
     _guard_disagreement(prescription, "prescription")
     _guard_disagreement(bill, "bill")
+
+    if lab_bill_bytes is not None:
+        # A separate lab bill is folded into the same PharmacyBill so the lab
+        # comparison sees one set of billed tests. Its ids are re-issued to keep
+        # them unique within the merged document, which the identity rule
+        # requires; the raw text is untouched.
+        lab_bill = extracted[2]
+        _guard_disagreement(lab_bill, "bill")
+        merged = list(bill.tests)
+        for offset, test in enumerate(lab_bill.tests, start=len(merged) + 1):
+            merged.append(test.model_copy(update={"item_id": f"billtest-{offset:02d}"}))
+        bill = bill.model_copy(update={"tests": merged})
     elapsed_ms = int((time.monotonic() - started) * 1000)
     priors, scope = history if history is not None else (None, None)
     return reconcile(
         prescription, bill, processing_ms=elapsed_ms, priors=priors, history_scope=scope,
+        submission=submission,
     )
 
 
@@ -991,13 +1023,21 @@ def _load_history(user: DemoUser, session: Session) -> tuple[list[PriorScan], Hi
 
 @app.post("/api/reconcile")
 async def reconcile_endpoint(
-    prescription: UploadFile = File(..., description="Prescription image or PDF."),
-    bill: UploadFile = File(..., description="Pharmacy bill image or PDF."),
+    prescription: UploadFile = File(..., description="One file with all prescriptions."),
+    bill: UploadFile = File(..., description="One file with all pharmacy bills."),
+    lab_report: UploadFile | None = File(default=None, description="Lab reports. Optional."),
+    lab_bill: UploadFile | None = File(default=None, description="Lab bills. Optional."),
+    condition: str | None = Form(default=None, description="Condition being treated."),
+    description: str | None = Form(default=None, description="Operator's notes. Optional."),
     runs: int | None = Form(default=None, description="Extraction runs per document."),
     user: DemoUser | None = Depends(optional_user),
     session: Session = Depends(get_session),
 ) -> ReconciliationResult:
     """Reconcile a prescription against a bill. Returns the complete result.
+
+    Four documents, two of them required. A lab bill, where supplied, feeds the
+    lab comparison; where it is not, the engine is TOLD so rather than having to
+    infer it from what the extraction happened to find.
 
     History checks run only for a signed-in account, against the scans that
     account may already see.
@@ -1005,8 +1045,26 @@ async def reconcile_endpoint(
     run_count = _resolved_runs(runs)
     prescription_bytes = await read_upload(prescription)
     bill_bytes = await read_upload(bill)
+    lab_bill_bytes = await read_upload(lab_bill) if lab_bill is not None else None
+    # Lab reports are kept with the scan for the record. Nothing is extracted
+    # from them: no rule reads a report, and inventing one here would be a
+    # behaviour nobody asked for.
+    lab_report_supplied = lab_report is not None
+    if lab_report is not None:
+        await read_upload(lab_report)
+
+    submission = Submission(
+        condition=(condition or "").strip() or None,
+        description=(description or "").strip() or None,
+        prescription_supplied=True,
+        pharmacy_bill_supplied=True,
+        lab_report_supplied=lab_report_supplied,
+        lab_bill_supplied=lab_bill_bytes is not None,
+    )
     history = _load_history(user, session) if user is not None else None
-    return await _reconcile_bytes(prescription_bytes, bill_bytes, run_count, history)
+    return await _reconcile_bytes(
+        prescription_bytes, bill_bytes, run_count, history, lab_bill_bytes, submission,
+    )
 
 
 @app.post("/api/reconcile/sample")

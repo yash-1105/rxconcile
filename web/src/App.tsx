@@ -20,7 +20,14 @@ import { Processing } from './components/Processing'
 import { Result } from './components/Result'
 import { EmptyState, PageHeader, Shell } from './components/Shell'
 import type { View } from './lib/nav'
-import { DropZonePair, EmployeeFields, SamplePicker } from './components/Upload'
+import {
+  ConditionField,
+  DescriptionField,
+  DocumentGrid,
+  EmployeeFields,
+  SamplePicker,
+} from './components/Upload'
+import type { DocumentSlot } from './lib/documents'
 import { Dictionary } from './pages/Dictionary'
 import { History } from './pages/History'
 import { HowItWorks } from './pages/HowItWorks'
@@ -44,8 +51,22 @@ export default function App() {
   const [view, setView] = useState<View>('overview')
 
   const [stage, setStage] = useState<Stage>('upload')
-  const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null)
-  const [billFile, setBillFile] = useState<File | null>(null)
+  const [docs, setDocs] = useState<Record<DocumentSlot['key'], File | null>>({
+    prescription: null,
+    bill: null,
+    labReport: null,
+    labBill: null,
+  })
+  const prescriptionFile = docs.prescription
+  const billFile = docs.bill
+  const [condition, setCondition] = useState('')
+  const [conditionOther, setConditionOther] = useState('')
+  const [description, setDescription] = useState('')
+
+  const setDoc = (key: DocumentSlot['key'], file: File | null) =>
+    setDocs((current) => ({ ...current, [key]: file }))
+  // "Other" means the free text, not the literal word.
+  const resolvedCondition = condition === 'Other' ? conditionOther.trim() : condition
   // Always three. The backend still takes a parameter, for tests.
   const runs = 3
   const [samples, setSamples] = useState<SampleSummary[]>([])
@@ -89,8 +110,7 @@ export default function App() {
     setSession(null)
     setResult(null)
     setStage('upload')
-    setPrescriptionFile(null)
-    setBillFile(null)
+    setDocs({ prescription: null, bill: null, labReport: null, labBill: null })
     setEmployeeName('')
     setEmployeeNumber('')
   }
@@ -142,6 +162,8 @@ export default function App() {
             employee_number: employeeNumber,
             prescription_filename: filenames.prescription,
             bill_filename: filenames.bill,
+            condition: resolvedCondition || null,
+            description: description.trim() || null,
             extraction_runs: runs,
             result: outcome,
           },
@@ -162,7 +184,13 @@ export default function App() {
   const onReconcile = () => {
     if (!prescriptionFile || !billFile) return
     void run(
-      () => reconcile(prescriptionFile, billFile, runs),
+      () =>
+        reconcile(prescriptionFile, billFile, runs, {
+          labReport: docs.labReport,
+          labBill: docs.labBill,
+          condition: resolvedCondition,
+          description: description.trim(),
+        }),
       {
         prescription: URL.createObjectURL(prescriptionFile),
         bill: URL.createObjectURL(billFile),
@@ -199,7 +227,7 @@ export default function App() {
         <>
           <PageHeader
             title="Verify"
-            lede="Add the prescription and the pharmacy bill it was dispensed against."
+            lede="Add the documents for this claim. Prescriptions and pharmacy bills are required; lab documents are optional."
           />
 
           {error ? (
@@ -222,13 +250,19 @@ export default function App() {
               onNumberChange={setEmployeeNumber}
             />
 
-            <DropZonePair
-              prescription={prescriptionFile}
-              bill={billFile}
-              onPrescription={setPrescriptionFile}
-              onBill={setBillFile}
-              onClearPrescription={() => setPrescriptionFile(null)}
-              onClearBill={() => setBillFile(null)}
+            <ConditionField
+              condition={condition}
+              otherText={conditionOther}
+              onCondition={setCondition}
+              onOtherText={setConditionOther}
+            />
+
+            <DescriptionField value={description} onChange={setDescription} />
+
+            <DocumentGrid
+              files={docs}
+              onSelect={(key, file) => setDoc(key, file)}
+              onClear={(key) => setDoc(key, null)}
             />
 
             <div className="flex flex-wrap items-center gap-3">
@@ -238,11 +272,11 @@ export default function App() {
                 disabled={!readyToRun}
                 className="rounded bg-seal px-8 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-ink-300"
               >
-                Reconcile
+                Verify
               </button>
               {!readyToRun ? (
                 <span className="t-small text-muted">
-                  Both documents and the employee details are required.
+                  Prescriptions, pharmacy bills and the employee details are required.
                 </span>
               ) : null}
             </div>
@@ -266,8 +300,7 @@ export default function App() {
             setResult(null)
             setScanId(null)
             setReadOnly(false)
-            setPrescriptionFile(null)
-            setBillFile(null)
+            setDocs({ prescription: null, bill: null, labReport: null, labBill: null })
           }}
         />
       ) : null}

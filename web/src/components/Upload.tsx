@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CONDITIONS, DOCUMENT_SLOTS, type DocumentSlot } from '../lib/documents'
 import type { SampleSummary } from '../types/api'
-import { SpineRule } from './Spine'
 
 const ACCEPTED = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
 
@@ -221,35 +221,102 @@ export function EmployeeFields({
 }
 
 /** The two zones with the spine between them: left prescription, right bill. */
-export function DropZonePair({
-  prescription,
-  bill,
-  onPrescription,
-  onBill,
-  onClearPrescription,
-  onClearBill,
+export function ConditionField({
+  condition,
+  otherText,
+  onCondition,
+  onOtherText,
 }: {
-  prescription: File | null
-  bill: File | null
-  onPrescription: (file: File) => void
-  onBill: (file: File) => void
-  onClearPrescription: () => void
-  onClearBill: () => void
+  condition: string
+  otherText: string
+  onCondition: (value: string) => void
+  onOtherText: (value: string) => void
 }) {
   return (
-    <div className="grid items-stretch gap-6 md:grid-cols-[1fr_auto_1fr] md:gap-0">
-      <div className="md:pr-8">
-        <DropZone
-          label="Prescription"
-          file={prescription}
-          onSelect={onPrescription}
-          onClear={onClearPrescription}
-        />
-      </div>
-      <SpineRule className="hidden self-stretch md:block" />
-      <div className="md:pl-8">
-        <DropZone label="Pharmacy Bill" file={bill} onSelect={onBill} onClear={onClearBill} />
-      </div>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <label className="block">
+        <span className="t-micro text-muted">Disease / medical issue</span>
+        <select
+          value={condition}
+          onChange={(event) => onCondition(event.target.value)}
+          className="t-body mt-1.5 w-full rounded border border-ink-300 bg-surface px-3 py-2.5 text-ink"
+        >
+          <option value="">Select a condition</option>
+          {CONDITIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </label>
+      {condition === 'Other' ? (
+        <label className="block">
+          <span className="t-micro text-muted">Please specify</span>
+          <input
+            value={otherText}
+            onChange={(event) => onOtherText(event.target.value)}
+            className="t-body mt-1.5 w-full rounded bg-surface px-3 py-2.5 text-ink placeholder:text-ink-400"
+            placeholder="What is being treated"
+          />
+        </label>
+      ) : null}
+    </div>
+  )
+}
+
+export function DescriptionField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="block">
+      <span className="t-micro text-muted">Description</span>
+      <span className="t-small ml-2 text-muted">Optional</span>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={3}
+        className="t-body mt-1.5 w-full resize-y rounded bg-surface px-3 py-2.5 text-ink placeholder:text-ink-400"
+        placeholder="Anything a reviewer should know about this claim"
+      />
+    </label>
+  )
+}
+
+export function DocumentGrid({
+  files,
+  onSelect,
+  onClear,
+}: {
+  files: Record<DocumentSlot['key'], File | null>
+  onSelect: (key: DocumentSlot['key'], file: File) => void
+  onClear: (key: DocumentSlot['key']) => void
+}) {
+  return (
+    <div className="grid gap-5 md:grid-cols-2">
+      {DOCUMENT_SLOTS.map((slot) => (
+        <div key={slot.key}>
+          <div className="mb-1.5 flex items-baseline gap-2">
+            <span className="t-micro text-muted">{slot.label}</span>
+            {slot.required ? (
+              <span className="t-small font-medium text-flag" title="Required">
+                Required
+              </span>
+            ) : (
+              <span className="t-small text-muted">Optional</span>
+            )}
+          </div>
+          <DropZone
+            label={slot.hint}
+            file={files[slot.key]}
+            onSelect={(file) => onSelect(slot.key, file)}
+            onClear={() => onClear(slot.key)}
+          />
+        </div>
+      ))}
     </div>
   )
 }

@@ -108,6 +108,15 @@ function Summary({
         <div className="flex-1">
           <h1 className="t-display text-ink">{head.title}</h1>
           <p className="t-body mt-2 max-w-3xl text-muted">{head.supporting}</p>
+          {result.submission?.condition || result.submission?.description ? (
+            <p className="t-small mt-2 max-w-3xl text-muted">
+              {result.submission.condition ? (
+                <span className="font-medium text-ink">{result.submission.condition}</span>
+              ) : null}
+              {result.submission.condition && result.submission.description ? ' — ' : null}
+              {result.submission.description}
+            </p>
+          ) : null}
           {/* Must never disappear. A check that did not run is not a check that
               passed, and the reimbursement section is where the reasons are. */}
           {manualChecks > 0 ? (

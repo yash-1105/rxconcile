@@ -15,6 +15,7 @@ from rxconcile.models.schema import (
     ReimbursementLine,
     ReimbursementSummary,
     ReviewSummary,
+    Submission,
     Severity,
     Verdict,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "ReimbursementLine",
     "ReimbursementSummary",
     "ReviewSummary",
+    "Submission",
     "Severity",
     "Verdict",
 ]

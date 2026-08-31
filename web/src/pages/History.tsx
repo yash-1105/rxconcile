@@ -168,7 +168,7 @@ export function History({
             <table className="w-full min-w-[46rem] border-collapse">
               <thead>
                 <tr className="border-b border-ink-200 text-left">
-                  {['Verdict', 'Date', 'Employee', 'Discrepancies', 'Supported', 'Time', ''].map((head) => (
+                  {['Verdict', 'Date', 'Employee', 'Condition', 'Discrepancies', 'Supported', 'Time', ''].map((head) => (
                     <th key={head} className="t-micro px-4 py-3 text-muted">
                       {head}
                     </th>
@@ -217,6 +217,9 @@ export function History({
                     <td className="t-small px-4 py-3 text-ink">
                       {scan.employee_name}
                       <span className="t-small ml-2 text-muted">{scan.employee_number}</span>
+                    </td>
+                    <td className="t-small px-4 py-3 text-muted" title={scan.description ?? ''}>
+                      {scan.condition ?? '—'}
                     </td>
                     <td className="t-data px-4 py-3 text-ink">
                       {scan.discrepancy_count}

@@ -645,6 +645,43 @@ class ReimbursementSummary(_Base):
         )
 
 
+#: The conditions the Verify screen offers. "Other" reveals a free-text field.
+CONDITIONS: Final[tuple[str, ...]] = (
+    "Fever / infection",
+    "Diabetes",
+    "Hypertension",
+    "Respiratory",
+    "Gastric",
+    "Dental",
+    "Injury",
+    "Skin",
+    "Other",
+)
+
+
+class Submission(_Base):
+    """What the operator told us they were uploading.
+
+    The engine used to INFER whether a lab bill existed, by looking at whether
+    the extracted bill carried lab lines. That produced "no lab bill supplied"
+    against a bill holding five of them. The operator now says which document is
+    which, so completeness is read from this rather than guessed from content.
+
+    An absent lab report or lab bill is a legitimate choice, not a gap. Only a
+    prescription that ordered tests with no lab bill behind it is a missing
+    document.
+    """
+
+    condition: str | None = Field(
+        default=None, description="Selected condition, or the free text behind 'Other'."
+    )
+    description: str | None = Field(default=None, description="Operator's notes. Optional.")
+    prescription_supplied: bool = True
+    pharmacy_bill_supplied: bool = True
+    lab_report_supplied: bool = False
+    lab_bill_supplied: bool = False
+
+
 class ReconciliationResult(_Base):
     """The complete outcome of reconciling one prescription against one bill."""
 
@@ -664,6 +701,11 @@ class ReconciliationResult(_Base):
     )
     unmatched_billed: list[str] = Field(
         default_factory=list, description="BilledItem.item_id values with no prescribed match."
+    )
+    submission: Submission = Field(
+        default_factory=Submission,
+        description="What was uploaded, as stated by the operator. Document-completeness "
+        "checks read this rather than inferring from extracted content.",
     )
     reimbursement: ReimbursementSummary = Field(
         default_factory=ReimbursementSummary,

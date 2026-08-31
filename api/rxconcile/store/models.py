@@ -41,6 +41,11 @@ class ScanRecord(SQLModel, table=True):
     prescription_filename: str
     bill_filename: str
 
+    # What the operator said this scan was about. Stored rather than derived:
+    # neither is visible anywhere in the documents.
+    condition: str | None = Field(default=None, index=True)
+    description: str | None = Field(default=None)
+
     # Summary columns, indexed for listing and filtering. Every one of these is
     # derived from result_json, never supplied independently, so they cannot
     # drift from the result they describe.

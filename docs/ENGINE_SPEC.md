@@ -559,3 +559,40 @@ and what it needed. **A check that silently goes unavailable is the failure
 this project keeps having to fix**, and the lesson is that removing a surface
 must be checked against everything that surface was carrying.
 
+---
+
+## 15. Document completeness is stated, not inferred
+
+The Verify screen takes four documents — prescriptions and pharmacy bills
+required, lab reports and lab bills optional — plus a condition and an optional
+description. `ReconciliationResult.submission` carries what the operator said
+they uploaded.
+
+Completeness now reads that. It used to infer whether a lab bill existed by
+looking at whether the extracted bill happened to carry lab lines, which put
+"no lab bill supplied" against a bill holding five of them. The operator says
+which document is which, so there is nothing left to infer.
+
+| Condition | Result |
+| --- | --- |
+| lab bill uploaded | lab comparison runs against it; never reported as missing |
+| no lab bill, no tests ordered | **not applicable** — no finding at all |
+| no lab bill, tests ordered | `TEST_NOT_BILLED` softened, `softened_code: no_lab_bill` |
+| no pharmacy bill | `RX_NOT_BILLED` softened rather than accusing |
+
+An absent lab report or lab bill is a legitimate choice, not a gap. Only a
+prescription that ordered tests with no lab bill behind it is a missing
+document.
+
+A separate lab bill is merged into the same `PharmacyBill` so the lab
+comparison sees one set of billed tests. Its ids are re-issued to stay unique
+within the merged document, as the identity rule requires; raw text is
+untouched.
+
+Lab reports are kept with the scan for the record. Nothing is extracted from
+them — no rule reads a report, and inventing one would be behaviour nobody
+asked for.
+
+`submission` is optional on `reconcile()`. Omit it and the engine falls back to
+the old inference, so a direct caller still behaves sensibly.
+

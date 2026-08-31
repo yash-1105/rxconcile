@@ -235,6 +235,16 @@ export interface ReviewSummary {
   checks_unavailable: number
 }
 
+/** What the operator said they were uploading, and what it was about. */
+export interface Submission {
+  condition: string | null
+  description: string | null
+  prescription_supplied: boolean
+  pharmacy_bill_supplied: boolean
+  lab_report_supplied: boolean
+  lab_bill_supplied: boolean
+}
+
 export interface ReconciliationResult {
   verdict: Verdict
   /** Null when the verdict is inconclusive. Never coerce to 0. */
@@ -243,6 +253,7 @@ export interface ReconciliationResult {
   matched_pairs: MatchedPair[]
   unmatched_prescribed: string[]
   unmatched_billed: string[]
+  submission: Submission
   reimbursement: ReimbursementSummary
   canonical: CanonicalMatch[]
   matched_tests: MatchedPair[]
@@ -320,6 +331,8 @@ export interface ScanSummary {
   role: string
   prescription_filename: string
   bill_filename: string
+  condition: string | null
+  description: string | null
   verdict: Verdict
   discrepancy_count: number
   critical_count: number
