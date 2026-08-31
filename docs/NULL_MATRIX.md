@@ -314,3 +314,41 @@ The subtotal check first summed only `bill.items`, and reported a 1,080-rupee
 shortfall on a bill whose lab section was simply not counted. Both sections are
 summed now. `test_the_subtotal_includes_lab_lines_not_just_medicines` holds it.
 
+---
+
+# Legibility vs dictionary resolution
+
+Added after a bill line reading `LAKME SUNSCREEN SPF50` — transcribed
+perfectly — reported as "Billed line could not be read".
+
+Two states were sharing one field. `identified` is the **drug dictionary**
+lookup; a cosmetic will never resolve because the dictionary holds medicines.
+Legibility is whether the page was read at all. Findings now carry `legible`
+alongside `identified`, and only `legible: false` produces unreadable wording.
+
+| `drug_name` | `form` | legible | identified | classified as |
+| --- | --- | --- | --- | --- |
+| `Dolo` | tablet | true | **true** | medicine |
+| `LAKME SUNSCREEN` | other | true | false | **non-medicine** |
+| `Zzq Unknown` | — | true | false | **unclassified** |
+| null | tablet | **false** | false | medicine |
+| null | — | **false** | false | unclassified |
+
+Row three is the safety property: a legible line matching neither the
+dictionary nor the keyword list stays unclassified rather than being guessed
+into either bucket.
+
+## Panel-covered lines had no reason at all
+
+An ordered panel billed as four analytes pairs to one of them. Reimbursement
+read only `matched`, so the other three fell to "billed, unflagged and
+unpaired" and landed in *needs a manual check* with an empty `rule_codes` list
+— a line in a bucket with no reason attached to it. `LabOutcome.covered` now
+reports every line a matched panel accounted for.
+
+| Billed analytes | line totals | eligible | needs review |
+| --- | --- | --- | --- |
+| 4 of 4 required | all printed | **4 lines, full amount** | 0 |
+| 2 of 4 required | all printed | 1 | 1 (`PANEL_PARTIAL`, correctly) |
+| any | some null | excluded from the total, counted in `lines_without_amount` | — |
+

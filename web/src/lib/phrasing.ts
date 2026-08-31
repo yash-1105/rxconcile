@@ -55,7 +55,7 @@ const UNVERIFIED_CODES = new Set([
 const NOT_RUN_CODES = new Set(['CHECK_UNAVAILABLE'])
 
 /** Worth telling the client, but not a problem. */
-const NOTED_CODES = new Set([
+export const NOTED_CODES = new Set([
   'BRAND_SUBSTITUTION',
   'NON_MEDICINE_ITEM',
   'GSTIN_STATE_MISMATCH',
@@ -130,11 +130,11 @@ export function phrase(
       if (detail['lab_only_bill'] === true) {
         return `${nameOf(rx)} was not assessed — this bill carries no medicines`
       }
-      return detail['identified'] === false
+      return detail['legible'] === false
         ? 'A prescribed line could not be read, so whether it was dispensed is unknown'
         : `${nameOf(rx)} was prescribed but does not appear on the bill`
     case 'BILL_NOT_PRESCRIBED':
-      return detail['identified'] === false
+      return detail['legible'] === false
         ? 'A billed line could not be read, so whether it was prescribed is unknown'
         : `${nameOf(bl)} was billed but was not prescribed`
     case 'SCHEDULE_H_UNBACKED':
@@ -227,7 +227,7 @@ export function phrase(
     case 'LICENCE_ABSENT':
       return 'No drug licence number is printed on this bill'
     case 'NON_MEDICINE_ITEM':
-      return `${String(detail['line'])} is not a medicine and is usually outside reimbursement`
+      return `${String(detail['line'])} is not a medicine — outside reimbursement scope`
     case 'TAX_INCLUSIVE_PRICING':
       return 'The printed rates appear to include tax, so the grand-total check was skipped'
     case 'DUPLICATE_BILL':
@@ -341,6 +341,7 @@ export function headline(
  * and a count of what else is there.
  */
 const REMARKS: ReadonlyArray<readonly [string, string]> = [
+  ['NON_MEDICINE_ITEM', 'Not a medicine — outside reimbursement scope'],
   ['SALT_DIFFERENT_CLASS', 'Different kind of medicine to the one prescribed'],
   ['SCHEDULE_H_UNBACKED', 'Prescription-only medicine with nothing backing it'],
   ['STRENGTH_MISMATCH', 'Strength differs'],
@@ -356,7 +357,6 @@ const REMARKS: ReadonlyArray<readonly [string, string]> = [
   ['EARLY_REPEAT', 'Claimed again before the course ran out'],
   ['LINE_TOTAL_MISMATCH', 'Line total does not match quantity x rate'],
   ['QUANTITY_AMBIGUOUS', 'Quantity could not be confirmed'],
-  ['NON_MEDICINE_ITEM', 'Not a medicine'],
   ['STRENGTH_UNIT_UNSTATED', 'Strength not printed on one document'],
 ]
 
@@ -379,14 +379,17 @@ export function remark(codes: string[], findings: Finding[]): string {
   const detail = found?.detail ?? {}
   const total = sayable.length
 
-  if (code === 'BILL_NOT_PRESCRIBED' && detail['identified'] === false) {
+  // `identified` is the dictionary lookup; `legible` is whether the page was
+  // read. A cosmetic is legible and unidentified, and saying "could not be
+  // read" blamed the extraction for a gap in our reference data.
+  if (code === 'BILL_NOT_PRESCRIBED' && detail['legible'] === false) {
     return withCount('Billed line could not be read', total)
   }
   if (code === 'RX_NOT_BILLED') {
     if (detail['lab_only_bill'] === true) {
       return withCount('Not assessed — no pharmacy bill supplied', total)
     }
-    if (detail['identified'] === false) {
+    if (detail['legible'] === false) {
       return withCount('Prescribed line could not be read', total)
     }
   }

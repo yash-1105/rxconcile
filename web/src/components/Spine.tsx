@@ -10,13 +10,15 @@
  * colour-blindness.
  */
 
-export type SpineState = 'clean' | 'warning' | 'problem' | 'unchecked'
+export type SpineState = 'clean' | 'warning' | 'problem' | 'unchecked' | 'out-of-scope'
 
 const MARK: Record<SpineState, { label: string; className: string }> = {
   clean: { label: 'Matches', className: 'bg-seal' },
   warning: { label: 'Check', className: 'bg-caution' },
   problem: { label: 'Problem', className: 'bg-flag' },
   unchecked: { label: 'Not checked', className: 'bg-unknown' },
+  // Read, understood, and simply not a medicine. Neither a problem nor a gap.
+  'out-of-scope': { label: 'Out of scope', className: 'bg-muted' },
 }
 
 /** A mark sitting on the spine, sized for a table row or a list item. */
@@ -43,6 +45,18 @@ export function SpineMark({ state, className = '' }: { state: SpineState; classN
         aria-label={mark.label}
         title={mark.label}
         className={`inline-block h-2 w-2 rounded-full border-[1.5px] border-caution ${className}`}
+      />
+    )
+  }
+  if (state === 'out-of-scope') {
+    // A hollow square: distinct in shape from every other mark, so it survives
+    // greyscale like the rest.
+    return (
+      <span
+        role="img"
+        aria-label={mark.label}
+        title={mark.label}
+        className={`inline-block h-2 w-2 border-[1.5px] border-muted ${className}`}
       />
     )
   }

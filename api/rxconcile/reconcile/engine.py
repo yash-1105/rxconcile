@@ -743,6 +743,7 @@ def _unmatched_rules(
                 message,
                 prescribed_ref=item_id,
                 detail={
+                    "legible": bool(rx_line.drug_name),
                     "drug_name": rx_line.drug_name,
                     "raw_text": rx_line.raw_text,
                     "identified": identified,
@@ -782,6 +783,11 @@ def _unmatched_rules(
                 + (" Recorded as a non-medicine line." if non_medicine else ""),
                 billed_ref=item_id,
                 detail={
+                    # `identified` is the DRUG DICTIONARY lookup. `legible` is
+                    # whether the page was read. A cosmetic is legible and
+                    # unidentified, and calling that "could not be read" blames
+                    # the extraction for a gap in our reference data.
+                    "legible": bool(bill_line.drug_name),
                     "drug_name": bill_line.drug_name,
                     "raw_text": bill_line.raw_text,
                     "form": bill_line.form,
@@ -1294,8 +1300,13 @@ def reconcile(
         reimbursement=assess(
             bill,
             findings,
+            # `lab.covered`, not just `lab.matched`: a panel billed as six
+            # analytes pairs to one of them, and the other five are accounted
+            # for just as fully. Reading only the pairs put them in "needs a
+            # manual check" with no reason attached to them at all.
             matched_billed_ids={p.billed_id for p in pairs}
-            | {p.billed_id for p in lab.matched},
+            | {p.billed_id for p in lab.matched}
+            | lab.covered,
         ),
         matched_tests=lab.matched,
         unmatched_prescribed_tests=lab.unmatched_prescribed,

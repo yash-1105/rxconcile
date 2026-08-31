@@ -48,7 +48,9 @@ from rxconcile.reconcile._findings import finding, unavailable
 class LabOutcome:
     """Findings plus the pairing lists, mirroring the medicine step's shape."""
 
-    __slots__ = ("findings", "matched", "unmatched_prescribed", "unmatched_billed")
+    __slots__ = (
+        "covered", "findings", "matched", "unmatched_prescribed", "unmatched_billed",
+    )
 
     def __init__(
         self,
@@ -56,11 +58,18 @@ class LabOutcome:
         matched: list[MatchedPair],
         unmatched_prescribed: list[str],
         unmatched_billed: list[str],
+        covered: set[str] | None = None,
     ) -> None:
         self.findings = findings
         self.matched = matched
         self.unmatched_prescribed = unmatched_prescribed
         self.unmatched_billed = unmatched_billed
+        #: EVERY billed line a matched panel accounted for, not only the primary
+        #: one named in `matched`. An ordered LFT billed as seven analytes pairs
+        #: to one of them; the other six are just as much accounted for, and
+        #: anything downstream that only reads `matched` will treat them as
+        #: unexplained.
+        self.covered = covered or set()
 
 
 #: Similarity recorded on a test pair. Panel matching is set membership rather
@@ -122,7 +131,7 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
     bill_tests = list(bill.tests)
 
     if not rx_tests and not bill_tests and not prescription.investigations_present:
-        return LabOutcome([], [], [], [])
+        return LabOutcome([], [], [], [], set())
 
     findings: list[Finding] = []
     matched: list[MatchedPair] = []
@@ -360,4 +369,4 @@ def reconcile_tests(prescription: Prescription, bill: PharmacyBill) -> LabOutcom
             )
         )
 
-    return LabOutcome(findings, matched, unmatched_rx, unmatched_bill)
+    return LabOutcome(findings, matched, unmatched_rx, unmatched_bill, consumed)

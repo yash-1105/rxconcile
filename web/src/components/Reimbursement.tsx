@@ -13,6 +13,8 @@
 
 import { useState } from 'react'
 import type { ReimbursementCategory, ReimbursementSummary } from '../types/api'
+import { NOTED_CODES } from '../lib/phrasing'
+import { UNCHECKED_CODES } from '../lib/rowStatus'
 import { SpineMark, type SpineState } from './Spine'
 
 const LABEL: Record<ReimbursementCategory, string> = {
@@ -47,6 +49,26 @@ function money(currency: string, amount: string): string {
   return `${currency} ${formatted}`
 }
 
+/**
+ * Whether a line is here because something is WRONG with it, or merely because
+ * a check could not be completed.
+ *
+ * A bucket holding most of the bill tells a reviewer nothing. These are very
+ * different asks — one wants a decision, the other wants a document — and
+ * lumping them under "someone needs to look at these" hides the few that
+ * genuinely do. Read off the rule codes the engine already reported; nothing
+ * here re-decides anything.
+ */
+function hasDiscrepancy(line: ReimbursementSummary['lines'][number]): boolean {
+  return line.rule_codes.some(
+    // NOTED codes are excluded as well as unchecked ones. A brand substitution
+    // is a legal dispensing, reported everywhere else in this product as a note
+    // rather than a discrepancy, and counting it here would say four lines need
+    // a decision where two do.
+    (code) => !UNCHECKED_CODES.has(code) && !NOTED_CODES.has(code),
+  )
+}
+
 function Bucket({
   category,
   total,
@@ -61,7 +83,13 @@ function Bucket({
   summary: ReimbursementSummary
 }) {
   const [open, setOpen] = useState(false)
-  const lines = summary.lines.filter((line) => line.category === category)
+  // Discrepancies first: the lines that need a decision, before the lines that
+  // only need a document.
+  const lines = summary.lines
+    .filter((line) => line.category === category)
+    .sort((a, b) => Number(hasDiscrepancy(b)) - Number(hasDiscrepancy(a)))
+  const flagged = lines.filter(hasDiscrepancy).length
+  const unverifiable = lines.length - flagged
   return (
     <div className="rounded border border-ink-200 bg-surface px-5 py-4">
       <div className="flex items-start gap-2.5">
@@ -75,6 +103,21 @@ function Bucket({
         </div>
       </div>
       <p className="t-small mt-3 text-muted">{BLURB[category]}</p>
+      {category === 'needs_review' && lines.length > 1 ? (
+        <p className="t-small mt-1.5 text-muted">
+          {flagged > 0 ? (
+            <>
+              <strong className="font-semibold text-ink">
+                {flagged} {flagged === 1 ? 'has' : 'have'} a discrepancy
+              </strong>
+              {unverifiable > 0 ? '; ' : '.'}
+            </>
+          ) : null}
+          {unverifiable > 0
+            ? `${unverifiable} could not be fully checked${flagged > 0 ? '.' : '.'}`
+            : null}
+        </p>
+      ) : null}
       {lines.length > 0 ? (
         <>
           <button
@@ -92,6 +135,14 @@ function Bucket({
                 <li key={line.item_id} className="flex items-baseline justify-between gap-4">
                   <span className="min-w-0">
                     <span className="t-data text-ink">{line.description}</span>
+                    {category === 'needs_review' && !hasDiscrepancy(line) ? (
+                      <span
+                        className="t-micro ml-2 text-unknown"
+                        title="Nothing is wrong with this line; a check could not be completed"
+                      >
+                        unchecked
+                      </span>
+                    ) : null}
                     <span className="t-small mt-0.5 block text-muted">{line.reason}</span>
                   </span>
                   <span className="t-data shrink-0 text-ink">

@@ -41,6 +41,12 @@ export function statusFrom(findings: Finding[], { paired }: { paired: boolean })
   const partial = findings.some((f) => UNCHECKED_CODES.has(f.rule_code))
   if (findings.some((f) => f.severity === 'critical')) return { state: 'problem', partial }
   if (findings.some((f) => f.severity === 'warning')) return { state: 'warning', partial }
+  // A confirmed non-medicine is its own answer. It was read, it was understood,
+  // and it is simply not a medicine — which is neither a problem nor a line
+  // nobody managed to check.
+  if (findings.some((f) => f.rule_code === 'NON_MEDICINE_ITEM')) {
+    return { state: 'out-of-scope', partial: false }
+  }
   // The pairing is itself a result: these two lines were matched to each other.
   if (paired) return { state: 'clean', partial }
   return { state: 'unchecked', partial: false }

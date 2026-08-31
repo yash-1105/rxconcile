@@ -31,6 +31,7 @@ const STATUS_LABEL: Record<SpineState, string> = {
   warning: 'Check',
   problem: 'Problem',
   unchecked: 'Not checked',
+  'out-of-scope': 'Out of scope',
 }
 
 function Val({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {

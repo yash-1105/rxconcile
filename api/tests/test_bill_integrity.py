@@ -387,3 +387,81 @@ def test_a_lab_line_that_does_not_add_up_is_still_caught() -> None:
         ],
     )
     assert codes(check_arithmetic(bl), "LINE_TOTAL_MISMATCH") == ["warning"]
+
+
+# ---------------------------------------------------------------------------
+# Unresolved in the dictionary is not the same as unreadable
+# ---------------------------------------------------------------------------
+
+
+def test_a_legible_non_medicine_is_never_reported_as_unreadable() -> None:
+    """LAKME SUNSCREEN was read perfectly. The dictionary simply has no cosmetics.
+
+    `identified` is the drug-dictionary lookup and `legible` is whether the page
+    was read; conflating them blamed the extraction for a gap in our reference
+    data.
+    """
+    rx = Prescription(overall_legibility=0.9)
+    result = engine.reconcile(
+        rx, bill(item(name="LAKME SUNSCREEN SPF50", form="other")), processing_ms=0
+    )
+    found = next(f for f in result.findings if f.rule_code == "BILL_NOT_PRESCRIBED")
+    assert found.detail["legible"] is True, "the line was read"
+    assert found.detail["identified"] is False, "and is not in the drug dictionary"
+
+
+def test_a_genuinely_unreadable_line_still_says_so() -> None:
+    bl = PharmacyBill(
+        currency="INR", pharmacy_licence_no="TN/2019/337821", gstin=VALID_GSTIN,
+        items=[BilledItem(item_id="bill-01", raw_text="[?] smudged", drug_name=None,
+                          confidence=0.3)],
+    )
+    result = engine.reconcile(Prescription(overall_legibility=0.9), bl, processing_ms=0)
+    found = next(f for f in result.findings if f.rule_code == "BILL_NOT_PRESCRIBED")
+    assert found.detail["legible"] is False
+
+
+@pytest.mark.parametrize("name", ["LAKME SUNSCREEN SPF50", "DELIVERY CHARGE"])
+def test_the_two_lines_from_the_real_bill_are_classified(name: str) -> None:
+    rx = Prescription(overall_legibility=0.9)
+    result = engine.reconcile(rx, bill(item(name=name, form="other")), processing_ms=0)
+    assert non_medicine_codes(result) == ["info"]
+
+
+# ---------------------------------------------------------------------------
+# Panel-covered lines are accounted for, not left for a human
+# ---------------------------------------------------------------------------
+
+
+def test_every_line_a_panel_covers_counts_as_covered() -> None:
+    """An ordered panel billed as four analytes pairs to one of them.
+
+    Reading only the pair left the other three in "needs a manual check" with
+    no reason attached to them at all, and understated what the prescription
+    covers.
+    """
+    from rxconcile.models import BilledTest, PrescribedTest
+
+    rx = Prescription(
+        overall_legibility=0.9, investigations_present=True,
+        tests=[PrescribedTest(item_id="test-01", raw_text="Adv: Lipid Profile",
+                              test_name="Lipid Profile", confidence=0.9)],
+    )
+    names = [
+        ("Lipid Profile — Total Cholesterol", "180.00"),
+        ("Lipid Profile — HDL", "90.00"),
+        ("Lipid Profile — LDL", "90.00"),
+        ("Lipid Profile — Triglycerides", "90.00"),
+    ]
+    bl = PharmacyBill(
+        currency="INR", pharmacy_licence_no="TN/2019/337821", gstin=VALID_GSTIN,
+        tests=[
+            BilledTest(item_id=f"billtest-{i:02d}", raw_text=n, test_name=n,
+                       quantity=1.0, line_total=Decimal(t), confidence=0.9)
+            for i, (n, t) in enumerate(names, start=1)
+        ],
+    )
+    money = engine.reconcile(rx, bl, processing_ms=0).reimbursement
+    assert money.eligible_line_count == 4, "all four analytes are covered"
+    assert money.eligible_total == Decimal("450.00")
+    assert money.needs_review_line_count == 0
