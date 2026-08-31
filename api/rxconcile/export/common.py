@@ -126,7 +126,9 @@ _REMARKS: Final[tuple[tuple[str, str], ...]] = (
     ("DUPLICATE_BILL", "Already submitted"),
     ("POSSIBLE_RESUBMISSION", "Possible corrected re-issue"),
     ("EARLY_REPEAT", "Claimed again before the course ran out"),
+    ("EXPIRED_ITEM", "Dispensed after it expired"),
     ("SALT_DIFFERENT_CLASS", "Different kind of medicine to the one prescribed"),
+    ("EXPIRY_NEAR", "Expires soon after this bill"),
     ("SCHEDULE_H_UNBACKED", "Prescription-only medicine with nothing backing it"),
     ("STRENGTH_MISMATCH", "Strength differs"),
     ("BILL_NOT_PRESCRIBED", "Not on the prescription"),
@@ -218,6 +220,7 @@ PINNED_CODE: Final[str] = "SCHEDULE_H_UNBACKED"
 _SPECIFICITY: Final[tuple[str, ...]] = (
     PINNED_CODE,
     "DUPLICATE_BILL",
+    "EXPIRED_ITEM",
     "SALT_DIFFERENT_CLASS",
     "STRENGTH_MISMATCH",
     "DUPLICATE_THERAPY",

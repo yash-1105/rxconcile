@@ -38,6 +38,8 @@ const DISCREPANCY_CODES = new Set([
   'GRAND_TOTAL_MISMATCH',
   'GSTIN_INVALID',
   'LICENCE_ABSENT',
+  'EXPIRED_ITEM',
+  'EXPIRY_NEAR',
   'DUPLICATE_BILL',
   'POSSIBLE_RESUBMISSION',
   'EARLY_REPEAT',
@@ -224,6 +226,14 @@ export function phrase(
       return `The GSTIN is registered in ${String(
         detail['gstin_state'],
       )} but the bill's address is in ${String(detail['address_state'])}`
+    case 'EXPIRED_ITEM':
+      return `${String(detail['drug_name'])} was dispensed ${String(
+        detail['days_past_expiry'],
+      )} days after it expired on ${String(detail['expiry'])}`
+    case 'EXPIRY_NEAR':
+      return `${String(detail['drug_name'])} expires on ${String(
+        detail['expiry'],
+      )}, ${String(detail['days_remaining'])} days after this bill`
     case 'LICENCE_ABSENT':
       return 'No drug licence number is printed on this bill'
     case 'NON_MEDICINE_ITEM':
@@ -343,6 +353,7 @@ export function headline(
 const REMARKS: ReadonlyArray<readonly [string, string]> = [
   ['NON_MEDICINE_ITEM', 'Not a medicine — outside reimbursement scope'],
   ['SALT_DIFFERENT_CLASS', 'Different kind of medicine to the one prescribed'],
+  ['EXPIRED_ITEM', 'Dispensed after it expired'],
   ['SCHEDULE_H_UNBACKED', 'Prescription-only medicine with nothing backing it'],
   ['STRENGTH_MISMATCH', 'Strength differs'],
   ['BILL_NOT_PRESCRIBED', 'Not on the prescription'],
@@ -356,6 +367,7 @@ const REMARKS: ReadonlyArray<readonly [string, string]> = [
   ['POSSIBLE_RESUBMISSION', 'Possible corrected re-issue'],
   ['EARLY_REPEAT', 'Claimed again before the course ran out'],
   ['LINE_TOTAL_MISMATCH', 'Line total does not match quantity x rate'],
+  ['EXPIRY_NEAR', 'Expires soon after this bill'],
   ['QUANTITY_AMBIGUOUS', 'Quantity could not be confirmed'],
   ['STRENGTH_UNIT_UNSTATED', 'Strength not printed on one document'],
 ]

@@ -39,7 +39,7 @@ RX_NULLABLE = (
 BILL_NULLABLE = (
     "drug_name", "salt", "strength_value", "strength_unit", "form", "quantity",
     "pack_size", "units_basis", "unit_price", "discount", "line_total", "batch_no",
-    "hsn_code",
+    "expiry", "hsn_code",
 )
 #: Nullable fields on an ordered test and a billed test line. raw_text is
 #: absent from both lists on purpose: it is never nulled, on either side.
@@ -63,6 +63,8 @@ BILL_FULL: dict[str, Any] = {
     "salt": "Paracetamol", "strength_value": 650.0, "strength_unit": "mg",
     "form": "tablet", "quantity": 10.0, "pack_size": "10'S", "units_basis": "unit",
     "unit_price": "2.20", "line_total": "22.00", "batch_no": "B1", "hsn_code": "3004",
+    # Well inside its shelf life relative to the baseline bill date.
+    "expiry": dt.date(2027, 12, 31),
     "confidence": 0.9, "agreement": {"drug_name": 1.0},
 }
 

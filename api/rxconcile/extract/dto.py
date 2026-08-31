@@ -184,6 +184,11 @@ class BilledItemDTO(_DTO):
     )
     line_total: float | None = Field(default=None, description="Net amount for this line.")
     batch_no: str | None = Field(default=None)
+    expiry_raw: str | None = Field(
+        default=None,
+        description="Expiry EXACTLY as printed, e.g. '07/2026', 'JUL 26'. Do not "
+        "reformat or complete it; software resolves it to the last valid day.",
+    )
     hsn_code: str | None = Field(default=None)
     bbox: list[float] | None = Field(
         default=None,

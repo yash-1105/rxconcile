@@ -335,6 +335,14 @@ export function Result({
   // Counted from the reimbursement assessment rather than from finding codes:
   // that is where a reader can now see the reason for each one.
   const manualChecks = result.reimbursement?.needs_review_line_count ?? 0
+  // Checks about the DOCUMENT rather than a line. These attach to no billed
+  // line, so the reimbursement card cannot carry them, and removing the old
+  // "checks could not run" panel left them visible nowhere but the raw JSON.
+  // A date check that silently vanishes is the exact failure this project
+  // keeps fixing.
+  const documentChecks = grouped.notRun.filter(
+    (f) => f.prescribed_ref === null && f.billed_ref === null,
+  )
 
   return (
     <div className="space-y-10">
@@ -375,6 +383,29 @@ export function Result({
       <Section title="Reimbursement">
         <Reimbursement summary={result.reimbursement} />
       </Section>
+
+      {documentChecks.length > 0 ? (
+        <div className="rounded border border-ink-200 bg-paper px-5 py-4">
+          <Disclosure
+            summary={`${documentChecks.length} ${
+              documentChecks.length === 1 ? 'check' : 'checks'
+            } about the documents could not run`}
+          >
+            <p className="t-small mb-2 max-w-3xl text-muted">
+              These were not performed, because the documents did not carry the values
+              they need. <strong className="font-semibold text-ink">They are not
+              passes.</strong>
+            </p>
+            <ul className="space-y-1">
+              {documentChecks.map((finding, index) => (
+                <li key={`doc-check-${index}`} className="t-small text-muted">
+                  {say(finding)}
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        </div>
+      ) : null}
 
       {/* 3 — TABLES */}
       <Section title="Medicines">

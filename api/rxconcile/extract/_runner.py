@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Final, TypeVar
@@ -75,6 +77,78 @@ def to_decimal(value: float | None) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
+
+
+#: Month names accepted on an expiry, in the forms Indian bills print.
+_MONTH_NAMES: Final[dict[str, int]] = {
+    name.lower(): number
+    for number, names in enumerate(
+        (
+            ("JAN", "JANUARY"), ("FEB", "FEBRUARY"), ("MAR", "MARCH"),
+            ("APR", "APRIL"), ("MAY",), ("JUN", "JUNE"), ("JUL", "JULY"),
+            ("AUG", "AUGUST"), ("SEP", "SEPT", "SEPTEMBER"), ("OCT", "OCTOBER"),
+            ("NOV", "NOVEMBER"), ("DEC", "DECEMBER"),
+        ),
+        start=1,
+    )
+    for name in names
+}
+
+
+def resolve_expiry(raw: str | None) -> tuple[date | None, str | None]:
+    """Resolve a printed expiry to the LAST DAY it is valid.
+
+    Indian bills print an expiry as a month and year -- ``07/2026``, ``JUL 26``,
+    ``07-2026``. A medicine marked ``07/2026`` is good through 31 July 2026, so
+    the month is stored as its final day. Treating it as the 1st would call a
+    medicine expired for most of the month it was still valid in.
+
+    Refuses rather than guesses, exactly as :func:`resolve_date` does. A
+    three-part date is handed to that function, so an ambiguous one stays
+    unresolved.
+    """
+    if raw is None:
+        return None, None
+    text = raw.strip()
+    if not text or text in {"-", "--", "\u2014"}:
+        return None, None
+
+    # Split on any separator, keeping letters so a month NAME survives.
+    parts = [chunk for chunk in re.split(r"[^0-9A-Za-z]+", text) if chunk]
+
+    # A full date: let the existing resolver apply its ambiguity rules.
+    if len(parts) == 3:
+        resolved, warning = resolve_date(text)
+        return resolved, warning
+
+    if len(parts) == 2:
+        first, second = parts
+        month: int | None = None
+        year_text: str | None = None
+        if first.isdigit() and second.isdigit():
+            # A four-digit leading number is the year, not a month.
+            if len(first) == 4 and len(second) <= 2:
+                month, year_text = int(second), first
+            else:
+                month, year_text = int(first), second
+        elif first.lower() in _MONTH_NAMES and second.isdigit():
+            month, year_text = _MONTH_NAMES[first.lower()], second
+        elif second.lower() in _MONTH_NAMES and first.isdigit():
+            month, year_text = _MONTH_NAMES[second.lower()], first
+        if month is not None and year_text is not None and 1 <= month <= 12:
+            year = _expand_year(int(year_text))
+            if year is None:
+                return None, (
+                    f"Expiry {raw!r} could not be resolved: the year is ambiguous. "
+                    "It was not guessed."
+                )
+            last_day = monthrange(year, month)[1]
+            return date(year, month, last_day), None
+
+    return None, (
+        f"Expiry {raw!r} is not in a form this build recognises, so it was left "
+        "unresolved rather than guessed."
+    )
 
 
 def resolve_date(raw: str | None) -> tuple[date | None, str | None]:

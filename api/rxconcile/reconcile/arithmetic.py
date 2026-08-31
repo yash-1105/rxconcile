@@ -144,18 +144,27 @@ def _subtotal_findings(bill: PharmacyBill) -> list[Finding]:
     if _close(expected, bill.subtotal, TOTAL_TOLERANCE):
         return []
 
-    # A subtotal BELOW the sum of lines, with no discount printed, is the shape
-    # of a bill-level discount nobody itemised.
-    if bill.subtotal < expected and bill.discount_total is None and summed > 0:
-        if (expected - bill.subtotal) / summed <= MAX_IMPLIED_DISCOUNT:
-            return []
+    # A subtotal below the line sum, with no discount printed, USED TO BE
+    # swallowed as an unitemised discount. That silently accepted any subtotal
+    # error up to 30% of the bill -- a 190-rupee gap passed unreported. A bill
+    # has a place to print a discount total; where it did not, the difference is
+    # reported and the possible explanation is offered in the wording rather
+    # than assumed.
+    undocumented_discount = (
+        bill.subtotal < expected and bill.discount_total is None and summed > 0
+    )
+    explanation = (
+        " No discount is printed on the bill; an unitemised discount would explain it."
+        if undocumented_discount
+        else ""
+    )
 
     return [
         finding(
             "SUBTOTAL_MISMATCH", "warning",
             f"The {len(priced)} line totals come to {expected}"
             + (f" after a {discount} discount" if discount else "")
-            + f", but the subtotal is printed as {bill.subtotal}.",
+            + f", but the subtotal is printed as {bill.subtotal}." + explanation,
             detail={
                 "line_total_sum": str(summed),
                 "discount_total": str(bill.discount_total) if bill.discount_total else None,
@@ -163,6 +172,7 @@ def _subtotal_findings(bill: PharmacyBill) -> list[Finding]:
                 "printed": str(bill.subtotal),
                 "difference": str(bill.subtotal - expected),
                 "tolerance": str(TOTAL_TOLERANCE),
+                "possible_unitemised_discount": undocumented_discount,
             },
         )
     ]

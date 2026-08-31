@@ -164,6 +164,12 @@ class BilledItem(_Base):
     )
     line_total: Decimal | None = Field(default=None, description="Line amount charged.")
     batch_no: str | None = Field(default=None)
+    expiry: date | None = Field(
+        default=None,
+        description="The LAST DAY this line is valid. A bill prints a month and year, "
+        "and '07/2026' means good through 31 July 2026, so the month is stored as its "
+        "final day. Null when nothing was printed or the form was unrecognised.",
+    )
     hsn_code: str | None = Field(default=None)
     bbox: tuple[float, float, float, float] | None = Field(
         default=None,

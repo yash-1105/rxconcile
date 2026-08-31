@@ -508,3 +508,54 @@ An employee's duplicate check reads only their own scans and says so; it must
 not imply the whole record was searched, and must not reveal that another
 account's scans exist.
 
+---
+
+## 13. Expiry
+
+| Code | Severity | Fires when |
+| --- | --- | --- |
+| `EXPIRED_ITEM` | critical | the bill is dated after the line's expiry |
+| `EXPIRY_NEAR` | warning | the line expires within 30 days of the bill |
+
+`BilledItem.expiry` holds the **last day a line is valid**. A bill printing
+`07/2026` means good through 31 July 2026, so the month resolves to its final
+day. Treating it as the 1st would call a medicine expired for most of the month
+it was still valid in, and a bill dated ON the expiry day did not dispense an
+expired medicine.
+
+`expiry_raw` is transcribed verbatim and resolved in Python, like every other
+date. `07/2026`, `JUL 26`, `07-2026` and `2026-07` all resolve; a three-part
+date is handed to the ordinary date resolver so its ambiguity rules still
+apply, and anything unrecognised is refused rather than guessed.
+
+**Both the expiry and the bill date are required.** An undated bill cannot
+clear a medicine of being expired, so a missing either reports a check that
+could not run.
+
+## 14. Two failures found together, and what they had in common
+
+### A subtotal error swallowed as a discount
+
+`SUBTOTAL_MISMATCH` treated any subtotal below the line sum, with no discount
+printed, as an unitemised discount when the gap was under 30%. That silently
+accepted **any subtotal error up to 30% of the bill** — a 190-rupee gap on a
+2,158-rupee bill passed unreported.
+
+A bill has a place to print a discount total. Where it did not, the difference
+is now reported and the possible explanation is offered in the wording rather
+than assumed. The line-level heuristic is unchanged: many bills have no
+discount column at all, so a cheaper *line* is still read as a discount.
+
+### Document-level unavailable checks were visible nowhere
+
+The line-level "could not check" reasons live on the reimbursement lines. The
+DOCUMENT-level ones — patient name, document date, expiry, subtotal, GSTIN
+format — attach to no billed line, so nothing carried them once the old panel
+was removed, and they appeared only in the raw JSON.
+
+Three planted defects went unreported at once and two of them traced back to
+this. They are surfaced again as a compact expandable line naming each check
+and what it needed. **A check that silently goes unavailable is the failure
+this project keeps having to fix**, and the lesson is that removing a surface
+must be checked against everything that surface was carrying.
+

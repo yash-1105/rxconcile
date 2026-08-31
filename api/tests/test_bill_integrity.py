@@ -465,3 +465,185 @@ def test_every_line_a_panel_covers_counts_as_covered() -> None:
     assert money.eligible_line_count == 4, "all four analytes are covered"
     assert money.eligible_total == Decimal("450.00")
     assert money.needs_review_line_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Expiry
+# ---------------------------------------------------------------------------
+
+import datetime as _dt  # noqa: E402
+
+from rxconcile.extract._runner import resolve_expiry  # noqa: E402
+
+BILL_DAY = _dt.date(2026, 8, 6)
+
+
+def dated_bill(*items: BilledItem, **kwargs: object) -> PharmacyBill:
+    return bill(*items, bill_date=BILL_DAY, **kwargs)
+
+
+def expiring(expiry: _dt.date | None, item_id: str = "bill-01") -> BilledItem:
+    return BilledItem(
+        item_id=item_id, raw_text="ASPIRIN 75 TAB", drug_name="Aspirin", form="tablet",
+        quantity=30.0, unit_price=Decimal("1.10"), line_total=Decimal("33.00"),
+        expiry=expiry, confidence=0.9,
+    )
+
+
+@pytest.mark.parametrize(
+    ("printed", "resolved"),
+    [
+        ("07/2026", _dt.date(2026, 7, 31)),
+        ("03/2027", _dt.date(2027, 3, 31)),
+        ("07/26", _dt.date(2026, 7, 31)),
+        ("JUL 2026", _dt.date(2026, 7, 31)),
+        ("Jul-26", _dt.date(2026, 7, 31)),
+        ("2026-07", _dt.date(2026, 7, 31)),
+        ("SEPT 2027", _dt.date(2027, 9, 30)),
+        ("02/2028", _dt.date(2028, 2, 29)),
+    ],
+)
+def test_an_expiry_resolves_to_the_last_valid_day(printed: str, resolved: _dt.date) -> None:
+    """'07/2026' means good THROUGH 31 July, not until the 1st."""
+    assert resolve_expiry(printed)[0] == resolved
+
+
+@pytest.mark.parametrize("printed", ["13/2026", "00/2026", "garbage", "-", "", None])
+def test_an_unrecognised_expiry_is_refused_not_guessed(printed: str | None) -> None:
+    assert resolve_expiry(printed)[0] is None
+
+
+def test_an_ambiguous_full_date_expiry_stays_unresolved() -> None:
+    """Handed to the existing resolver, so its ambiguity rules still apply."""
+    assert resolve_expiry("06-08-2026")[0] is None
+
+
+def test_dispensing_after_expiry_is_critical() -> None:
+    result = engine.reconcile(
+        Prescription(overall_legibility=0.9),
+        dated_bill(expiring(_dt.date(2026, 7, 31))),
+        processing_ms=0,
+    )
+    assert codes(result.findings, "EXPIRED_ITEM") == ["critical"]
+    detail = next(f.detail for f in result.findings if f.rule_code == "EXPIRED_ITEM")
+    assert detail["days_past_expiry"] == 6
+
+
+def test_dispensing_on_the_last_valid_day_is_not_expired() -> None:
+    """A bill dated the 31st of an 07/2026 line is still inside its shelf life."""
+    result = engine.reconcile(
+        Prescription(overall_legibility=0.9),
+        bill(expiring(_dt.date(2026, 7, 31)), bill_date=_dt.date(2026, 7, 31)),
+        processing_ms=0,
+    )
+    assert not codes(result.findings, "EXPIRED_ITEM")
+
+
+def test_expiring_within_thirty_days_is_a_warning() -> None:
+    result = engine.reconcile(
+        Prescription(overall_legibility=0.9),
+        dated_bill(expiring(_dt.date(2026, 8, 31))),
+        processing_ms=0,
+    )
+    assert codes(result.findings, "EXPIRY_NEAR") == ["warning"]
+    assert not codes(result.findings, "EXPIRED_ITEM")
+
+
+def test_a_comfortable_shelf_life_raises_nothing() -> None:
+    result = engine.reconcile(
+        Prescription(overall_legibility=0.9),
+        dated_bill(expiring(_dt.date(2027, 3, 31))),
+        processing_ms=0,
+    )
+    assert not codes(result.findings, "EXPIRED_ITEM")
+    assert not codes(result.findings, "EXPIRY_NEAR")
+
+
+def test_no_bill_date_means_no_line_can_be_cleared_of_expiry() -> None:
+    """An undated bill must not clear a medicine of being expired."""
+    result = engine.reconcile(
+        Prescription(overall_legibility=0.9),
+        bill(expiring(_dt.date(2020, 1, 31))),
+        processing_ms=0,
+    )
+    assert not codes(result.findings, "EXPIRED_ITEM")
+    checks = [
+        f for f in result.findings
+        if f.rule_code == CHECK_UNAVAILABLE_CODE and f.detail.get("check") == "expiry"
+    ]
+    assert checks, "it must say the expiry check could not run"
+
+
+def test_a_line_with_no_expiry_is_reported_not_cleared() -> None:
+    result = engine.reconcile(
+        Prescription(overall_legibility=0.9), dated_bill(expiring(None)), processing_ms=0
+    )
+    assert not codes(result.findings, "EXPIRED_ITEM")
+    assert [
+        f for f in result.findings
+        if f.rule_code == CHECK_UNAVAILABLE_CODE and f.detail.get("check") == "expiry"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# The subtotal regression
+# ---------------------------------------------------------------------------
+
+
+def test_a_subtotal_below_the_lines_is_reported_not_swallowed() -> None:
+    """A 190-rupee gap passed unreported as an assumed unitemised discount.
+
+    That silently accepted any subtotal error up to 30% of the bill.
+    """
+    found = check_arithmetic(
+        bill(item("bill-01", line_total="1258.00", quantity=1.0, unit_price="1258.00"),
+             item("bill-02", line_total="900.00", quantity=1.0, unit_price="900.00"),
+             subtotal=Decimal("1968.00"))
+    )
+    assert codes(found, "SUBTOTAL_MISMATCH") == ["warning"]
+    detail = next(f.detail for f in found if f.rule_code == "SUBTOTAL_MISMATCH")
+    assert detail["difference"] == "-190.00"
+    assert detail["possible_unitemised_discount"] is True
+
+
+def test_the_wording_offers_the_discount_explanation_without_assuming_it() -> None:
+    found = check_arithmetic(
+        bill(item(line_total="100.00", quantity=1.0, unit_price="100.00"),
+             subtotal=Decimal("90.00"))
+    )
+    message = next(f.message for f in found if f.rule_code == "SUBTOTAL_MISMATCH")
+    assert "No discount is printed" in message
+
+
+def test_a_printed_bill_level_discount_still_explains_the_gap() -> None:
+    found = check_arithmetic(
+        bill(item(line_total="100.00", quantity=1.0, unit_price="100.00"),
+             subtotal=Decimal("90.00"), discount_total=Decimal("10.00"))
+    )
+    assert not codes(found, "SUBTOTAL_MISMATCH")
+
+
+def test_the_subtotal_sum_includes_non_medicine_lines() -> None:
+    """A display filter must never change an arithmetic check.
+
+    Excluding a sunscreen and a delivery charge from the sum would produce a
+    different figure and could manufacture a spurious match.
+    """
+    found = check_arithmetic(
+        bill(
+            item("bill-01", name="Dolo", line_total="100.00", quantity=1.0,
+                 unit_price="100.00"),
+            item("bill-02", name="LAKME SUNSCREEN SPF50", form="other",
+                 line_total="399.00", quantity=1.0, unit_price="399.00"),
+            item("bill-03", name="DELIVERY CHARGE", form="other", line_total="40.00",
+                 quantity=1.0, unit_price="40.00"),
+            subtotal=Decimal("539.00"),
+        )
+    )
+    assert not codes(found, "SUBTOTAL_MISMATCH"), "all three lines must be summed"
+    # And dropping them would have been noticed:
+    wrong = check_arithmetic(
+        bill(item("bill-01", name="Dolo", line_total="100.00", quantity=1.0,
+                  unit_price="100.00"), subtotal=Decimal("539.00"))
+    )
+    assert codes(wrong, "SUBTOTAL_MISMATCH") == ["warning"]

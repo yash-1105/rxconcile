@@ -16,6 +16,7 @@ from rxconcile.extract._runner import (
     collect_runs,
     collect_runs_async,
     resolve_date,
+    resolve_expiry,
     to_decimal,
 )
 from rxconcile.extract.dto import PharmacyBillDTO
@@ -52,6 +53,7 @@ ITEM_FIELDS: Final[tuple[str, ...]] = (
     "discount",
     "line_total",
     "batch_no",
+    "expiry_raw",
     "hsn_code",
 )
 
@@ -122,6 +124,7 @@ def _build_item(cluster: consensus.ItemCluster, item_id: str) -> BilledItem:
         discount=to_decimal(resolved["discount"].value),
         line_total=to_decimal(resolved["line_total"].value),
         batch_no=resolved["batch_no"].value,
+        expiry=resolve_expiry(resolved["expiry_raw"].value)[0],
         hsn_code=resolved["hsn_code"].value,
         agreement=agreement or None,
         confidence=clamp_unit(sum(confidences) / len(confidences) if confidences else 0.0),

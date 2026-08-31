@@ -89,6 +89,10 @@ QUANTITY_EXCESS_TOLERANCE: Final[float] = 0.20
 #: Below this fuzzy similarity, two patient names are treated as different.
 NAME_SIMILARITY_THRESHOLD: Final[float] = 75.0
 
+#: An item expiring within this many days of the bill date is worth a warning:
+#: a short-dated medicine on a long course runs out before the course does.
+EXPIRY_NEAR_DAYS: Final[int] = 30
+
 #: A bill this many days after the prescription is anomalous.
 MAX_BILL_LAG_DAYS: Final[int] = 30
 
@@ -963,6 +967,83 @@ def _document_rules(
     return findings
 
 
+def _expiry_findings(bill: PharmacyBill) -> list[Finding]:
+    """Was anything dispensed after it expired, or close to it?
+
+    ``BilledItem.expiry`` holds the LAST DAY a line is valid, because a bill
+    printing ``07/2026`` means good through 31 July. So a bill dated after that
+    day dispensed an expired medicine; a bill dated ON it did not.
+
+    Both the expiry and the bill date are needed. Without either, this reports
+    that it could not run -- an undated bill cannot clear a medicine of being
+    expired.
+    """
+    if not bill.items:
+        return []
+
+    if bill.bill_date is None:
+        return [
+            _unavailable(
+                "expiry",
+                ["a resolvable bill date"],
+                note="Without a date on the bill there is nothing to measure an expiry "
+                     "against, so no line could be cleared or flagged.",
+            )
+        ]
+
+    findings: list[Finding] = []
+    undated: list[str] = []
+    for item in bill.items:
+        if item.expiry is None:
+            undated.append(item.item_id)
+            continue
+        days = (item.expiry - bill.bill_date).days
+        name = item.drug_name or item.raw_text
+        if days < 0:
+            findings.append(
+                _finding(
+                    "EXPIRED_ITEM", "critical",
+                    f"{name} was dispensed on {bill.bill_date.isoformat()}, after it "
+                    f"expired on {item.expiry.isoformat()}.",
+                    billed_ref=item.item_id,
+                    detail={
+                        "drug_name": item.drug_name,
+                        "expiry": item.expiry.isoformat(),
+                        "bill_date": bill.bill_date.isoformat(),
+                        "days_past_expiry": -days,
+                    },
+                )
+            )
+        elif days <= EXPIRY_NEAR_DAYS:
+            findings.append(
+                _finding(
+                    "EXPIRY_NEAR", "warning",
+                    f"{name} expires on {item.expiry.isoformat()}, {days} day(s) after "
+                    "this bill.",
+                    billed_ref=item.item_id,
+                    detail={
+                        "drug_name": item.drug_name,
+                        "expiry": item.expiry.isoformat(),
+                        "bill_date": bill.bill_date.isoformat(),
+                        "days_remaining": days,
+                        "threshold_days": EXPIRY_NEAR_DAYS,
+                    },
+                )
+            )
+
+    if undated:
+        findings.append(
+            _unavailable(
+                "expiry",
+                ["a printed expiry"],
+                billed_ref=undated[0] if len(undated) == 1 else None,
+                note=f"{len(undated)} billed line(s) print no expiry that could be "
+                     "resolved, so they were neither cleared nor flagged.",
+            )
+        )
+    return findings
+
+
 def _bill_integrity_findings(
     bill: PharmacyBill, bill_drugs: dict[str, CanonicalDrug]
 ) -> list[Finding]:
@@ -1265,6 +1346,7 @@ def reconcile(
     # Checks about the bill as a document: does it add up, and does it carry
     # the identifiers a pharmacy invoice is required to carry.
     findings.extend(check_arithmetic(bill))
+    findings.extend(_expiry_findings(bill))
     findings.extend(_bill_integrity_findings(bill, bill_by_id))
     findings.extend(_low_agreement_findings(prescription, bill))
 

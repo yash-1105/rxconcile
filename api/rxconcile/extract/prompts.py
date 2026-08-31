@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "2026-08-31.1"
+PROMPT_VERSION: Final[str] = "2026-09-01.1"
 
 _NEVER_GUESS: Final[str] = """
 ABSOLUTE RULE — NEVER INVENT A VALUE
@@ -257,6 +257,13 @@ lines that together are one ordered LFT. **Return the four lines as four
 entries.** Do not merge them into a panel and do not add a panel name that is
 not printed on the bill -- software reassembles panels, and it needs the printed
 lines to do it.
+
+EXPIRY
+Return `expiry_raw` EXACTLY as printed for each line, from the Exp or Expiry
+column -- "07/2026", "JUL 26", "03-2027". Do not reformat it and do not fill it
+in from the batch number or anywhere else. Null when the column is blank or the
+bill has no expiry column. Software resolves it and decides what it means; a
+tidied-up expiry would defeat that.
 
 PACK SIZE
 Return `pack_size` EXACTLY as printed — "10'S", "1x10", "15ML", "STRIP OF 10".
