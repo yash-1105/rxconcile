@@ -64,6 +64,9 @@ body {
  * 16px, table content at 15px, and headings semibold rather than bold so a
  * page reads as a dashboard and not as a poster.
  */
+/* The one figure a reader came for. Used twice on the whole app, at most. */
+/* Steps down on a narrow screen so a five-figure amount stays on one line. */
+.t-hero    { font-size: clamp(32px, 8vw, 40px); line-height: 1.15; letter-spacing: -0.02em; font-weight: 600; font-variant-numeric: tabular-nums; }
 .t-display { font-size: 30px; line-height: 1.25; letter-spacing: -0.01em; font-weight: 600; }
 .t-title   { font-size: 19px; line-height: 1.4; font-weight: 600; }
 .t-body    { font-size: 16px; line-height: 1.6; }

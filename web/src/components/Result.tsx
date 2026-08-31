@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { documentGaps, groupFindings, headline, phrase, type Grouped } from '../lib/phrasing'
+import { documentGaps, groupFindings, headline, phrase } from '../lib/phrasing'
 import {
   criticalCount,
   discrepancyCount,
@@ -29,7 +29,7 @@ import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineLegend, SpineMark, type SpineState } from './Spine'
 import { ExportBar } from './Export'
 import { BulkDecisions, LabTestsTable, MedicinesTable, TableFilter } from './Tables'
-import { Allowance, Excluded } from './Allowance'
+import { ExcludedLine, SummaryPanel } from './SummaryPanel'
 import {
   claimTotal,
   countRows,
@@ -44,13 +44,6 @@ import type { AllowanceView } from '../types/api'
 
 /** Whether a finding's source line could be pointed at on the image. */
 export type LocateResult = 'located' | 'not-located' | 'no-ref'
-
-const HEAD_STATE: Record<string, SpineState> = {
-  clear: 'clean',
-  warning: 'warning',
-  problem: 'problem',
-  unknown: 'unchecked',
-}
 
 function Section({
   title,
@@ -93,133 +86,6 @@ function Disclosure({
       </button>
       {open ? <div className="mt-3 pl-5">{children}</div> : null}
     </div>
-  )
-}
-
-/**
- * Four numbers a reader can take in without reading anything else.
- *
- * Counted from the same rows the tables render, so a tile can never disagree
- * with the table beneath it. Clicking one filters that table.
- */
-function Tiles({
-  medicines,
-  tests,
-  onPick,
-  active,
-}: {
-  medicines: { matched: number; problems: number }
-  tests: { matched: number; problems: number }
-  onPick: (table: 'medicines' | 'tests', filter: RowFilter) => void
-  active: { medicines: RowFilter; tests: RowFilter }
-}) {
-  const tiles = [
-    { table: 'medicines' as const, filter: 'matched' as const, label: 'Medicines matched', value: medicines.matched },
-    { table: 'medicines' as const, filter: 'problems' as const, label: 'Medicines with problems', value: medicines.problems },
-    { table: 'tests' as const, filter: 'matched' as const, label: 'Lab tests matched', value: tests.matched },
-    { table: 'tests' as const, filter: 'problems' as const, label: 'Lab tests with problems', value: tests.problems },
-  ]
-  return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {tiles.map((tile) => {
-        const selected = active[tile.table] === tile.filter
-        const alarming = tile.filter === 'problems' && tile.value > 0
-        return (
-          <button
-            key={tile.label}
-            type="button"
-            aria-pressed={selected}
-            onClick={() => onPick(tile.table, selected ? 'all' : tile.filter)}
-            className={`rounded border bg-surface px-5 py-4 text-left transition-colors hover:border-ink-300 ${
-              selected ? 'border-seal' : 'border-ink-200'
-            }`}
-          >
-            <p className={`t-display ${alarming ? 'text-flag' : 'text-ink'}`}>{tile.value}</p>
-            <p className="t-small mt-1 text-muted">{tile.label}</p>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-/** SECTION 1 — the plain-language verdict. No score, no rule codes. */
-function Summary({
-  result,
-  grouped,
-  manualChecks,
-  affectedItems,
-  seriousItems,
-}: {
-  result: ReconciliationResult
-  grouped: Grouped
-  manualChecks: number
-  /** Items with a problem. What the Analysis list below actually shows. */
-  affectedItems: number
-  seriousItems: number
-}) {
-  const head = headline(result, grouped, affectedItems, seriousItems)
-  return (
-    <section className="rounded border border-ink-200 bg-surface px-6 py-5">
-      <div className="flex items-start gap-4">
-        <SpineMark state={HEAD_STATE[head.tone] ?? 'unchecked'} className="mt-2" />
-        <div className="flex-1">
-          <h1 className="t-display text-ink">{head.title}</h1>
-          <p className="t-body mt-2 max-w-3xl text-muted">{head.supporting}</p>
-          {result.submission?.condition || result.submission?.description ? (
-            <p className="t-small mt-2 max-w-3xl text-muted">
-              {result.submission.condition ? (
-                <span className="font-medium text-ink">{result.submission.condition}</span>
-              ) : null}
-              {result.submission.condition && result.submission.description ? ' — ' : null}
-              {result.submission.description}
-            </p>
-          ) : null}
-          {/* Must never disappear. A check that did not run is not a check that
-              passed, and the reimbursement section is where the reasons are. */}
-          {manualChecks > 0 ? (
-            <p className="t-small mt-2 text-muted">
-              {manualChecks} {manualChecks === 1 ? 'item needs' : 'items need'} a manual check.
-            </p>
-          ) : null}
-        </div>
-        {/* Secondary by design. The unit stays lower-case: `.t-micro` upper-cases
-            labels, which would render "0.1s" as "0.1S". */}
-        <div className="t-micro shrink-0 space-y-0.5 text-right text-unknown">
-          <div style={{ textTransform: 'none' }}>
-            {(result.processing_ms / 1000).toFixed(1)}s
-          </div>
-          <div>
-            {result.findings.length} {result.findings.length === 1 ? 'finding' : 'findings'}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/**
- * The highest-consequence gap in the product, stated before anything else.
- *
- * Not coloured as a discrepancy: nothing is wrong with the bill. It is coloured
- * as unknown, because that is what it is — and it is impossible to miss,
- * because the alternative is a reviewer signing off medicines nobody looked at.
- */
-function DocumentGaps({ result }: { result: ReconciliationResult }) {
-  const gaps = documentGaps(result)
-  if (gaps.length === 0) return null
-  return (
-    <section className="space-y-3 rounded border-2 border-dashed border-unknown bg-ink-50 px-6 py-5">
-      {gaps.map((gap) => (
-        <div key={gap.title} className="flex items-start gap-4">
-          <SpineMark state="unchecked" className="mt-1.5" />
-          <div>
-            <h2 className="t-title text-ink">{gap.title}</h2>
-            <p className="t-body mt-1 max-w-3xl text-muted">{gap.detail}</p>
-          </div>
-        </div>
-      ))}
-    </section>
   )
 }
 
@@ -478,22 +344,37 @@ export function Result({
         </p>
       ) : null}
 
-      {/* 1 — SUMMARY */}
-      <DocumentGaps result={result} />
-      <Summary
-        result={result}
-        grouped={grouped}
-        manualChecks={manualChecks}
-        affectedItems={affectedItems}
-        seriousItems={seriousItems}
-      />
-
-      <Tiles
-        medicines={medicineCounts}
-        tests={testCounts}
-        active={filters}
-        onPick={(table, filter) => setFilters((f) => ({ ...f, [table]: filter }))}
-      />
+      {/* 1 — SUMMARY. One panel: the documents on the left, the money on the
+          right. What is excluded sits under it as a line, not as cards. */}
+      <div>
+        <SummaryPanel
+          gaps={documentGaps(result)}
+          head={headline(result, grouped, affectedItems, seriousItems)}
+          submission={result.submission}
+          manualChecks={manualChecks}
+          medicines={medicineCounts}
+          tests={testCounts}
+          filters={filters}
+          onPick={(table, filter) => setFilters((f) => ({ ...f, [table]: filter }))}
+          allowance={allowance}
+          claim={claim}
+          currency={result.reimbursement?.currency ?? 'INR'}
+          /* Never on a record reopened from history: an intro animation on an
+             old result implies something just happened. */
+          animate={!readOnly}
+        />
+        <ExcludedLine
+          currency={result.reimbursement?.currency ?? 'INR'}
+          notOnPrescription={{
+            total: result.reimbursement?.not_eligible_total ?? '0',
+            lines: result.reimbursement?.not_eligible_line_count ?? 0,
+          }}
+          notMedicine={{
+            total: result.reimbursement?.non_medicine_total ?? '0',
+            lines: result.reimbursement?.non_medicine_line_count ?? 0,
+          }}
+        />
+      </div>
 
       {/* 2 — ANALYSIS, folded away. The tiles and tables answer the question;
           this is for the reader who wants the reasoning. */}
@@ -517,27 +398,6 @@ export function Result({
           </Disclosure>
         </Section>
       ) : null}
-
-      <Section title="Reimbursement">
-        <div className="space-y-5">
-          <Allowance
-            allowance={allowance}
-            claim={claim}
-            currency={result.reimbursement?.currency ?? 'INR'}
-          />
-          <Excluded
-            currency={result.reimbursement?.currency ?? 'INR'}
-            notOnPrescription={{
-              total: result.reimbursement?.not_eligible_total ?? '0',
-              lines: result.reimbursement?.not_eligible_line_count ?? 0,
-            }}
-            notMedicine={{
-              total: result.reimbursement?.non_medicine_total ?? '0',
-              lines: result.reimbursement?.non_medicine_line_count ?? 0,
-            }}
-          />
-        </div>
-      </Section>
 
       {documentChecks.length > 0 ? (
         <div className="rounded border border-ink-200 bg-paper px-5 py-4">
