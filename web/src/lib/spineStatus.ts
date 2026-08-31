@@ -10,6 +10,7 @@ import type { SpineState } from '../components/Spine'
 
 export const STATUS_LABEL: Record<SpineState, string> = {
   clean: 'Matches',
+  substitution: 'Substituted',
   warning: 'Check',
   problem: 'Problem',
   unchecked: 'Not checked',
@@ -21,6 +22,7 @@ export const STATUS_MEANING: Record<SpineState, string> = {
   warning: 'worth a look, but not necessarily wrong',
   unchecked: 'we did not have what we needed to verify this',
   clean: 'the documents agree',
+  substitution: 'same medicine, a different brand was dispensed',
   'out-of-scope': 'not a medicine, so outside reimbursement',
 }
 
@@ -28,6 +30,7 @@ export const STATUS_MEANING: Record<SpineState, string> = {
 export const LEGEND_ORDER: readonly SpineState[] = [
   'problem',
   'warning',
+  'substitution',
   'unchecked',
   'clean',
 ]

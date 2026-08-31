@@ -27,7 +27,8 @@ import {
   EmployeeFields,
   SamplePicker,
 } from './components/Upload'
-import type { DocumentSlot } from './lib/documents'
+import { DOCUMENT_SLOTS, type DocumentSlot } from './lib/documents'
+import { findDuplicateFiles } from './lib/fileIdentity'
 import { Dictionary } from './pages/Dictionary'
 import { History } from './pages/History'
 import { HowItWorks } from './pages/HowItWorks'
@@ -63,8 +64,23 @@ export default function App() {
   const [conditionOther, setConditionOther] = useState('')
   const [description, setDescription] = useState('')
 
-  const setDoc = (key: DocumentSlot['key'], file: File | null) =>
-    setDocs((current) => ({ ...current, [key]: file }))
+  const [duplicates, setDuplicates] = useState<Array<[string, string]>>([])
+
+  const setDoc = (key: DocumentSlot['key'], file: File | null) => {
+    setDocs((current) => {
+      const next = { ...current, [key]: file }
+      // Checked on every change: the same document in two slots is a slip, and
+      // it should be caught here rather than surfacing later as a finding.
+      void findDuplicateFiles(
+        DOCUMENT_SLOTS.map((slot) => ({
+          key: slot.key,
+          label: slot.label,
+          file: next[slot.key],
+        })),
+      ).then(setDuplicates)
+      return next
+    })
+  }
   // "Other" means the free text, not the literal word.
   const resolvedCondition = condition === 'Other' ? conditionOther.trim() : condition
   // Always three. The backend still takes a parameter, for tests.
@@ -218,6 +234,7 @@ export default function App() {
   const readyToRun =
     Boolean(prescriptionFile) &&
     Boolean(billFile) &&
+    duplicates.length === 0 &&
     employeeName.trim().length > 0 &&
     employeeNumber.trim().length > 0
 
@@ -265,6 +282,25 @@ export default function App() {
               onClear={(key) => setDoc(key, null)}
             />
 
+            {duplicates.length > 0 ? (
+              <div className="rounded border border-caution bg-ink-50 px-5 py-4">
+                <p className="t-body font-medium text-ink">The same file is in two places</p>
+                <ul className="t-small mt-1.5 space-y-1 text-muted">
+                  {duplicates.map(([left, right]) => (
+                    <li key={`${left}-${right}`}>
+                      <span className="font-medium text-ink">{left}</span> and{' '}
+                      <span className="font-medium text-ink">{right}</span> hold the same
+                      document.
+                    </li>
+                  ))}
+                </ul>
+                <p className="t-small mt-2 text-muted">
+                  Remove one of them, or replace it with the right file. Sending the same
+                  document twice would double every line on it.
+                </p>
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -276,7 +312,9 @@ export default function App() {
               </button>
               {!readyToRun ? (
                 <span className="t-small text-muted">
-                  Prescriptions, pharmacy bills and the employee details are required.
+                  {duplicates.length > 0
+                    ? 'Resolve the duplicate file above.'
+                    : 'Prescriptions, pharmacy bills and the employee details are required.'}
                 </span>
               ) : null}
             </div>
@@ -301,6 +339,7 @@ export default function App() {
             setScanId(null)
             setReadOnly(false)
             setDocs({ prescription: null, bill: null, labReport: null, labBill: null })
+            setDuplicates([])
           }}
         />
       ) : null}

@@ -29,7 +29,8 @@ import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineLegend, SpineMark, type SpineState } from './Spine'
 import { ExportBar } from './Export'
 import { Reimbursement } from './Reimbursement'
-import { LabTestsTable, MedicinesTable } from './Tables'
+import { LabTestsTable, MedicinesTable, TableFilter } from './Tables'
+import { countRows, medicineRowsOf, testRowsOf, type RowFilter } from '../lib/rows'
 
 /** Whether a finding's source line could be pointed at on the image. */
 export type LocateResult = 'located' | 'not-located' | 'no-ref'
@@ -81,6 +82,53 @@ function Disclosure({
         <span className="t-small">{summary}</span>
       </button>
       {open ? <div className="mt-3 pl-5">{children}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * Four numbers a reader can take in without reading anything else.
+ *
+ * Counted from the same rows the tables render, so a tile can never disagree
+ * with the table beneath it. Clicking one filters that table.
+ */
+function Tiles({
+  medicines,
+  tests,
+  onPick,
+  active,
+}: {
+  medicines: { matched: number; problems: number }
+  tests: { matched: number; problems: number }
+  onPick: (table: 'medicines' | 'tests', filter: RowFilter) => void
+  active: { medicines: RowFilter; tests: RowFilter }
+}) {
+  const tiles = [
+    { table: 'medicines' as const, filter: 'matched' as const, label: 'Medicines matched', value: medicines.matched },
+    { table: 'medicines' as const, filter: 'problems' as const, label: 'Medicines with problems', value: medicines.problems },
+    { table: 'tests' as const, filter: 'matched' as const, label: 'Lab tests matched', value: tests.matched },
+    { table: 'tests' as const, filter: 'problems' as const, label: 'Lab tests with problems', value: tests.problems },
+  ]
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {tiles.map((tile) => {
+        const selected = active[tile.table] === tile.filter
+        const alarming = tile.filter === 'problems' && tile.value > 0
+        return (
+          <button
+            key={tile.label}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onPick(tile.table, selected ? 'all' : tile.filter)}
+            className={`rounded border bg-surface px-5 py-4 text-left transition-colors hover:border-ink-300 ${
+              selected ? 'border-seal' : 'border-ink-200'
+            }`}
+          >
+            <p className={`t-display ${alarming ? 'text-flag' : 'text-ink'}`}>{tile.value}</p>
+            <p className="t-small mt-1 text-muted">{tile.label}</p>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -279,6 +327,10 @@ export function Result({
   scanId?: number | null
 }) {
   const [technical, setTechnical] = useState(false)
+  const [filters, setFilters] = useState<{ medicines: RowFilter; tests: RowFilter }>({
+    medicines: 'all',
+    tests: 'all',
+  })
   const [highlight, setHighlight] = useState<{ side: DocSide; itemId: string } | null>(null)
   const grouped = groupFindings(result.findings)
   const say = (f: Finding) => phrase(f, result.prescription, result.bill)
@@ -339,6 +391,8 @@ export function Result({
     ? [...grouped.discrepancies, ...grouped.noted]
     : hideNonMedicineNoise([...grouped.discrepancies, ...grouped.noted])
   const analysis = groupByItem(visible, result)
+  const medicineCounts = countRows(medicineRowsOf(result))
+  const testCounts = countRows(testRowsOf(result))
   const affectedItems = discrepancyCount(analysis)
   const seriousItems = criticalCount(analysis)
   // Counted from the reimbursement assessment rather than from finding codes:
@@ -371,10 +425,21 @@ export function Result({
         seriousItems={seriousItems}
       />
 
-      {/* 2 — ANALYSIS */}
+      <Tiles
+        medicines={medicineCounts}
+        tests={testCounts}
+        active={filters}
+        onPick={(table, filter) => setFilters((f) => ({ ...f, [table]: filter }))}
+      />
+
+      {/* 2 — ANALYSIS, folded away. The tiles and tables answer the question;
+          this is for the reader who wants the reasoning. */}
       {analysis.length > 0 ? (
         <Section title="Analysis">
-          <SpineLegend className="mb-3" />
+          <Disclosure summary="See the detailed analysis">
+            <div className="mb-3 flex justify-end">
+              <SpineLegend />
+            </div>
           <ul className="rounded border border-ink-200 bg-surface px-5">
             {analysis.map((group) => (
               <FindingRow
@@ -386,6 +451,7 @@ export function Result({
               />
             ))}
           </ul>
+          </Disclosure>
         </Section>
       ) : null}
 
@@ -418,14 +484,38 @@ export function Result({
 
       {/* 3 — TABLES */}
       <Section title="Medicines">
-        <div className="rounded border border-ink-200 bg-surface px-5 py-4">
-          <MedicinesTable result={result} onHover={hoverRow} technical={technical} />
+        <div className="mb-3 flex justify-end">
+          <TableFilter
+            label="Show"
+            value={filters.medicines}
+            onChange={(next) => setFilters((f) => ({ ...f, medicines: next }))}
+          />
+        </div>
+        <div className="overflow-hidden rounded border border-ink-200 bg-surface">
+          <MedicinesTable
+            result={result}
+            onHover={hoverRow}
+            technical={technical}
+            filter={filters.medicines}
+          />
         </div>
       </Section>
 
       <Section title="Lab tests">
-        <div className="rounded border border-ink-200 bg-surface px-5 py-4">
-          <LabTestsTable result={result} onHover={hoverRow} technical={technical} />
+        <div className="mb-3 flex justify-end">
+          <TableFilter
+            label="Show"
+            value={filters.tests}
+            onChange={(next) => setFilters((f) => ({ ...f, tests: next }))}
+          />
+        </div>
+        <div className="overflow-hidden rounded border border-ink-200 bg-surface">
+          <LabTestsTable
+            result={result}
+            onHover={hoverRow}
+            technical={technical}
+            filter={filters.tests}
+          />
         </div>
       </Section>
 

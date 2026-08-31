@@ -12,7 +12,13 @@
 
 import { LEGEND_ORDER, STATUS_LABEL, STATUS_MEANING } from '../lib/spineStatus'
 
-export type SpineState = 'clean' | 'warning' | 'problem' | 'unchecked' | 'out-of-scope'
+export type SpineState =
+  | 'clean'
+  | 'substitution'
+  | 'warning'
+  | 'problem'
+  | 'unchecked'
+  | 'out-of-scope'
 
 const MARK: Record<SpineState, { label: string; className: string }> = {
   clean: { label: 'Matches', className: 'bg-seal' },
@@ -21,6 +27,8 @@ const MARK: Record<SpineState, { label: string; className: string }> = {
   unchecked: { label: 'Not checked', className: 'bg-unknown' },
   // Read, understood, and simply not a medicine. Neither a problem nor a gap.
   'out-of-scope': { label: 'Out of scope', className: 'bg-muted' },
+  // A match, but the brand changed. Worth seeing at a glance.
+  substitution: { label: 'Substituted', className: 'bg-caution' },
 }
 
 /** A mark sitting on the spine, sized for a table row or a list item. */
@@ -38,6 +46,17 @@ export function SpineMark({ state, className = '' }: { state: SpineState; classN
         <span className="h-1 w-0.5 bg-flag" />
         <span className="h-1 w-0.5 bg-flag" />
       </span>
+    )
+  }
+  if (state === 'substitution') {
+    // A filled ring: solid like a match, ringed to say the brand differs.
+    return (
+      <span
+        role="img"
+        aria-label={mark.label}
+        title={mark.label}
+        className={`inline-block h-2 w-2 rounded-full bg-caution ring-2 ring-caution/30 ${className}`}
+      />
     )
   }
   if (state === 'warning') {

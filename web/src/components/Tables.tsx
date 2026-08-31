@@ -13,20 +13,75 @@
  */
 
 import { remark, testRemark } from '../lib/phrasing'
-import { statusFrom } from '../lib/rowStatus'
+import {
+  applyFilter,
+  medicineRowsOf,
+  testRowsOf,
+  ROW_FILTERS,
+  type MedRow,
+  type RowFilter,
+  type TestRow,
+} from '../lib/rows'
 import type {
   BilledItem,
-  BilledTest,
   CanonicalMatch,
   Finding,
   PrescribedItem,
-  PrescribedTest,
   ReconciliationResult,
   Severity,
 } from '../types/api'
 import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineMark, type SpineState } from './Spine'
 
+
+/**
+ * Row colour, alongside the mark.
+ *
+ * Confident tints so a reader can scan the table without reading it. The mark
+ * and the status word carry the same meaning in shape and in text, so the table
+ * survives being printed or read by someone who cannot separate the hues.
+ */
+const ROW_TINT: Record<SpineState, string> = {
+  clean: 'bg-emerald-50/70',
+  substitution: 'bg-amber-50/80',
+  warning: 'bg-red-50/60',
+  problem: 'bg-red-50/80',
+  unchecked: 'bg-ink-100/70',
+  'out-of-scope': 'bg-ink-100/70',
+}
+
+export function TableFilter({
+  value,
+  onChange,
+  label,
+}: {
+  value: RowFilter
+  onChange: (next: RowFilter) => void
+  label: string
+}) {
+  return (
+    <label className="flex items-center gap-2">
+      <span className="t-micro text-muted">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as RowFilter)}
+        className="t-small rounded border border-ink-300 bg-surface px-2.5 py-1.5 text-ink"
+      >
+        {ROW_FILTERS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function RowNumber({ index }: { index: number }) {
+  return (
+    <td className="t-small px-4 py-4 align-top text-muted tabular-nums">{index + 1}</td>
+  )
+}
 
 function Val({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {
   const empty = children === null || children === undefined || children === ''
@@ -66,81 +121,6 @@ function billedQty(item: BilledItem | null): string | null {
   return item.pack_size ? `${item.quantity} · ${item.pack_size}` : String(item.quantity)
 }
 
-interface MedRow {
-  key: string
-  prescribed: PrescribedItem | null
-  billed: BilledItem | null
-  similarity: number | null
-  findings: Finding[]
-  codes: string[]
-  status: SpineState
-  /** A check on this row could not be concluded. A marker, never a downgrade. */
-  partial: boolean
-}
-
-function medicineRows(result: ReconciliationResult): MedRow[] {
-  const rx = new Map(result.prescription.items.map((i) => [i.item_id, i]))
-  const bill = new Map(result.bill.items.map((i) => [i.item_id, i]))
-  const rows: MedRow[] = []
-
-  const build = (
-    key: string,
-    prescribed: PrescribedItem | null,
-    billed: BilledItem | null,
-    similarity: number | null,
-    findings: Finding[],
-  ): MedRow => {
-    const paired = prescribed !== null && billed !== null
-    const { state, partial } = statusFrom(findings, { paired })
-    return {
-      key,
-      prescribed,
-      billed,
-      similarity,
-      findings,
-      codes: findings.map((f) => f.rule_code),
-      status: state,
-      partial,
-    }
-  }
-
-  for (const pair of result.matched_pairs) {
-    const findings = result.findings.filter(
-      (f) => f.prescribed_ref === pair.prescribed_id && f.billed_ref === pair.billed_id,
-    )
-    rows.push(
-      build(
-        `${pair.prescribed_id}-${pair.billed_id}`,
-        rx.get(pair.prescribed_id) ?? null,
-        bill.get(pair.billed_id) ?? null,
-        pair.similarity,
-        findings,
-      ),
-    )
-  }
-  for (const id of result.unmatched_prescribed) {
-    const findings = result.findings.filter((f) => f.prescribed_ref === id)
-    rows.push(build(`rx-only-${id}`, rx.get(id) ?? null, null, null, findings))
-  }
-  for (const id of result.unmatched_billed) {
-    const findings = result.findings.filter((f) => f.billed_ref === id)
-    rows.push(build(`bill-only-${id}`, null, bill.get(id) ?? null, null, findings))
-  }
-  return rows
-}
-
-/**
- * The salt behind a row, from the canonical match the ENGINE resolved.
- *
- * This used to read the salt out of finding details, so it only appeared when a
- * BRAND_SUBSTITUTION or SCHEDULE_H_UNBACKED happened to fire — Augmentin, Pan-D
- * and Montair-LC resolve perfectly in the dictionary and still showed nothing.
- * The response now reports the match for every line.
- *
- * The transcribed `salt` is the fallback, not the source: it is what the model
- * read off the page, which is usually null. An unresolved drug stays an
- * em-dash; a salt is never inferred from a brand the dictionary does not know.
- */
 function saltOf(row: MedRow, canonical: Map<string, CanonicalMatch>): string | null {
   const resolved =
     canonical.get(row.prescribed?.item_id ?? '')?.salt ??
@@ -245,15 +225,15 @@ function StatusCell({ status, partial }: { status: SpineState; partial: boolean 
 }
 
 /**
- * Remark is pinned to the right edge.
+ * Remark sits second, immediately after status.
  *
- * It is the column a non-technical reviewer actually reads, and it was the
- * first thing to scroll off-screen on a wide table. Sticky keeps it in view
- * while the value columns scroll underneath it.
+ * It carries the summary of the row, so it is read first. It used to be pinned
+ * to the right edge to stop it scrolling away; leading the row solves that
+ * outright and the pin is gone.
  */
 function RemarkCell({ text }: { text: string }) {
   return (
-    <td className="sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-4 py-4 align-top shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]">
+    <td className="min-w-[14rem] border-l border-ink-200 px-4 py-4 align-top">
       {text ? (
         <span className="t-small text-ink">{text}</span>
       ) : (
@@ -267,17 +247,21 @@ export function MedicinesTable({
   result,
   onHover,
   technical = false,
+  filter = 'all',
 }: {
   result: ReconciliationResult
   onHover?: (row: { prescribedId: string | null; billedId: string | null } | null) => void
   technical?: boolean
+  filter?: RowFilter
 }) {
-  const rows = medicineRows(result)
+  const rows = applyFilter(medicineRowsOf(result), filter)
   const canonical = new Map((result.canonical ?? []).map((c) => [c.item_id, c]))
   if (rows.length === 0) {
     return (
       <p className="t-small text-muted">
-        Neither document carries a medicine line. Nothing to compare here.
+        {filter === 'all'
+          ? 'Neither document carries a medicine line. Nothing to compare here.'
+          : 'No lines match this filter.'}
       </p>
     )
   }
@@ -287,7 +271,19 @@ export function MedicinesTable({
         <thead>
           <tr>
             <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
+              #
+            </th>
+            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
               Status
+            </th>
+            {/* Remark leads: it carries the summary and is what a reviewer
+                reads first. */}
+            <th
+              rowSpan={2}
+              scope="col"
+              className="t-micro min-w-[14rem] border-l border-ink-200 px-4 pb-3 text-left text-muted"
+            >
+              Remark
             </th>
             <GroupHead label="Drug" />
             <th
@@ -301,13 +297,6 @@ export function MedicinesTable({
             <GroupHead label="Form" />
             <GroupHead label="Quantity" />
             {technical ? <GroupHead label="Ids" /> : null}
-            <th
-              rowSpan={2}
-              scope="col"
-              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-4 pb-3 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
-            >
-              Remark
-            </th>
           </tr>
           <tr className="border-b border-ink-200">
             <SubHead label="Prescribed" side="rx" />
@@ -327,7 +316,7 @@ export function MedicinesTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {rows.map((row, index) => {
             const quiet = row.status === 'clean'
             const m = marksFor(row.findings)
             // Only mark a pair when both halves exist: on an unmatched line the
@@ -346,11 +335,11 @@ export function MedicinesTable({
                   })
                 }
                 onMouseLeave={() => onHover?.(null)}
-                className={`border-b border-ink-200 align-top hover:bg-[color:var(--color-paper)] ${
-                  quiet ? 'opacity-65' : ''
-                }`}
+                className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
               >
+                <RowNumber index={index} />
                 <StatusCell status={row.status} partial={row.partial} />
+                <RemarkCell text={remark(row.codes, row.findings)} />
                 <td className="border-l border-ink-200 px-4 py-4">
                   <span className={at('drug')}>
                     <Val muted={quiet}>{row.prescribed?.drug_name}</Val>
@@ -409,7 +398,6 @@ export function MedicinesTable({
                     </td>
                   </>
                 ) : null}
-                <RemarkCell text={remark(row.codes, row.findings)} />
               </tr>
             )
           })}
@@ -419,101 +407,6 @@ export function MedicinesTable({
   )
 }
 
-interface TestRow {
-  key: string
-  prescribed: PrescribedTest | null
-  billed: BilledTest | null
-  findings: Finding[]
-  codes: string[]
-  status: SpineState
-  partial: boolean
-}
-
-function testRows(result: ReconciliationResult): TestRow[] {
-  // Stored history records predating lab reconciliation are returned as the raw
-  // blob they were saved as, with no `tests` arrays at all. Defaulting here
-  // keeps an old record readable instead of blanking the screen.
-  const rx = new Map((result.prescription.tests ?? []).map((t) => [t.item_id, t]))
-  const bill = new Map((result.bill.tests ?? []).map((t) => [t.item_id, t]))
-  const rows: TestRow[] = []
-  const build = (
-    key: string,
-    prescribed: PrescribedTest | null,
-    billed: BilledTest | null,
-    findings: Finding[],
-  ): TestRow => {
-    const paired = prescribed !== null && billed !== null
-    const { state, partial } = statusFrom(findings, { paired })
-    return {
-      key,
-      prescribed,
-      billed,
-      findings,
-      codes: findings.map((f) => f.rule_code),
-      status: state,
-      partial,
-    }
-  }
-
-  for (const pair of result.matched_tests ?? []) {
-    const findings = result.findings.filter(
-      (f) => f.prescribed_ref === pair.prescribed_id && f.billed_ref === pair.billed_id,
-    )
-    rows.push(
-      build(
-        `${pair.prescribed_id}-${pair.billed_id}`,
-        rx.get(pair.prescribed_id) ?? null,
-        bill.get(pair.billed_id) ?? null,
-        findings,
-      ),
-    )
-  }
-  // A panel match consumes every billed line that covered it, but the response
-  // names only the primary one in `matched_tests`. Without this, an ordered CBC
-  // billed as six analytes would show one line and silently drop five -- a table
-  // that does not account for every line on the bill is worse than no table.
-  //
-  // They are NOT attributed to a particular ordered panel here: with two matched
-  // panels the response does not say which line covered which, and guessing
-  // would be an invention. They are shown as what is certain -- billed, and
-  // covered by something that was ordered.
-  const accounted = new Set([
-    ...(result.matched_tests ?? []).map((p) => p.billed_id),
-    ...(result.unmatched_billed_tests ?? []),
-  ])
-  for (const test of result.bill.tests ?? []) {
-    if (accounted.has(test.item_id)) continue
-    rows.push({
-      key: `covered-${test.item_id}`,
-      prescribed: null,
-      billed: test,
-      findings: [],
-      codes: [],
-      // Covered by a panel that was ordered: a positive result, not an absence.
-      status: 'clean',
-      partial: false,
-    })
-  }
-  for (const id of result.unmatched_prescribed_tests ?? []) {
-    rows.push(
-      build(`rxt-${id}`, rx.get(id) ?? null, null, result.findings.filter((f) => f.prescribed_ref === id)),
-    )
-  }
-  for (const id of result.unmatched_billed_tests ?? []) {
-    rows.push(
-      build(`bt-${id}`, null, bill.get(id) ?? null, result.findings.filter((f) => f.billed_ref === id)),
-    )
-  }
-
-  return rows
-}
-
-/**
- * The panel a row belongs to.
- *
- * Prefers the canonical panel the decomposition resolved, which is what makes
- * one ordered "LFT" and six billed analytes legible as a single thing.
- */
 function panelOf(row: TestRow): string | null {
   for (const found of row.findings) {
     const value = found.detail['panel'] ?? found.detail['resolved_as']
@@ -526,21 +419,28 @@ export function LabTestsTable({
   result,
   onHover,
   technical = false,
+  filter = 'all',
 }: {
   result: ReconciliationResult
   onHover?: (row: { prescribedId: string | null; billedId: string | null } | null) => void
   technical?: boolean
+  filter?: RowFilter
 }) {
-  const rows = testRows(result)
+  const all = testRowsOf(result)
+  const rows = applyFilter(all, filter)
   const coveredCount =
     (result.matched_tests ?? []).length === 1
-      ? rows.filter((r) => r.prescribed === null && r.billed !== null && r.findings.length === 0)
+      ? all.filter((r) => r.prescribed === null && r.billed !== null && r.findings.length === 0)
           .length
       : 0
 
+  if (all.length > 0 && rows.length === 0) {
+    return <p className="t-small text-muted">No lines match this filter.</p>
+  }
+
   // An empty table reads as a rendering failure or a missed section. These two
   // states are entirely different results and must never render alike.
-  if (rows.length === 0) {
+  if (all.length === 0) {
     // `undefined` on a legacy record is not the same as a measured `null`, and
     // neither may render as "no tests ordered".
     const present = result.prescription.investigations_present ?? null
@@ -585,20 +485,23 @@ export function LabTestsTable({
         <thead>
           <tr>
             <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
+              #
+            </th>
+            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
               Status
+            </th>
+            <th
+              rowSpan={2}
+              scope="col"
+              className="t-micro min-w-[14rem] border-l border-ink-200 px-4 pb-3 text-left text-muted"
+            >
+              Remark
             </th>
             <GroupHead label="Test" />
             <th rowSpan={2} scope="col" className="t-micro border-l border-ink-200 px-4 pb-3 text-left text-muted">
               Panel
             </th>
             {technical ? <GroupHead label="Ids" /> : null}
-            <th
-              rowSpan={2}
-              scope="col"
-              className="t-micro sticky right-0 z-10 min-w-[12rem] border-l border-ink-200 bg-surface px-4 pb-3 text-left text-muted shadow-[-10px_0_10px_-10px_rgba(20,26,24,0.18)]"
-            >
-              Remark
-            </th>
           </tr>
           <tr className="border-b border-ink-200">
             <SubHead label="Prescribed" side="rx" />
@@ -612,7 +515,7 @@ export function LabTestsTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {rows.map((row, index) => {
             const quiet = row.status === 'clean'
             return (
               <tr
@@ -624,11 +527,19 @@ export function LabTestsTable({
                   })
                 }
                 onMouseLeave={() => onHover?.(null)}
-                className={`border-b border-ink-200 align-top hover:bg-[color:var(--color-paper)] ${
-                  quiet ? 'opacity-65' : ''
-                }`}
+                className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
               >
+                <RowNumber index={index} />
                 <StatusCell status={row.status} partial={row.partial} />
+                <RemarkCell
+                  text={
+                    row.findings.length === 0 && row.prescribed === null && row.billed !== null
+                      ? 'Billed as part of an ordered panel'
+                      : row.findings.length === 0 && row.prescribed !== null && coveredCount > 0
+                        ? `Ordered as a panel — billed as ${coveredCount + 1} itemised lines`
+                        : testRemark(row.codes, row.findings)
+                  }
+                />
                 <td className="border-l border-ink-200 px-4 py-4">
                   <Val muted={quiet}>{row.prescribed?.test_name}</Val>
                 </td>
@@ -652,15 +563,6 @@ export function LabTestsTable({
                     </td>
                   </>
                 ) : null}
-                <RemarkCell
-                  text={
-                    row.findings.length === 0 && row.prescribed === null && row.billed !== null
-                      ? 'Billed as part of an ordered panel'
-                      : row.findings.length === 0 && row.prescribed !== null && coveredCount > 0
-                        ? `Ordered as a panel — billed as ${coveredCount + 1} itemised lines`
-                        : testRemark(row.codes, row.findings)
-                  }
-                />
               </tr>
             )
           })}
