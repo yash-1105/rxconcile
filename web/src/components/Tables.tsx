@@ -24,15 +24,9 @@ import type {
   ReconciliationResult,
   Severity,
 } from '../types/api'
+import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineMark, type SpineState } from './Spine'
 
-const STATUS_LABEL: Record<SpineState, string> = {
-  clean: 'Matches',
-  warning: 'Check',
-  problem: 'Problem',
-  unchecked: 'Not checked',
-  'out-of-scope': 'Out of scope',
-}
 
 function Val({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {
   const empty = children === null || children === undefined || children === ''

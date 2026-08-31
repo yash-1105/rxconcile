@@ -19,11 +19,14 @@ import {
   criticalCount,
   discrepancyCount,
   groupByItem,
+  hideNonMedicineNoise,
   type FindingGroup,
 } from '../lib/grouping'
 import type { DocSide, Finding, ReconciliationResult } from '../types/api'
 import { AuditPanel } from './Audit'
-import { SpineMark, type SpineState } from './Spine'
+import { UNCHECKED_CODES } from '../lib/rowStatus'
+import { STATUS_LABEL } from '../lib/spineStatus'
+import { SpineLegend, SpineMark, type SpineState } from './Spine'
 import { ExportBar } from './Export'
 import { Reimbursement } from './Reimbursement'
 import { LabTestsTable, MedicinesTable } from './Tables'
@@ -168,8 +171,18 @@ function FindingRow({
   const [located, setLocated] = useState<LocateResult | null>(null)
   const { headline: lead, findings, severity } = group
   const extra = findings.length - 1
+  // An info finding is not automatically "not checked". A brand substitution
+  // WAS checked and matched; only an unverifiable or unrun check is unchecked.
+  // The legend states what each mark means, so a wrong mark is now a stated
+  // falsehood rather than an ambiguity.
   const state: SpineState =
-    severity === 'critical' ? 'problem' : severity === 'warning' ? 'warning' : 'unchecked'
+    severity === 'critical'
+      ? 'problem'
+      : severity === 'warning'
+        ? 'warning'
+        : findings.some((f) => UNCHECKED_CODES.has(f.rule_code))
+          ? 'unchecked'
+          : 'clean'
   return (
     <li className="border-b border-ink-200 last:border-b-0">
       <button
@@ -182,6 +195,9 @@ function FindingRow({
         className="flex w-full items-start gap-3 py-3 text-left hover:bg-paper"
       >
         <SpineMark state={state} className="mt-1" />
+        <span className="t-micro mt-0.5 w-[5.5rem] shrink-0 text-muted">
+          {STATUS_LABEL[state]}
+        </span>
         <span className="t-body flex-1 text-ink">
           {text}
           {extra > 0 ? (
@@ -306,7 +322,14 @@ export function Result({
 
   // One row per item. Two findings about Alprax are one row about Alprax, and
   // the summary counts items with problems rather than raw findings.
-  const analysis = groupByItem([...grouped.discrepancies, ...grouped.noted], result)
+  //
+  // Non-medicine noise is filtered from the DEFAULT view only. Technical
+  // details shows everything, and the header count follows whichever list is
+  // on screen so the two always agree.
+  const visible = technical
+    ? [...grouped.discrepancies, ...grouped.noted]
+    : hideNonMedicineNoise([...grouped.discrepancies, ...grouped.noted])
+  const analysis = groupByItem(visible, result)
   const affectedItems = discrepancyCount(analysis)
   const seriousItems = criticalCount(analysis)
   // Counted from the reimbursement assessment rather than from finding codes:
@@ -334,6 +357,7 @@ export function Result({
       {/* 2 — ANALYSIS */}
       {analysis.length > 0 ? (
         <Section title="Analysis">
+          <SpineLegend className="mb-3" />
           <ul className="rounded border border-ink-200 bg-surface px-5">
             {analysis.map((group) => (
               <FindingRow

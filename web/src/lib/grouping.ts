@@ -137,3 +137,42 @@ export function discrepancyCount(groups: FindingGroup[]): number {
 export function criticalCount(groups: FindingGroup[]): number {
   return groups.filter((group) => group.severity === 'critical').length
 }
+
+/**
+ * Findings the Analysis list should not show, though the engine still computes
+ * them and everything else still reports them.
+ *
+ * "LAKME SUNSCREEN SPF50 was billed but was not prescribed" is true and
+ * useless: nobody prescribes sunscreen, so the finding tells a reviewer
+ * nothing they did not already know from the line being a cosmetic.
+ *
+ * **A display filter, and a narrow one.** It removes two codes, and only from
+ * lines the engine POSITIVELY classified as non-medicines — never from a line
+ * whose classification was uncertain, because there we genuinely do not know
+ * what it is. Anything else against the same line survives, so a delivery
+ * charge with a broken line total still appears, headed by that.
+ *
+ * The finding stays in the engine output, the JSON export, the medicines table,
+ * the reimbursement card, and the technical-details view.
+ */
+const NON_MEDICINE_NOISE: ReadonlySet<string> = new Set([
+  'BILL_NOT_PRESCRIBED',
+  'NON_MEDICINE_ITEM',
+])
+
+export function hideNonMedicineNoise(findings: Finding[]): Finding[] {
+  const confirmed = new Set(
+    findings
+      .filter((f) => f.rule_code === 'NON_MEDICINE_ITEM' && f.billed_ref)
+      .map((f) => f.billed_ref as string),
+  )
+  if (confirmed.size === 0) return findings
+  return findings.filter(
+    (f) =>
+      !(
+        f.billed_ref !== null &&
+        confirmed.has(f.billed_ref) &&
+        NON_MEDICINE_NOISE.has(f.rule_code)
+      ),
+  )
+}

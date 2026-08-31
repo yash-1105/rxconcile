@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { criticalCount, discrepancyCount, groupByItem } from './grouping'
+import {
+  criticalCount,
+  discrepancyCount,
+  groupByItem,
+  hideNonMedicineNoise,
+} from './grouping'
 import type { Finding, MatchedPair, ReconciliationResult, Severity } from '../types/api'
 
 function finding(
@@ -139,5 +144,64 @@ describe('grouping findings by the item they concern', () => {
     expect(groups).toHaveLength(1)
     expect(groups[0]!.isDiscrepancy).toBe(false)
     expect(discrepancyCount(groups)).toBe(0)
+  })
+})
+
+describe('hiding non-medicine noise from the Analysis view', () => {
+  it('removes "billed but not prescribed" from a confirmed non-medicine', () => {
+    const kept = hideNonMedicineNoise([
+      finding('BILL_NOT_PRESCRIBED', 'info', { bill: 'bill-08' }),
+      finding('NON_MEDICINE_ITEM', 'info', { bill: 'bill-08' }),
+    ])
+    expect(kept).toHaveLength(0)
+  })
+
+  it('leaves an UNCLASSIFIED line alone — we do not know what it is', () => {
+    const findings = [finding('BILL_NOT_PRESCRIBED', 'critical', { bill: 'bill-09' })]
+    expect(hideNonMedicineNoise(findings)).toEqual(findings)
+  })
+
+  it('never hides anything else against the same line', () => {
+    const kept = hideNonMedicineNoise([
+      finding('BILL_NOT_PRESCRIBED', 'info', { bill: 'bill-08' }),
+      finding('NON_MEDICINE_ITEM', 'info', { bill: 'bill-08' }),
+      finding('LINE_TOTAL_MISMATCH', 'warning', { bill: 'bill-08' }),
+    ])
+    expect(kept.map((f) => f.rule_code)).toEqual(['LINE_TOTAL_MISMATCH'])
+  })
+
+  it('never touches a different line', () => {
+    const kept = hideNonMedicineNoise([
+      finding('NON_MEDICINE_ITEM', 'info', { bill: 'bill-08' }),
+      finding('BILL_NOT_PRESCRIBED', 'critical', { bill: 'bill-02' }),
+    ])
+    expect(kept.map((f) => f.rule_code)).toEqual(['BILL_NOT_PRESCRIBED'])
+  })
+
+  it('never touches document-level findings', () => {
+    const findings = [
+      finding('NON_MEDICINE_ITEM', 'info', { bill: 'bill-08' }),
+      finding('DATE_ANOMALY', 'warning'),
+    ]
+    expect(hideNonMedicineNoise(findings).map((f) => f.rule_code)).toEqual(['DATE_ANOMALY'])
+  })
+
+  it('is a no-op when nothing is a non-medicine', () => {
+    const findings = [
+      finding('BILL_NOT_PRESCRIBED', 'critical', { bill: 'bill-01' }),
+      finding('STRENGTH_MISMATCH', 'critical', { rx: 'rx-01' }),
+    ]
+    expect(hideNonMedicineNoise(findings)).toBe(findings)
+  })
+
+  it('the header count follows the filtered list', () => {
+    const all = [
+      finding('STRENGTH_MISMATCH', 'critical', { rx: 'rx-01' }),
+      finding('BILL_NOT_PRESCRIBED', 'info', { bill: 'bill-08' }),
+      finding('NON_MEDICINE_ITEM', 'info', { bill: 'bill-08' }),
+    ]
+    expect(discrepancyCount(groupByItem(all, result()))).toBe(1)
+    expect(discrepancyCount(groupByItem(hideNonMedicineNoise(all), result()))).toBe(1)
+    expect(groupByItem(hideNonMedicineNoise(all), result())).toHaveLength(1)
   })
 })

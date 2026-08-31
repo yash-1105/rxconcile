@@ -10,6 +10,8 @@
  * colour-blindness.
  */
 
+import { LEGEND_ORDER, STATUS_LABEL, STATUS_MEANING } from '../lib/spineStatus'
+
 export type SpineState = 'clean' | 'warning' | 'problem' | 'unchecked' | 'out-of-scope'
 
 const MARK: Record<SpineState, { label: string; className: string }> = {
@@ -91,5 +93,32 @@ export function SpineRule({ animate = false, className = '' }: { animate?: boole
       aria-hidden="true"
       className={`block w-px bg-ink-200 ${animate ? 'anim-spine' : ''} ${className}`}
     />
+  )
+}
+
+/**
+ * A quiet single row explaining what the marks mean.
+ *
+ * Deliberately small: it teaches the vocabulary once and then gets out of the
+ * way of the findings it sits above. The words come from lib/spineStatus so
+ * they cannot drift from the tables that use the same marks.
+ */
+export function SpineLegend({
+  states = LEGEND_ORDER,
+  className = '',
+}: {
+  states?: readonly SpineState[]
+  className?: string
+}) {
+  return (
+    <ul className={`flex flex-wrap items-center gap-x-5 gap-y-1.5 ${className}`}>
+      {states.map((state) => (
+        <li key={state} className="flex items-center gap-1.5">
+          <SpineMark state={state} />
+          <span className="t-micro text-muted">{STATUS_LABEL[state]}</span>
+          <span className="t-small text-unknown">— {STATUS_MEANING[state]}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
