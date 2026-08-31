@@ -427,10 +427,14 @@ def _pair_rules(
                 **refs,
             )
         )
+    # Critical, not a warning. A syrup billed against a prescribed tablet is a
+    # real difference between the two documents, and one a reimbursement
+    # reviewer should stop on rather than glance at. Only fires when BOTH sides
+    # state a form, so an unstated form is still never a finding.
     if rx_form is not None and bill_form is not None and rx_form != bill_form:
         findings.append(
             _finding(
-                "FORM_MISMATCH", "warning",
+                "FORM_MISMATCH", "critical",
                 f"Prescribed as {rx_form}, billed as {bill_form}.",
                 **refs, detail={"expected": rx_form, "found": bill_form},
             )

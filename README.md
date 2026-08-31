@@ -67,13 +67,13 @@ occupied on this machine by an unrelated service.** Use
 
 | Code | Severity | Fires when |
 | --- | --- | --- |
-| `RX_NOT_BILLED` | critical | A prescribed item has no billed counterpart |
-| `BILL_NOT_PRESCRIBED` | critical | A billed medicine has no prescription line (info for non-medicine lines) |
+| `RX_NOT_BILLED` | critical, softened to warning | A prescribed item has no billed counterpart. Downgraded when the prescribed line could not be identified, when a billed line could not be identified and may be it, or when no pharmacy bill was supplied — "not dispensed" is only claimed when nothing else could explain the absence |
+| `BILL_NOT_PRESCRIBED` | critical, softened to warning | A billed medicine has no prescription line. Downgraded on the same grounds as `RX_NOT_BILLED`; info for non-medicine lines |
 | `STRENGTH_MISMATCH` | critical | Same drug, different strength, with units stated on both sides |
 | `SALT_DIFFERENT_CLASS` | critical | A fuzzy match landed in a different therapeutic class — the signature of a misread |
 | `SCHEDULE_H_UNBACKED` | critical | A Schedule H/H1 item was billed with no prescription behind it |
 | `ITEM_COUNT_UNSTABLE` | critical | Extraction runs returned different item counts (document-level, both refs null) |
-| `FORM_MISMATCH` | warning | Tablet vs syrup vs injection |
+| `FORM_MISMATCH` | critical | Tablet vs syrup vs injection. Both sides must state a form |
 | `QUANTITY_SHORT` | warning | Billed quantity below the expectation derived from the sig |
 | `QUANTITY_EXCESS` | warning | Billed quantity more than 20% above the expectation |
 | `DUPLICATE_THERAPY` | warning | Two billed lines resolve to the same salt |

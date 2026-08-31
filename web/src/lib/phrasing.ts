@@ -133,13 +133,31 @@ export function phrase(
       if (detail['lab_only_bill'] === true) {
         return `${nameOf(rx)} was not assessed — this bill carries no medicines`
       }
-      return detail['legible'] === false
-        ? 'A prescribed line could not be read, so whether it was dispensed is unknown'
-        : `${nameOf(rx)} was prescribed but does not appear on the bill`
-    case 'BILL_NOT_PRESCRIBED':
-      return detail['legible'] === false
-        ? 'A billed line could not be read, so whether it was prescribed is unknown'
-        : `${nameOf(bl)} was billed but was not prescribed`
+      if (detail['legible'] === false) {
+        return 'A prescribed line could not be read, so whether it was dispensed is unknown'
+      }
+      // The engine softens this to a warning when a billed line it could not
+      // identify might be the counterpart. Wording it as a confident absence
+      // states the very conclusion the engine declined to reach.
+      if (unidentifiedCount(detail, 'unidentified_billed_lines') > 0) {
+        const n = unidentifiedCount(detail, 'unidentified_billed_lines')
+        return `${nameOf(rx)} was not matched to any billed line, but ${n} billed ${
+          n === 1 ? 'line' : 'lines'
+        } could not be identified and one of them may be it`
+      }
+      return `${nameOf(rx)} was prescribed but does not appear on the bill`
+    case 'BILL_NOT_PRESCRIBED': {
+      if (detail['legible'] === false) {
+        return 'A billed line could not be read, so whether it was prescribed is unknown'
+      }
+      const unknownRx = unidentifiedCount(detail, 'unidentified_prescribed_lines')
+      if (unknownRx > 0) {
+        return `${nameOf(bl)} was not matched to any prescribed line, but ${unknownRx} ${
+          unknownRx === 1 ? 'line' : 'lines'
+        } on the prescription could not be identified and one of them may be it`
+      }
+      return `${nameOf(bl)} was billed but was not prescribed`
+    }
     case 'SCHEDULE_H_UNBACKED':
       return `${String(
         detail['brand'] ?? nameOf(bl),
@@ -285,6 +303,18 @@ export interface Headline {
  * any check could not run, the wording says so — a check that did not run must
  * never read as a check that passed.
  */
+/**
+ * How many lines on the other document defeated identification.
+ *
+ * The engine records these so a softened finding can say WHY it was softened.
+ * Absent on records written before the field existed, which reads as zero and
+ * falls back to the confident wording those records were built with.
+ */
+function unidentifiedCount(detail: Record<string, unknown>, key: string): number {
+  const value = detail[key]
+  return Array.isArray(value) ? value.length : 0
+}
+
 export function headline(
   result: ReconciliationResult,
   grouped: Grouped,
@@ -410,6 +440,17 @@ export function remark(codes: string[], findings: Finding[]): string {
     }
     if (detail['legible'] === false) {
       return withCount('Prescribed line could not be read', total)
+    }
+    // Softened by the engine because an unreadable billed line may be this
+    // medicine. "Prescribed but not dispensed" would be an accusation the
+    // engine refused to make.
+    if (unidentifiedCount(detail, 'unidentified_billed_lines') > 0) {
+      return withCount('Not found on the bill — some billed lines are unreadable', total)
+    }
+  }
+  if (code === 'BILL_NOT_PRESCRIBED' && detail['non_medicine'] !== true) {
+    if (unidentifiedCount(detail, 'unidentified_prescribed_lines') > 0) {
+      return withCount('Not found on the prescription — some lines are unreadable', total)
     }
   }
   if (code === 'STRENGTH_MISMATCH') {

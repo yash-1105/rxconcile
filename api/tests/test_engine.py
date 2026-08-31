@@ -238,13 +238,30 @@ def test_strength_mismatch_ignores_unit_spelling() -> None:
     assert "STRENGTH_MISMATCH" not in codes(result)
 
 
-def test_form_mismatch() -> None:
+def test_form_mismatch_is_critical() -> None:
+    """A syrup billed against a prescribed tablet is a real difference.
+
+    Promoted from warning: for a reimbursement reviewer this is something to
+    stop on rather than glance at, and it moves the verdict accordingly.
+    """
     result = engine.reconcile(
         rx(rx_item("rx-01", form="tablet")),
         bill(bill_item("bill-01", form="syrup")),
     )
     finding = next(f for f in result.findings if f.rule_code == "FORM_MISMATCH")
-    assert finding.severity == "warning"
+    assert finding.severity == "critical"
+    assert result.verdict == "mismatch"
+
+
+def test_an_unstated_form_is_still_never_a_finding() -> None:
+    """The promotion raises the severity, it does not widen when the rule fires."""
+    for pair in (
+        (rx_item("rx-01", form="tablet"), bill_item("bill-01", form=None)),
+        (rx_item("rx-01", form=None), bill_item("bill-01", form="syrup")),
+        (rx_item("rx-01", form=None), bill_item("bill-01", form=None)),
+    ):
+        result = engine.reconcile(rx(pair[0]), bill(pair[1]))
+        assert "FORM_MISMATCH" not in codes(result)
 
 
 def test_quantity_short() -> None:
@@ -490,10 +507,13 @@ def test_mismatch_when_a_critical_fires() -> None:
 
 
 def test_match_with_warnings() -> None:
+    """A warning-only result. Uses a quantity rule: FORM_MISMATCH is critical."""
     result = engine.reconcile(
-        rx(rx_item("rx-01", form="tablet")),
-        bill(bill_item("bill-01", form="syrup")),
+        rx(rx_item("rx-01", frequency_raw="1-0-1", duration_raw="x 5 days",
+                   duration_days=5, dose_per_administration=1.0)),
+        bill(bill_item("bill-01", quantity=1.0, pack_size="5'S")),
     )
+    assert "QUANTITY_SHORT" in codes(result)
     assert result.verdict == "match_with_warnings"
 
 

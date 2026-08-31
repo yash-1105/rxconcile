@@ -372,7 +372,9 @@ SAMPLES: Final[tuple[SampleSummary, ...]] = (
         bill="sample-03-bill.png",
         note="Regression coverage. Mixed dash forms, 'STRIP OF 10' packs, a 'NOS' "
         "quantity column, mixed-case drug names. Dolo dispensed as Calpol and Pan "
-        "as Pantocid: same salts, legal substitution.",
+        "as Pantocid: same salts, legal substitution. The Pan line is also "
+        "prescribed as a capsule and billed as a tablet, which is a genuine form "
+        "difference and the reason this pair reads as a mismatch.",
     ),
     SampleSummary(
         sample_id="p3-dental",

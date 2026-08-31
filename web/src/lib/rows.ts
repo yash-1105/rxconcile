@@ -39,6 +39,31 @@ interface MedRow {
   partial: boolean
 }
 
+/**
+ * The findings that belong to a matched row.
+ *
+ * A finding about a matched pair may name BOTH halves, or only one. EXPIRED_ITEM
+ * is a property of the billed line alone and carries no prescribed ref; requiring
+ * both refs to match dropped it from its row entirely, so a critical "dispensed
+ * after it expired" rendered as a clean brand substitution.
+ *
+ * A finding belongs to this row when every ref it does carry points at this row,
+ * and it carries at least one. Both refs null is a document-level finding, which
+ * belongs to no row.
+ */
+function findingsForPair(
+  findings: Finding[],
+  prescribedId: string,
+  billedId: string,
+): Finding[] {
+  return findings.filter((f) => {
+    if (f.prescribed_ref === null && f.billed_ref === null) return false
+    if (f.prescribed_ref !== null && f.prescribed_ref !== prescribedId) return false
+    if (f.billed_ref !== null && f.billed_ref !== billedId) return false
+    return true
+  })
+}
+
 function medicineRows(result: ReconciliationResult): MedRow[] {
   const rx = new Map(result.prescription.items.map((i) => [i.item_id, i]))
   const bill = new Map(result.bill.items.map((i) => [i.item_id, i]))
@@ -66,9 +91,7 @@ function medicineRows(result: ReconciliationResult): MedRow[] {
   }
 
   for (const pair of result.matched_pairs) {
-    const findings = result.findings.filter(
-      (f) => f.prescribed_ref === pair.prescribed_id && f.billed_ref === pair.billed_id,
-    )
+    const findings = findingsForPair(result.findings, pair.prescribed_id, pair.billed_id)
     rows.push(
       build(
         `${pair.prescribed_id}-${pair.billed_id}`,
@@ -139,9 +162,7 @@ function testRows(result: ReconciliationResult): TestRow[] {
   }
 
   for (const pair of result.matched_tests ?? []) {
-    const findings = result.findings.filter(
-      (f) => f.prescribed_ref === pair.prescribed_id && f.billed_ref === pair.billed_id,
-    )
+    const findings = findingsForPair(result.findings, pair.prescribed_id, pair.billed_id)
     rows.push(
       build(
         `${pair.prescribed_id}-${pair.billed_id}`,
