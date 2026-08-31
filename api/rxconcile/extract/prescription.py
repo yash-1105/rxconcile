@@ -173,7 +173,8 @@ def build_prescription(runs: list[PrescriptionDTO]) -> Prescription:
         ).value
         for field in _DOC_FIELDS
     }
-    date_issued, date_warning = resolve_date(doc["date_issued_raw"])
+    resolved_issue_date = resolve_date(doc["date_issued_raw"])
+    date_issued, date_warning = resolved_issue_date.value, resolved_issue_date.warning
 
     warnings: list[str] = []
     for run in runs:
@@ -223,6 +224,7 @@ def build_prescription(runs: list[PrescriptionDTO]) -> Prescription:
         prescriber_reg_no=doc["prescriber_reg_no"],
         clinic_name=doc["clinic_name"],
         date_issued=date_issued,
+        date_order_assumed=resolved_issue_date.assumed_order,
         diagnosis_text=doc["diagnosis_text"],
         items=items,
         tests=tests,

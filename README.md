@@ -210,3 +210,14 @@ which is a worse failure than not checking at all.
 
 Verifying a licence properly requires the issuing state's register. Several
 states publish one; there is no single national endpoint.
+
+## Date convention
+
+Indian prescriptions and bills are written day-first, and a date like
+`12-08-2026` does not say which number is the month. This build reads such
+dates as `DD-MM-YYYY` and **says so on the result**: the engine raises
+`DATE_ORDER_ASSUMED` and any date finding carries the caveat.
+
+Set `RXCONCILE_DATE_ORDER=strict` in `.env` to refuse ambiguous dates instead,
+which is the right choice for documents of mixed origin. `mdy` reads them
+month-first. Unambiguous dates are always read as printed, whatever the setting.

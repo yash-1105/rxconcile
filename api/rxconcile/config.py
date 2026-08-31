@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -51,6 +51,22 @@ class Settings(BaseSettings):
         extra="ignore",
         frozen=True,
     )
+
+    #: How to read a numeric date whose day and month are BOTH 12 or under.
+    #:
+    #: ``12-08-2026`` is 12 August under ``dmy`` and 8 December under ``mdy``,
+    #: and the document itself does not say which. Indian prescriptions and
+    #: pharmacy bills are written day-first, so that is the default here.
+    #:
+    #: ``strict`` refuses such a date outright, which was the only behaviour
+    #: before this setting existed. It is the right choice for a corpus of
+    #: mixed origin, where a wrong date is worse than a missing one.
+    #:
+    #: **An assumed date is never presented as a read one.** The document
+    #: records that the order was assumed, and the engine raises
+    #: DATE_ORDER_ASSUMED so a reviewer sees the interpretation they are
+    #: relying on.
+    date_order: Literal["dmy", "mdy", "strict"] = "dmy"
 
     gcp_project_id: str = Field(
         ...,

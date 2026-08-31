@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict
 from rapidfuzz import fuzz
 from scipy.optimize import linear_sum_assignment
 
+from rxconcile.config import settings
 from rxconcile.models import (
     BilledItem,
     CanonicalMatch,
@@ -932,9 +933,40 @@ def _document_rules(
                         "bill_date": bill.bill_date.isoformat(),
                         "days_between": delta,
                         "max_lag_days": MAX_BILL_LAG_DAYS,
+                        "date_order_assumed": (
+                            prescription.date_order_assumed or bill.date_order_assumed
+                        ),
                     },
                 )
             )
+
+    # An assumed date order is stated, not smuggled. Every check that reads a
+    # date -- DATE_ANOMALY, expiry, early repeat -- is resting on it.
+    assumed = [
+        label
+        for document, label in ((prescription, "prescription"), (bill, "bill"))
+        if document.date_order_assumed
+    ]
+    if assumed:
+        findings.append(
+            _finding(
+                "DATE_ORDER_ASSUMED", "info",
+                f"The {' and '.join(assumed)} date{'s' if len(assumed) > 1 else ''} "
+                "did not say which number is the month. "
+                f"{'They were' if len(assumed) > 1 else 'It was'} read day-first, the "
+                "convention on Indian documents. Any finding about dates or expiry "
+                "rests on that assumption.",
+                detail={
+                    "documents": assumed,
+                    "convention": settings.date_order,
+                    "prescription_date": (
+                        prescription.date_issued.isoformat()
+                        if prescription.date_issued else None
+                    ),
+                    "bill_date": bill.bill_date.isoformat() if bill.bill_date else None,
+                },
+            )
+        )
 
     for document, label in ((prescription, "prescription"), (bill, "bill")):
         counts = document.run_item_counts

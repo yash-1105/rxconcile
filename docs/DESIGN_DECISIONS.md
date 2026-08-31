@@ -163,3 +163,54 @@ The extraction prompt's Indian/English framing is unchanged.
 - **Majority-vote resolution rules** for 2/3 and 1/3 fields: which value is
   canonical, and whether 1/3 should collapse to null. Section 2 defines the
   input, not the policy.
+
+---
+
+## Ambiguous dates now resolve by a stated convention
+
+**Changed.** `12-08-2026` has day and month both under 13, so the page does not
+say which is which. This used to be refused outright and left null.
+
+Refusing was defensible and it was also expensive. On a real Sunrise / Sri
+Balaji pair it silently disabled three checks at once: the date anomaly (the
+bill preceded the prescription by six days), the expiry check (an Aspirin
+dispensed after it expired), and the repeat-purchase interval. Two genuine
+defects went unreported because of a date format.
+
+`settings.date_order` now decides, defaulting to `dmy`:
+
+| Value | Behaviour |
+| --- | --- |
+| `dmy` *(default)* | day-first, the convention on Indian prescriptions and bills |
+| `mdy` | month-first |
+| `strict` | refuse, the previous behaviour |
+
+### What keeps this from being a guess
+
+An unambiguous date is still read, not assumed — one component above 12 settles
+the order from the document itself, and an impossible date such as `31/02/2026`
+is refused under every setting.
+
+Where the convention did decide, **the assumption travels with the value**:
+
+- `ResolvedDate.assumed_order` is set at resolution
+- `Prescription.date_order_assumed` and `PharmacyBill.date_order_assumed` record it
+- The engine raises `DATE_ORDER_ASSUMED` (info) naming which documents it applied to
+- `DATE_ANOMALY` carries `date_order_assumed` in its detail, and the screen reads
+  "the bill is dated 6 days before the prescription, **reading dates day-first**"
+
+So a reviewer always sees the interpretation their conclusion rests on. That is
+the difference between a stated convention and a silent guess, and it is the
+line this project draws everywhere else.
+
+`date_order` is part of the extraction cache key, because the cache holds the
+resolved document rather than the raw reply: a document read under one
+convention must never be served under another.
+
+### The cost, stated plainly
+
+`strict` remains the right setting for a corpus of mixed origin. A US-format
+document fed to a `dmy` build will be misread, and the report will say the date
+was assumed but not that the assumption was wrong. This is a deliberate trade
+made for a single-market demo, not a general-purpose default.
+

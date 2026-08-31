@@ -272,6 +272,12 @@ class Prescription(_Base):
         default=None,
         description="ISO date. An ambiguous handwritten date must be null, not guessed.",
     )
+    date_order_assumed: bool = Field(
+        default=False,
+        description="True when the day/month order could not be read off the page and "
+        "the configured convention decided it. **An assumed date is not a read one**, "
+        "and the engine raises DATE_ORDER_ASSUMED rather than letting it pass as fact.",
+    )
     diagnosis_text: str | None = Field(default=None)
     items: list[PrescribedItem] = Field(default_factory=list)
     tests: list[PrescribedTest] = Field(
@@ -345,6 +351,11 @@ class PharmacyBill(_Base):
     bill_no: str | None = Field(default=None)
     bill_date: date | None = Field(
         default=None, description="ISO date. An ambiguous date must be null, not guessed."
+    )
+    date_order_assumed: bool = Field(
+        default=False,
+        description="True when the day/month order was decided by convention rather "
+        "than read off the page.",
     )
     patient_name: str | None = Field(default=None)
     items: list[BilledItem] = Field(default_factory=list)

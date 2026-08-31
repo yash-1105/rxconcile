@@ -16,7 +16,7 @@ import re
 from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Final, TypeVar
+from typing import Any, Final, NamedTuple, TypeVar
 
 from google.genai import types
 from pydantic import BaseModel, ValidationError
@@ -118,8 +118,8 @@ def resolve_expiry(raw: str | None) -> tuple[date | None, str | None]:
 
     # A full date: let the existing resolver apply its ambiguity rules.
     if len(parts) == 3:
-        resolved, warning = resolve_date(text)
-        return resolved, warning
+        resolved = resolve_date(text)
+        return resolved.value, resolved.warning
 
     if len(parts) == 2:
         first, second = parts
@@ -151,32 +151,51 @@ def resolve_expiry(raw: str | None) -> tuple[date | None, str | None]:
     )
 
 
-def resolve_date(raw: str | None) -> tuple[date | None, str | None]:
+class ResolvedDate(NamedTuple):
+    """A date, why it could not be read, and whether an order was assumed."""
+
+    value: date | None
+    warning: str | None = None
+    #: True when the day/month order could not be read off the document and the
+    #: configured convention decided it. **Never present this as a read date.**
+    assumed_order: bool = False
+
+
+def resolve_date(raw: str | None, *, order: str | None = None) -> ResolvedDate:
     """Resolve a verbatim date string, or refuse to.
 
-    Returns ``(date, warning)``. An ambiguous handwritten date such as
-    ``03/04/26`` -- where both components could be the day -- comes back
-    ``(None, warning)`` rather than resolved to a guess. Resolving it would
-    silently invent a fact, and a wrong date on a prescription is a real error.
-
-    A date is accepted only when it is unambiguous: ISO form, a written-out
+    A date is read outright when it is unambiguous: ISO form, a written-out
     month, or a numeric form where one component exceeds 12.
+
+    When both components are 12 or under the document does not say which is the
+    month. ``settings.date_order`` decides what happens then:
+
+    ``dmy`` / ``mdy``
+        Resolve using that convention and set ``assumed_order``, so the
+        assumption travels with the value and can be shown to a reviewer.
+        Indian prescriptions and bills are day-first, which is the default.
+    ``strict``
+        Refuse, as this function always did. Right for a corpus of mixed
+        origin, where a wrong date is worse than a missing one.
+
+    An assumed date is still an assumption. It is never reported as read.
     """
+    chosen = order or settings.date_order
     if raw is None:
-        return None, None
+        return ResolvedDate(None)
     text = raw.strip()
     if not text:
-        return None, None
+        return ResolvedDate(None)
 
     for fmt in _ISO_FORMATS:
         try:
-            return datetime.strptime(text, fmt).date(), None
+            return ResolvedDate(datetime.strptime(text, fmt).date())
         except ValueError:
             pass
 
     for fmt in ("%d %b %Y", "%d %B %Y", "%b %d %Y", "%B %d %Y", "%d-%b-%Y", "%d-%B-%Y"):
         try:
-            return datetime.strptime(text, fmt).date(), None
+            return ResolvedDate(datetime.strptime(text, fmt).date())
         except ValueError:
             pass
 
@@ -185,21 +204,34 @@ def resolve_date(raw: str | None) -> tuple[date | None, str | None]:
         first, second, third = (int(chunk) for chunk in parts)
         year = _expand_year(third)
         if year is None:
-            return None, (
+            return ResolvedDate(None, (
                 f"Date {raw!r} could not be resolved: the year is ambiguous. "
                 "It was not guessed."
-            )
+            ))
+        # One component above 12 settles the order from the document itself.
         if first > 12 and second <= 12:
-            return _safe_date(year, second, first, raw)
+            return ResolvedDate(*_safe_date(year, second, first, raw))
         if second > 12 and first <= 12:
-            return _safe_date(year, first, second, raw)
+            return ResolvedDate(*_safe_date(year, first, second, raw))
         if first <= 12 and second <= 12:
-            return None, (
-                f"Date {raw!r} is ambiguous: both {first} and {second} could be the "
-                "month, so it could not be resolved without guessing. Left as null."
-            )
+            if chosen == "strict":
+                return ResolvedDate(None, (
+                    f"Date {raw!r} is ambiguous: both {first} and {second} could be "
+                    "the month, so it could not be resolved without guessing. "
+                    "Left as null."
+                ))
+            day, month = (first, second) if chosen == "dmy" else (second, first)
+            value, failure = _safe_date(year, month, day, raw)
+            if value is None:
+                return ResolvedDate(None, failure)
+            order_name = "day-first (DD-MM-YYYY)" if chosen == "dmy" else "month-first (MM-DD-YYYY)"
+            return ResolvedDate(value, (
+                f"Date {raw!r} does not say which of {first} and {second} is the month. "
+                f"It was read as {value.isoformat()} using the configured "
+                f"{order_name} convention. This is an ASSUMPTION, not a reading."
+            ), True)
 
-    return None, f"Date {raw!r} could not be interpreted and was left as null."
+    return ResolvedDate(None, f"Date {raw!r} could not be interpreted and was left as null.")
 
 
 def _split_numeric(text: str) -> list[str]:

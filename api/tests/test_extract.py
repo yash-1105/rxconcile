@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import io
 import json
 from collections.abc import Sequence
@@ -178,23 +179,51 @@ def test_python_assigns_ids_over_model_output() -> None:
     ],
 )
 def test_unambiguous_dates_resolve(raw: str, expected: str) -> None:
-    resolved, warning = _runner.resolve_date(raw)
-    assert resolved is not None
-    assert resolved.isoformat() == expected
-    assert warning is None
+    resolved = _runner.resolve_date(raw)
+    assert resolved.value is not None
+    assert resolved.value.isoformat() == expected
+    assert resolved.warning is None
+    assert resolved.assumed_order is False, "the document settled the order itself"
 
 
 @pytest.mark.parametrize("raw", ["03/04/26", "01/02/2026", "11/12/26"])
-def test_ambiguous_dates_become_null_with_a_warning(raw: str) -> None:
-    resolved, warning = _runner.resolve_date(raw)
-    assert resolved is None
-    assert warning is not None and "ambiguous" in warning
+def test_ambiguous_dates_are_refused_under_strict(raw: str) -> None:
+    resolved = _runner.resolve_date(raw, order="strict")
+    assert resolved.value is None
+    assert resolved.warning is not None and "ambiguous" in resolved.warning
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("03/04/26", "2026-04-03"), ("01/02/2026", "2026-02-01"), ("11/12/26", "2026-12-11")],
+)
+def test_ambiguous_dates_resolve_day_first_and_say_so(raw: str, expected: str) -> None:
+    """Indian documents are day-first, and the assumption travels with the value."""
+    resolved = _runner.resolve_date(raw, order="dmy")
+    assert resolved.value is not None
+    assert resolved.value.isoformat() == expected
+    assert resolved.assumed_order is True
+    assert resolved.warning is not None
+    assert "ASSUMPTION" in resolved.warning
+
+
+def test_month_first_is_available_for_a_document_that_needs_it() -> None:
+    resolved = _runner.resolve_date("03/04/26", order="mdy")
+    assert resolved.value is not None
+    assert resolved.value.isoformat() == "2026-03-04"
+    assert resolved.assumed_order is True
+
+
+def test_an_impossible_date_is_never_resolved_by_convention() -> None:
+    """31 February is not a date under any reading."""
+    for order in ("dmy", "mdy", "strict"):
+        assert _runner.resolve_date("31/02/2026", order=order).value is None
 
 
 def test_impossible_date_is_null() -> None:
-    resolved, warning = _runner.resolve_date("31/02/2026")
-    assert resolved is None
-    assert warning is not None
+    resolved = _runner.resolve_date("31/02/2026")
+    assert resolved.value is None
+    assert resolved.warning is not None
 
 
 def test_decimal_conversion_avoids_float_error() -> None:
@@ -228,8 +257,11 @@ def test_prescription_conversion_preserves_never_guess_nulls() -> None:
     )
     prescription = build_prescription([dto])
     assert prescription.patient_age == "6 months"  # unit preserved, never normalised
-    assert prescription.date_issued is None
-    assert any("ambiguous" in w for w in prescription.warnings)
+    # The date resolves under the day-first convention, and the document records
+    # that the order was ASSUMED rather than read off the page.
+    assert prescription.date_issued == dt.date(2026, 4, 3)
+    assert prescription.date_order_assumed is True
+    assert any("ASSUMPTION" in w for w in prescription.warnings)
     assert prescription.items[0].drug_name is None
     assert prescription.items[0].raw_text == "Syp. [?] 5ml OD"
     assert any("no legible drug name" in w for w in prescription.warnings)

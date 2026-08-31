@@ -59,6 +59,7 @@ const NOT_RUN_CODES = new Set(['CHECK_UNAVAILABLE'])
 /** Worth telling the client, but not a problem. */
 export const NOTED_CODES = new Set([
   'BRAND_SUBSTITUTION',
+  'DATE_ORDER_ASSUMED',
   'NON_MEDICINE_ITEM',
   'GSTIN_STATE_MISMATCH',
   'TAX_INCLUSIVE_PRICING',
@@ -166,10 +167,16 @@ export function phrase(
       )}” on the prescription, “${String(detail['bill_name'])}” on the bill`
     case 'DATE_ANOMALY': {
       const days = Number(detail['days_between'] ?? 0)
+      // The caveat rides along: this comparison rests on an assumed date order.
+      const caveat = detail['date_order_assumed'] ? ', reading dates day-first' : ''
       return days < 0
-        ? `The bill is dated ${Math.abs(days)} days before the prescription`
-        : `The bill is dated ${days} days after the prescription`
+        ? `The bill is dated ${Math.abs(days)} days before the prescription${caveat}`
+        : `The bill is dated ${days} days after the prescription${caveat}`
     }
+    case 'DATE_ORDER_ASSUMED':
+      return `Dates were read day-first — the ${String(
+        (detail['documents'] as string[] | undefined)?.join(' and ') ?? 'document',
+      )} did not say which number is the month`
     case 'SALT_DIFFERENT_CLASS':
       return `${nameOf(rx)} and ${nameOf(
         bl,

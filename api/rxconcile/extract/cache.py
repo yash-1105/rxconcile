@@ -17,6 +17,8 @@ import logging
 from pathlib import Path
 from typing import Any, Final
 
+from rxconcile.config import settings
+
 logger: Final = logging.getLogger(__name__)
 
 CACHE_DIR: Final[Path] = Path(__file__).resolve().parents[3] / ".cache" / "extraction"
@@ -25,8 +27,16 @@ CACHE_DIR: Final[Path] = Path(__file__).resolve().parents[3] / ".cache" / "extra
 def cache_key(
     *, image_sha256: str, doc_type: str, model: str, prompt_version: str
 ) -> str:
-    """Derive a cache key that changes when the prompt or model changes."""
-    material = f"{image_sha256}|{doc_type}|{model}|{prompt_version}"
+    """Derive a cache key that changes when the resolved output would change.
+
+    The cache holds the RESOLVED document, not the raw model reply, so anything
+    that changes resolution has to be in the key. ``date_order`` decides whether
+    an ambiguous date becomes a value or a null, so a cached document read under
+    one convention must not be served under another.
+    """
+    material = (
+        f"{image_sha256}|{doc_type}|{model}|{prompt_version}|{settings.date_order}"
+    )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 

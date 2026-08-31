@@ -187,7 +187,8 @@ def build_bill(runs: list[PharmacyBillDTO]) -> PharmacyBill:
         ).value
         for field in _DOC_FIELDS
     }
-    bill_date, date_warning = resolve_date(doc["bill_date_raw"])
+    resolved_bill_date = resolve_date(doc["bill_date_raw"])
+    bill_date, date_warning = resolved_bill_date.value, resolved_bill_date.warning
 
     warnings: list[str] = []
     for run in runs:
@@ -220,6 +221,7 @@ def build_bill(runs: list[PharmacyBillDTO]) -> PharmacyBill:
         pharmacy_address=doc["pharmacy_address"],
         bill_no=doc["bill_no"],
         bill_date=bill_date,
+        date_order_assumed=resolved_bill_date.assumed_order,
         patient_name=doc["patient_name"],
         items=items,
         tests=tests,

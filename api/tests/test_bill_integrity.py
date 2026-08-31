@@ -513,9 +513,9 @@ def test_an_unrecognised_expiry_is_refused_not_guessed(printed: str | None) -> N
     assert resolve_expiry(printed)[0] is None
 
 
-def test_an_ambiguous_full_date_expiry_stays_unresolved() -> None:
-    """Handed to the existing resolver, so its ambiguity rules still apply."""
-    assert resolve_expiry("06-08-2026")[0] is None
+def test_a_full_date_expiry_follows_the_configured_date_order() -> None:
+    """Handed to the existing resolver, so it inherits the same convention."""
+    assert resolve_expiry("06-08-2026")[0] == _dt.date(2026, 8, 6)
 
 
 def test_dispensing_after_expiry_is_critical() -> None:
@@ -647,3 +647,56 @@ def test_the_subtotal_sum_includes_non_medicine_lines() -> None:
                   unit_price="100.00"), subtotal=Decimal("539.00"))
     )
     assert codes(wrong, "SUBTOTAL_MISMATCH") == ["warning"]
+
+
+# ---------------------------------------------------------------------------
+# An assumed date order is stated, never smuggled
+# ---------------------------------------------------------------------------
+
+
+def test_an_assumed_date_order_is_always_reported() -> None:
+    """Every date and expiry finding rests on it, so it cannot be silent."""
+    rx = Prescription(
+        overall_legibility=0.9, date_issued=_dt.date(2026, 8, 12), date_order_assumed=True
+    )
+    bl = bill(expiring(_dt.date(2026, 7, 31)), bill_date=BILL_DAY)
+    bl = bl.model_copy(update={"date_order_assumed": True})
+    result = engine.reconcile(rx, bl, processing_ms=0)
+
+    assumed = [f for f in result.findings if f.rule_code == "DATE_ORDER_ASSUMED"]
+    assert [f.severity for f in assumed] == ["info"]
+    assert assumed[0].detail["documents"] == ["prescription", "bill"]
+    assert "assumption" in assumed[0].message.lower()
+
+
+def test_a_read_date_raises_no_assumption_finding() -> None:
+    rx = Prescription(overall_legibility=0.9, date_issued=_dt.date(2026, 8, 12))
+    result = engine.reconcile(rx, dated_bill(expiring(None)), processing_ms=0)
+    assert not [f for f in result.findings if f.rule_code == "DATE_ORDER_ASSUMED"]
+
+
+def test_date_anomaly_carries_the_assumption_into_its_detail() -> None:
+    """A reviewer must see what the comparison rests on."""
+    rx = Prescription(
+        overall_legibility=0.9, date_issued=_dt.date(2026, 8, 12), date_order_assumed=True
+    )
+    bl = bill(expiring(None), bill_date=BILL_DAY).model_copy(
+        update={"date_order_assumed": True}
+    )
+    result = engine.reconcile(rx, bl, processing_ms=0)
+    anomaly = next(f for f in result.findings if f.rule_code == "DATE_ANOMALY")
+    assert anomaly.detail["date_order_assumed"] is True
+    assert anomaly.detail["days_between"] == -6
+
+
+def test_the_planted_pair_reports_both_defects() -> None:
+    """Bill 06-08, prescription 12-08, Aspirin expiring 07/2026."""
+    rx = Prescription(
+        overall_legibility=0.9, date_issued=_dt.date(2026, 8, 12), date_order_assumed=True
+    )
+    bl = bill(expiring(_dt.date(2026, 7, 31)), bill_date=_dt.date(2026, 8, 6)).model_copy(
+        update={"date_order_assumed": True}
+    )
+    result = engine.reconcile(rx, bl, processing_ms=0)
+    assert codes(result.findings, "EXPIRED_ITEM") == ["critical"]
+    assert codes(result.findings, "DATE_ANOMALY") == ["warning"]
