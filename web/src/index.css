@@ -48,19 +48,20 @@
   --color-accent: #0e4f45;
 
   /*
-   * Row tints. Saturated enough to read across a room, light enough that ink
-   * on top still clears contrast comfortably. Derived from the semantic three
-   * rather than from a stock palette, so a row and its mark are the same
-   * colour idea.
+   * Row tints. TINTS, not fills: the row says which state a line is in, and the
+   * cell highlight says where the difference actually is. A saturated row
+   * reads as alarming rather than informative and drowns the one cell that
+   * matters. Derived from the semantic three rather than a stock palette, so a
+   * row and its mark are the same colour idea.
    *
    * Amber means SUBSTITUTED here and red means a problem, so the two are kept
    * plainly apart: a warning is a lighter red, never an amber.
    */
-  --color-tint-clean: #c3e3d3;
-  --color-tint-substitution: #f7dfae;
-  --color-tint-warning: #f9d5cf;
-  --color-tint-problem: #f2bcb5;
-  --color-tint-neutral: #e2e6e2;
+  --color-tint-clean: #e2f0e8;
+  --color-tint-substitution: #fbefd6;
+  --color-tint-warning: #fdeae4;
+  --color-tint-problem: #f8d9d3;
+  --color-tint-neutral: #ecefec;
 }
 
 html, body, #root { height: 100%; }

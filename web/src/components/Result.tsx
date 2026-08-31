@@ -28,7 +28,7 @@ import { UNCHECKED_CODES } from '../lib/rowStatus'
 import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineLegend, SpineMark, type SpineState } from './Spine'
 import { ExportBar } from './Export'
-import { BulkDecisions, LabTestsTable, MedicinesTable, TableFilter } from './Tables'
+import { LabTestsTable, MedicinesTable, TableFilter } from './Tables'
 import { ExcludedLine, SummaryPanel } from './SummaryPanel'
 import {
   claimTotal,
@@ -409,20 +409,15 @@ export function Result({
           />
         </div>
         <div className="overflow-hidden rounded border border-ink-200 bg-surface">
-          {/* The table fits without scrolling from 1280px up. Below that it
-              scrolls inside its own card rather than being clipped — a column
-              a phone cannot reach is worse than one it has to scroll to. */}
-          <div className="overflow-x-auto">
-            <MedicinesTable
-              result={result}
-              onHover={hoverRow}
-              technical={technical}
-              filter={filters.medicines}
-              decisions={decisions}
-              onDecision={decide}
-            />
-          </div>
-          <BulkDecisions onAll={(d) => decideAll(medicineRowsOf(result), d)} />
+          <MedicinesTable
+            result={result}
+            onHover={hoverRow}
+            technical={technical}
+            filter={filters.medicines}
+            decisions={decisions}
+            onDecision={decide}
+            onDecideAll={(d) => decideAll(medicineRowsOf(result), d)}
+          />
         </div>
       </Section>
 
@@ -435,17 +430,15 @@ export function Result({
           />
         </div>
         <div className="overflow-hidden rounded border border-ink-200 bg-surface">
-          <div className="overflow-x-auto">
-            <LabTestsTable
-              result={result}
-              onHover={hoverRow}
-              technical={technical}
-              filter={filters.tests}
-              decisions={decisions}
-              onDecision={decide}
-            />
-          </div>
-          <BulkDecisions onAll={(d) => decideAll(testRowsOf(result), d)} />
+          <LabTestsTable
+            result={result}
+            onHover={hoverRow}
+            technical={technical}
+            filter={filters.tests}
+            decisions={decisions}
+            onDecision={decide}
+            onDecideAll={(d) => decideAll(testRowsOf(result), d)}
+          />
         </div>
       </Section>
 
