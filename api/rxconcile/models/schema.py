@@ -156,6 +156,12 @@ class BilledItem(_Base):
         "- misreading packs as units inflates a quantity comparison by the pack size.",
     )
     unit_price: Decimal | None = Field(default=None, description="Price per unit.")
+    discount: Decimal | None = Field(
+        default=None,
+        description="Line discount AS PRINTED, in currency. Null when the bill prints "
+        "no discount column -- which is NOT the same as a discount of zero, and the "
+        "arithmetic check treats the two differently.",
+    )
     line_total: Decimal | None = Field(default=None, description="Line amount charged.")
     batch_no: str | None = Field(default=None)
     hsn_code: str | None = Field(default=None)
@@ -321,6 +327,15 @@ class PharmacyBill(_Base):
 
     pharmacy_name: str | None = Field(default=None)
     pharmacy_licence_no: str | None = Field(default=None)
+    gstin: str | None = Field(
+        default=None, description="GSTIN exactly as printed. Never normalised here."
+    )
+    pharmacy_address: str | None = Field(
+        default=None,
+        description="Address block as printed. Used only to compare the state against "
+        "the GSTIN's state code, which is informational -- a chain may bill from "
+        "another state entirely.",
+    )
     bill_no: str | None = Field(default=None)
     bill_date: date | None = Field(
         default=None, description="ISO date. An ambiguous date must be null, not guessed."
@@ -333,6 +348,9 @@ class PharmacyBill(_Base):
         "separate documents, so this may be populated while items is empty.",
     )
     subtotal: Decimal | None = Field(default=None)
+    discount_total: Decimal | None = Field(
+        default=None, description="Bill-level discount as printed, in currency."
+    )
     tax_total: Decimal | None = Field(default=None)
     grand_total: Decimal | None = Field(default=None)
     currency: str = Field(default="INR", min_length=3, max_length=3)
@@ -553,7 +571,7 @@ def build_review_summary(
     )
 
 
-ReimbursementCategory = Literal["eligible", "not_eligible", "needs_review"]
+ReimbursementCategory = Literal["eligible", "not_eligible", "needs_review", "non_medicine"]
 
 
 class ReimbursementLine(_Base):
@@ -586,6 +604,12 @@ class ReimbursementSummary(_Base):
     not_eligible_line_count: int = 0
     needs_review_total: Decimal = Decimal("0")
     needs_review_line_count: int = 0
+    non_medicine_total: Decimal = Field(
+        default=Decimal("0"),
+        description="Billed lines that are not medicines. Reported separately rather "
+        "than as unprescribed: a delivery charge is out of scope, not an accusation.",
+    )
+    non_medicine_line_count: int = 0
     lines_without_amount: int = Field(
         default=0,
         description="Billed lines with no printed amount. Excluded from the totals "
@@ -596,7 +620,12 @@ class ReimbursementSummary(_Base):
 
     @property
     def assessed_total(self) -> Decimal:
-        return self.eligible_total + self.not_eligible_total + self.needs_review_total
+        return (
+            self.eligible_total
+            + self.not_eligible_total
+            + self.needs_review_total
+            + self.non_medicine_total
+        )
 
 
 class ReconciliationResult(_Base):

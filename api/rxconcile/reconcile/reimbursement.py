@@ -48,6 +48,18 @@ NOT_ELIGIBLE_CODES: Final[frozenset[str]] = frozenset(
     {"BILL_NOT_PRESCRIBED", "SCHEDULE_H_UNBACKED", "TEST_NOT_PRESCRIBED"}
 )
 
+#: A line that is simply not a medicine. Its own quiet category: folding it into
+#: "not on prescription" would read as an accusation about a delivery charge.
+NON_MEDICINE_CODE: Final[str] = "NON_MEDICINE_ITEM"
+
+#: Codes that outrank "not a medicine" when bucketing. A delivery charge is
+#: never on the prescription, so BILL_NOT_PRESCRIBED is deliberately absent
+#: here -- if it outranked, the non-medicine category would never be reached.
+#: The FINDING is untouched either way: only the money bucket changes.
+OVERRIDES_NON_MEDICINE: Final[frozenset[str]] = frozenset(
+    {"SCHEDULE_H_UNBACKED", "TEST_NOT_PRESCRIBED"}
+)
+
 #: A billed line carrying one of these could not be fully checked.
 UNCHECKED_CODES: Final[frozenset[str]] = frozenset(
     {
@@ -88,6 +100,8 @@ _REASONS: Final[tuple[tuple[str, str], ...]] = (
 
 
 def _reason(category: ReimbursementCategory, codes: list[str]) -> str:
+    if category == "non_medicine":
+        return "Not a medicine — usually outside reimbursement"
     for code, wording in _REASONS:
         if code in codes:
             return wording
@@ -126,8 +140,15 @@ def assess(
         # Precedence: nothing behind it beats could-not-check beats matched.
         # A line the engine says was never prescribed is not "needs review"
         # merely because some other check on it also failed to run.
-        if any(code in NOT_ELIGIBLE_CODES for code in codes):
-            category: ReimbursementCategory = "not_eligible"
+        if NON_MEDICINE_CODE in codes and not any(
+            code in OVERRIDES_NON_MEDICINE for code in codes
+        ):
+            # Outside reimbursement scope rather than unsupported by the
+            # prescription. Never allowed to hide a real finding: a line that
+            # is ALSO unprescribed keeps that, harsher, category.
+            category: ReimbursementCategory = "non_medicine"
+        elif any(code in NOT_ELIGIBLE_CODES for code in codes):
+            category = "not_eligible"
         elif any(code in UNCHECKED_CODES for code in codes) or any(
             f.severity in {"critical", "warning"} for f in found
         ):
@@ -157,6 +178,7 @@ def assess(
         missing = sum(1 for line in chosen if line.amount is None)
         return sum(amounts, Decimal("0")), len(chosen), missing
 
+    non_medicine, non_medicine_n, non_medicine_missing = total("non_medicine")
     eligible, eligible_n, eligible_missing = total("eligible")
     not_eligible, not_eligible_n, not_eligible_missing = total("not_eligible")
     review, review_n, review_missing = total("needs_review")
@@ -168,7 +190,11 @@ def assess(
         not_eligible_line_count=not_eligible_n,
         needs_review_total=review,
         needs_review_line_count=review_n,
-        lines_without_amount=eligible_missing + not_eligible_missing + review_missing,
+        non_medicine_total=non_medicine,
+        non_medicine_line_count=non_medicine_n,
+        lines_without_amount=(
+            eligible_missing + not_eligible_missing + review_missing + non_medicine_missing
+        ),
         currency=bill.currency,
         lines=lines,
     )

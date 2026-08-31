@@ -58,8 +58,11 @@ from rxconcile.normalize.drug_dictionary import DrugEntry, entries_for_salt
 from rxconcile.normalize.matcher import entry_for
 from rxconcile.normalize.units import strengths_equal
 from rxconcile.reconcile._findings import finding, unavailable
+from rxconcile.reconcile.arithmetic import check_arithmetic
 from rxconcile.reconcile.lab import reconcile_tests
 from rxconcile.reconcile.reimbursement import assess
+from rxconcile.validate import check_gstin, check_licence
+from rxconcile.validate.gstin import state_in_address
 
 logger: Final = logging.getLogger(__name__)
 
@@ -97,6 +100,28 @@ SCORE_PENALTY_WARNING: Final[int] = 8
 
 #: Forms treated as non-medicine lines on a bill.
 _NON_MEDICINE_FORMS: Final[frozenset[str]] = frozenset({"other", "service", "consumable"})
+
+#: Words that identify a billed line as something other than a medicine.
+#:
+#: Only used on lines the drug dictionary did NOT resolve. A line that resolves
+#: to a real medicine is a medicine, whatever words surround it -- "Zinc" in a
+#: supplement name must never reclassify a prescribed zinc tablet.
+_NON_MEDICINE_WORDS: Final[frozenset[str]] = frozenset({
+    # Charges and services
+    "delivery", "shipping", "courier", "handling", "service", "packing", "freight",
+    "consultation", "registration", "convenience",
+    # Devices and consumables
+    "syringe", "needle", "glucometer", "lancet", "strip", "strips", "thermometer",
+    "bandage", "gauze", "cotton", "mask", "gloves", "sanitizer", "sanitiser",
+    "nebulizer", "nebuliser", "catheter", "diaper", "diapers", "wipes",
+    "bp monitor", "oximeter", "crepe", "elastic",
+    # Cosmetics and toiletries
+    "soap", "shampoo", "lotion", "moisturizer", "moisturiser", "sunscreen",
+    "toothpaste", "toothbrush", "talc", "powder puff", "lip balm", "face wash",
+    # Supplements and food
+    "protein", "supplement", "multivitamin", "health drink", "nutrition",
+    "sanitary", "napkin",
+})
 
 _FORM_SYNONYMS: Final[dict[str, str]] = {
     "tab": "tablet", "tabs": "tablet", "tablet": "tablet", "tablets": "tablet",
@@ -287,6 +312,32 @@ def _schedule_entry(drug: CanonicalDrug) -> DrugEntry | None:
 def _is_non_medicine(item: BilledItem, drug: CanonicalDrug) -> bool:
     form = _norm_form(item.form)
     return form in _NON_MEDICINE_FORMS or (not drug.resolved and form is None)
+
+
+def classify_line(item: BilledItem, drug: CanonicalDrug) -> str:
+    """``medicine``, ``non_medicine`` or ``unclassified``.
+
+    Three states on purpose. **Unclassified is a valid answer**: guessing that
+    an unrecognised line is a cosmetic would quietly drop a real medicine out
+    of reimbursement, which is the worst outcome available here.
+
+    The dictionary wins over the keyword list. A line that resolves to a real
+    medicine is a medicine whatever words surround it.
+    """
+    if drug.resolved:
+        return "medicine"
+
+    form = _norm_form(item.form)
+    text = f"{item.drug_name or ''} {item.raw_text}".lower()
+    if any(word in text for word in _NON_MEDICINE_WORDS):
+        return "non_medicine"
+    if form in _NON_MEDICINE_FORMS:
+        return "non_medicine"
+    if form is not None:
+        # A stated dosage form with no dictionary entry is most likely a
+        # medicine this build does not know, not a cosmetic.
+        return "medicine"
+    return "unclassified"
 
 
 def _pair_rules(
@@ -905,6 +956,89 @@ def _document_rules(
     return findings
 
 
+def _bill_integrity_findings(
+    bill: PharmacyBill, bill_drugs: dict[str, CanonicalDrug]
+) -> list[Finding]:
+    """Checks about the bill as a document, independent of the prescription."""
+    findings: list[Finding] = []
+
+    # ---- GSTIN ---------------------------------------------------------
+    gstin = check_gstin(bill.gstin)
+    if not gstin.present:
+        findings.append(
+            _unavailable(
+                "GSTIN format",
+                ["a GSTIN on the bill"],
+                note="No GST number was printed, so its format could not be checked.",
+            )
+        )
+    elif not gstin.well_formed:
+        findings.append(
+            _finding(
+                "GSTIN_INVALID", "warning",
+                f"The printed GST number {gstin.normalised} is not a valid GSTIN "
+                f"format: {gstin.reason}. This is a check of the number's structure "
+                "only -- no registry was consulted.",
+                detail={
+                    "printed": gstin.raw,
+                    "normalised": gstin.normalised,
+                    "reason": gstin.reason,
+                    "expected_check_digit": gstin.expected_check_digit,
+                    "scope": "format_and_checksum_only",
+                },
+            )
+        )
+    else:
+        # Well-formed. A state disagreement is never more than informational:
+        # a chain legitimately bills from a state it is not addressed in.
+        address_state = state_in_address(bill.pharmacy_address)
+        if address_state and gstin.state_name and address_state != gstin.state_name:
+            findings.append(
+                _finding(
+                    "GSTIN_STATE_MISMATCH", "info",
+                    f"The GSTIN is registered in {gstin.state_name} but the address "
+                    f"printed on the bill is in {address_state}. This is common for a "
+                    "chain billing from another state and is not itself a problem.",
+                    detail={
+                        "gstin_state": gstin.state_name,
+                        "address_state": address_state,
+                        "state_code": gstin.state_code,
+                    },
+                )
+            )
+
+    # ---- drug licence --------------------------------------------------
+    licence = check_licence(bill.pharmacy_licence_no)
+    if not licence.present:
+        findings.append(
+            _finding(
+                "LICENCE_ABSENT", "warning",
+                "No drug licence number is printed on this bill. A retail pharmacy "
+                "invoice is required to carry one.",
+                detail={"note": licence.note},
+            )
+        )
+
+    # ---- non-medicine lines --------------------------------------------
+    for item in bill.items:
+        if classify_line(item, bill_drugs[item.item_id]) != "non_medicine":
+            continue
+        findings.append(
+            _finding(
+                "NON_MEDICINE_ITEM", "info",
+                f"{item.drug_name or item.raw_text} is not a medicine and is usually "
+                "outside the scope of a medical reimbursement.",
+                billed_ref=item.item_id,
+                detail={
+                    "line": item.drug_name or item.raw_text,
+                    "line_total": str(item.line_total) if item.line_total else None,
+                },
+            )
+        )
+
+    return findings
+
+
 def _low_agreement_findings(prescription: Prescription, bill: PharmacyBill) -> list[Finding]:
     """One finding per item that needs review, never one per field."""
     findings: list[Finding] = []
@@ -1088,6 +1222,10 @@ def reconcile(
     findings.extend(lab.findings)
 
     findings.extend(_document_rules(prescription, bill, bill_by_id))
+    # Checks about the bill as a document: does it add up, and does it carry
+    # the identifiers a pharmacy invoice is required to carry.
+    findings.extend(check_arithmetic(bill))
+    findings.extend(_bill_integrity_findings(bill, bill_by_id))
     findings.extend(_low_agreement_findings(prescription, bill))
 
     # The matcher resolved these on the way in; report them rather than letting

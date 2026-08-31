@@ -277,3 +277,40 @@ match.
 `TEST_NOT_PRESCRIBED`, `None` when the finding is confident, and never absent.
 `required_components()` on an unknown panel returns `()` rather than raising.
 
+---
+
+# Bill-integrity fields
+
+Added with the arithmetic, GSTIN, drug licence and non-medicine checks. Nine new
+nullable inputs, all folded into the hypothesis property test alongside the
+existing ones.
+
+| Nulled | Result | Why this is right |
+| --- | --- | --- |
+| `item.quantity`, `unit_price` or `line_total` | one document-level `CHECK_UNAVAILABLE`, no finding | **a bill with no unit price cannot fail an arithmetic check** |
+| `item.discount` | line compared without a discount; a discount-shaped shortfall is not reported | null means the bill does not say, which is not zero |
+| `bill.subtotal` | `CHECK_UNAVAILABLE` (subtotal) | nothing to compare against |
+| `bill.tax_total`, `grand_total` | `CHECK_UNAVAILABLE` (grand total), naming which were missing | |
+| `bill.discount_total` | subtotal compared without it; a lower subtotal is read as an unitemised discount | |
+| `bill.gstin` | `CHECK_UNAVAILABLE` (GSTIN format) | nothing was printed, so nothing failed |
+| `bill.pharmacy_address` | no `GSTIN_STATE_MISMATCH` | an absent address is not evidence of a mismatch |
+| `bill.pharmacy_licence_no` | **`LICENCE_ABSENT` warning** | the one case where absence IS the finding |
+| `item.form` and an unresolved drug | line left **unclassified** | guessing "cosmetic" would drop a real medicine from reimbursement |
+
+`LICENCE_ABSENT` is the single new finding that fires *on* a null. It is a
+warning rather than a critical, and it survives the property that absent data
+never produces a critical.
+
+## The per-line check that had to become document-level
+
+The line-arithmetic `CHECK_UNAVAILABLE` originally carried a `billed_ref`. That
+pushed every line on a bill omitting unit prices — which is most bills — into
+"needs a manual check", drowning the lines that genuinely needed one. It is
+reported once for the document instead, with a count.
+
+## A false positive caught on a real bill
+
+The subtotal check first summed only `bill.items`, and reported a 1,080-rupee
+shortfall on a bill whose lab section was simply not counted. Both sections are
+summed now. `test_the_subtotal_includes_lab_lines_not_just_medicines` holds it.
+

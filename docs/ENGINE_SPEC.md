@@ -376,3 +376,74 @@ samples, `eligible` is frequently zero for exactly this reason. Treating an
 unrunnable check as support would be the same error as reporting a skipped
 check as a pass.
 
+---
+
+## 11. Bill integrity
+
+Four checks about the bill as a document, independent of the prescription. All
+deterministic Python; no model is in the judgement path.
+
+### 11a. Arithmetic
+
+| Code | Severity | Fires when |
+| --- | --- | --- |
+| `LINE_TOTAL_MISMATCH` | warning | quantity x rate, less any printed discount, is not the line total |
+| `SUBTOTAL_MISMATCH` | warning | the line totals do not sum to the printed subtotal |
+| `GRAND_TOTAL_MISMATCH` | warning | subtotal plus tax is not the amount payable |
+| `TAX_INCLUSIVE_PRICING` | info | the rates already include tax, so the grand-total check was skipped |
+
+Three false-positive sources are handled rather than tolerated. **Rounding**: a
+tolerance of 0.05 per line and 1.00 on totals. **Discounts**: a printed discount
+is subtracted; where none is printed but the line is merely *cheaper* than the
+arithmetic by up to 30%, nothing is emitted, because an unprinted discount and a
+keying error are indistinguishable from the page and only one is worth accusing
+a pharmacy of. Being *overcharged* is always reported — a discount explains a
+cheaper line, nothing explains a dearer one. **Inclusive GST**: a grand total
+equal to the subtotal means tax was not added on top, which is a printing
+convention, not an error.
+
+Every check sums medicines and lab lines together. A bill's subtotal covers both
+sections, and summing only the medicines manufactured a shortfall on a real
+bill.
+
+### 11b. GSTIN
+
+`validate/gstin.py` checks length, the state-code/PAN/entity/Z pattern, the
+state code against the 38 statutory codes, and the modulus-36 check digit over
+the first 14 characters. The quotient-plus-remainder step is what makes the
+digit sensitive to a transposition rather than only a substitution.
+
+**This proves the number is well-formed. It does not prove the business exists
+or is registered.** Live verification needs the GST portal API and is out of
+scope. Copy says "not a valid GSTIN format" and states that no registry was
+consulted; a test pins that the words "not registered", "unregistered" and
+"verified" never appear.
+
+`GSTIN_STATE_MISMATCH` is `info` and never more: a chain legitimately bills from
+a state it is not addressed in.
+
+### 11c. Drug licence
+
+**No format validation is attempted, deliberately.** There is no national format
+and no checksum — 36 state authorities each use their own convention, and
+`TN/2019/337821`, `KA-B-21/1234` and `20B/MH/1998/554` are all plausible.
+Rejecting a valid licence would put a compliance accusation against a pharmacy
+on the basis of a format this system invented, which is worse than not checking.
+
+`LICENCE_ABSENT` (warning) is the only rule: whether a number is printed at all.
+`LicenceCheck` deliberately has no `valid` field, so a caller cannot read
+presence as validation.
+
+### 11d. Non-medicine lines
+
+`NON_MEDICINE_ITEM` (info) marks cosmetics, supplements, devices and charges.
+Classification is three-state — medicine, non-medicine, **unclassified** — and
+the dictionary always wins over the keyword list. An unrecognised line is left
+unclassified rather than guessed: misclassifying a real medicine as a cosmetic
+would silently drop it from reimbursement, which is the worst outcome available.
+
+It is `info`, and it never suppresses or downgrades another finding. In the
+reimbursement view it is its own quiet category rather than "not on
+prescription" — a delivery charge is out of scope, not an accusation.
+`SCHEDULE_H_UNBACKED` and `TEST_NOT_PRESCRIBED` still outrank it.
+

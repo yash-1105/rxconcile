@@ -10,6 +10,7 @@ See docs/NULL_MATRIX.md.
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -37,14 +38,18 @@ RX_NULLABLE = (
 )
 BILL_NULLABLE = (
     "drug_name", "salt", "strength_value", "strength_unit", "form", "quantity",
-    "pack_size", "units_basis", "unit_price", "line_total", "batch_no", "hsn_code",
+    "pack_size", "units_basis", "unit_price", "discount", "line_total", "batch_no",
+    "hsn_code",
 )
 #: Nullable fields on an ordered test and a billed test line. raw_text is
 #: absent from both lists on purpose: it is never nulled, on either side.
 TEST_NULLABLE = ("test_name", "panel", "urgency")
 BILLTEST_NULLABLE = ("test_name", "panel", "quantity", "unit_price", "line_total")
 DOC_NULLABLE = ("patient_name", "date_issued", "investigations_present")
-BILLDOC_NULLABLE = ("patient_name", "bill_date")
+BILLDOC_NULLABLE = (
+    "patient_name", "bill_date", "pharmacy_licence_no", "gstin", "pharmacy_address",
+    "subtotal", "tax_total", "grand_total", "discount_total",
+)
 
 RX_FULL: dict[str, Any] = {
     "item_id": "rx-01", "raw_text": "Tab. Dolo 650 1-0-1 x 5 days", "drug_name": "Dolo",
@@ -96,6 +101,18 @@ def build(
         investigations_present=None if "investigations_present" in doc_nulls else True,
     )
     bill = PharmacyBill(
+        # A realistic compliant bill carries a licence number; without one the
+        # baseline is legitimately not clean.
+        # A complete, compliant bill: the baseline must have nothing against it
+        # and no check left unrun, or the properties measure the wrong thing.
+        pharmacy_licence_no=None if "pharmacy_licence_no" in billdoc_nulls else "TN/2019/337821",
+        gstin=None if "gstin" in billdoc_nulls else "27AAPFU0939F1ZV",
+        pharmacy_address=None if "pharmacy_address" in billdoc_nulls else "Pune, Maharashtra",
+        # 22.00 medicine line + 250.00 lab line: a subtotal covers both sections.
+        subtotal=None if "subtotal" in billdoc_nulls else Decimal("272.00"),
+        discount_total=None if "discount_total" in billdoc_nulls else None,
+        tax_total=None if "tax_total" in billdoc_nulls else Decimal("32.64"),
+        grand_total=None if "grand_total" in billdoc_nulls else Decimal("304.64"),
         patient_name=None if "patient_name" in billdoc_nulls else "A. Kulkarni",
         bill_date=None if "bill_date" in billdoc_nulls else dt.date(2026, 3, 14),
         run_item_counts=[3, 3, 3],
@@ -265,7 +282,11 @@ def test_unidentifiable_line_is_not_a_critical_claim(side: str) -> None:
     result = engine.reconcile(
         Prescription(overall_legibility=0.9, run_item_counts=[3, 3, 3],
                      items=[PrescribedItem(**rx)]),
-        PharmacyBill(run_item_counts=[3, 3, 3], items=[BilledItem(**bl)]),
+        PharmacyBill(
+            pharmacy_licence_no="TN/2019/337821",
+            run_item_counts=[3, 3, 3],
+            items=[BilledItem(**bl)],
+        ),
         processing_ms=0,
     )
     assert not criticals(result)
@@ -279,7 +300,11 @@ def test_null_strength_no_longer_suppresses_brand_substitution() -> None:
     result = engine.reconcile(
         Prescription(overall_legibility=0.9, run_item_counts=[3, 3, 3],
                      items=[PrescribedItem(**rx)]),
-        PharmacyBill(run_item_counts=[3, 3, 3], items=[BilledItem(**bl)]),
+        PharmacyBill(
+            pharmacy_licence_no="TN/2019/337821",
+            run_item_counts=[3, 3, 3],
+            items=[BilledItem(**bl)],
+        ),
         processing_ms=0,
     )
     substitution = next(f for f in result.findings if f.rule_code == "BRAND_SUBSTITUTION")

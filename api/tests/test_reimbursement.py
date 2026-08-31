@@ -40,7 +40,7 @@ def rx(*names: str) -> Prescription:
 
 def bill(*rows: tuple[str, str | None]) -> PharmacyBill:
     return PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[
             BilledItem(
                 item_id=f"bill-{i:02d}", raw_text=name, drug_name=name,
@@ -88,7 +88,7 @@ def test_a_schedule_h_line_with_nothing_behind_it_is_not_eligible() -> None:
 def test_a_discrepancy_on_the_matched_line_needs_review() -> None:
     prescription = rx("Telma")
     billed = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[
             BilledItem(
                 item_id="bill-01", raw_text="TELMA", drug_name="Telma",
@@ -124,7 +124,7 @@ def test_a_line_whose_check_could_not_run_needs_review_not_eligible() -> None:
         ],
     )
     billed = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[
             BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
                        strength_value=650.0, strength_unit="mg", form="tablet",
@@ -174,7 +174,7 @@ def test_a_lab_line_is_assessed_too() -> None:
                               confidence=0.9)],
     )
     billed = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         tests=[
             BilledTest(item_id="billtest-01", raw_text="CBC", test_name="CBC",
                        line_total=Decimal("450.00"), quantity=1.0, confidence=0.9),

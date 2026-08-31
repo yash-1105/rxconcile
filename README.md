@@ -194,3 +194,19 @@ make list-models # what this GCP project can actually reach
 `make typecheck` first proves mypy is genuinely running strict. It regressed
 silently once — the repo root has no mypy config, so a bare `mypy` used defaults
 while the project reported "strict clean" for weeks.
+
+## Known limitation: Indian drug licence numbers cannot be format-validated
+
+There is no national format and no checksum for a drug licence number. They are
+issued under the Drugs and Cosmetics Rules by 36 separate state and union
+territory authorities, each with its own convention — `TN/2019/337821`,
+`KA-B-21/1234`, `20B/MH/1998/554` and `DL-20B-441` are all plausible, and none
+can be distinguished from a typo by pattern alone.
+
+So this build checks only whether a licence number is **printed**, and never
+whether it is well-formed. Rejecting a valid licence would put a compliance
+accusation against a pharmacy on the basis of a format this system invented,
+which is a worse failure than not checking at all.
+
+Verifying a licence properly requires the issuing state's register. Several
+states publish one; there is no single national endpoint.

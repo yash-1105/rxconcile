@@ -63,7 +63,9 @@ def rx(*items: PrescribedItem, **kwargs: object) -> Prescription:
 
 
 def bill(*items: BilledItem, **kwargs: object) -> PharmacyBill:
-    base: dict[str, Any] = {"items": list(items)}
+    # A compliant retail invoice carries a drug licence number; a fixture
+    # without one is legitimately not a clean bill.
+    base: dict[str, Any] = {"items": list(items), "pharmacy_licence_no": "TN/2019/337821"}
     base.update(kwargs)
     return PharmacyBill.model_validate(base)
 
@@ -759,7 +761,7 @@ def test_canonical_carries_the_salt_for_every_line() -> None:
         ],
     )
     bill = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[
             BilledItem(item_id=f"bill-{i:02d}", raw_text=name, drug_name=name, confidence=0.9)
             for i, name in enumerate(brands, start=1)
@@ -786,7 +788,7 @@ def test_an_unresolved_line_is_reported_as_unresolved_not_omitted() -> None:
             PrescribedItem(item_id="rx-01", raw_text="Zzqx [?]", drug_name=None, confidence=0.4)
         ],
     )
-    bill = PharmacyBill(currency="INR", items=[])
+    bill = PharmacyBill(currency="INR", pharmacy_licence_no="TN/2019/337821", items=[])
     result = engine.reconcile(prescription, bill, processing_ms=0)
 
     entry = next(c for c in result.canonical if c.item_id == "rx-01")
@@ -798,7 +800,7 @@ def test_an_unresolved_line_is_reported_as_unresolved_not_omitted() -> None:
 
 def test_canonical_ids_must_reference_real_lines() -> None:
     prescription = Prescription(overall_legibility=0.9, items=[])
-    bill = PharmacyBill(currency="INR", items=[])
+    bill = PharmacyBill(currency="INR", pharmacy_licence_no="TN/2019/337821", items=[])
     with pytest.raises(ValidationError, match=r"canonical\[0\].item_id"):
         ReconciliationResult(
             verdict="match", score=100.0, findings=[], matched_pairs=[],

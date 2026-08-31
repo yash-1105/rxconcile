@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "2026-08-28.1"
+PROMPT_VERSION: Final[str] = "2026-08-31.1"
 
 _NEVER_GUESS: Final[str] = """
 ABSOLUTE RULE — NEVER INVENT A VALUE
@@ -261,6 +261,20 @@ lines to do it.
 PACK SIZE
 Return `pack_size` EXACTLY as printed — "10'S", "1x10", "15ML", "STRIP OF 10".
 Do not parse it, convert it, or reduce it to a number.
+
+IDENTIFIERS ON THE LETTERHEAD
+Return `gstin` exactly as printed, usually labelled GSTIN or GST No. and 15
+characters long. **Transcribe it character for character and do not correct it.**
+Software verifies its check digit, and a helpful correction would defeat that.
+Return `pharmacy_licence_no` (D.L. No., DL No., Drug Licence) as printed, and
+`pharmacy_address` as the address block appears. Null for anything not printed.
+
+DISCOUNTS
+If the bill has a discount column, return `discount` per line and
+`discount_total` for the bill, IN CURRENCY. If there is no discount column,
+return null -- **not zero.** Null means the bill does not say; zero means the
+bill says nothing was taken off, and software treats those differently when it
+checks the arithmetic.
 
 MONEY
 Return `unit_price`, `line_total`, `subtotal`, `tax_total` and `grand_total` as

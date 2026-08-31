@@ -86,6 +86,8 @@ def _summary_sheet(sheet: Worksheet, context: ExportContext) -> None:
          purse.not_eligible_line_count),
         (CATEGORY_LABEL["needs_review"], purse.needs_review_total,
          purse.needs_review_line_count),
+        (CATEGORY_LABEL["non_medicine"], purse.non_medicine_total,
+         purse.non_medicine_line_count),
     ):
         sheet.cell(row=row, column=1, value=label).font = Font(bold=True)
         sheet.cell(row=row, column=2, value=f"{money(purse.currency, total)} ({count} lines)")

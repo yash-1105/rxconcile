@@ -39,7 +39,7 @@ def result_with_discrepancy() -> ReconciliationResult:
         ],
     )
     bill = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[
             BilledItem(item_id="bill-01", raw_text="TELMA 80MG", drug_name="Telma",
                        strength_value=80.0, strength_unit="mg", form="tablet",
@@ -64,7 +64,7 @@ def lab_only_result() -> ReconciliationResult:
                               confidence=0.9)],
     )
     bill = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         tests=[BilledTest(item_id="billtest-01", raw_text="CBC", test_name="CBC",
                           quantity=1.0, line_total=Decimal("450.00"), confidence=0.9)],
     )
@@ -344,7 +344,7 @@ def schedule_h_result() -> ReconciliationResult:
         ],
     )
     bill = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[
             BilledItem(item_id="bill-01", raw_text="DOLO 650", drug_name="Dolo",
                        strength_value=650.0, strength_unit="mg", form="tablet",

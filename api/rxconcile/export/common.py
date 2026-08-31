@@ -35,6 +35,7 @@ CATEGORY_LABEL: Final[dict[str, str]] = {
     "eligible": "Covered by prescription",
     "not_eligible": "Not on prescription",
     "needs_review": "Needs a manual check",
+    "non_medicine": "Not a medicine",
 }
 
 
@@ -136,7 +137,9 @@ _REMARKS: Final[tuple[tuple[str, str], ...]] = (
     ("TEST_DUPLICATE", "Billed more than once"),
     ("PANEL_PARTIAL", "Only part of the ordered panel was billed"),
     ("BRAND_SUBSTITUTION", "Brand substitution"),
+    ("LINE_TOTAL_MISMATCH", "Line total does not match quantity x rate"),
     ("QUANTITY_AMBIGUOUS", "Quantity could not be confirmed"),
+    ("NON_MEDICINE_ITEM", "Not a medicine"),
     ("STRENGTH_UNIT_UNSTATED", "Strength not printed on one document"),
     ("TEST_UNRESOLVED", "Not a test name the system recognises"),
 )
@@ -224,6 +227,10 @@ _SPECIFICITY: Final[tuple[str, ...]] = (
     "TEST_NOT_BILLED",
     "BILL_NOT_PRESCRIBED",
     "RX_NOT_BILLED",
+    "LINE_TOTAL_MISMATCH",
+    "GSTIN_INVALID",
+    "LICENCE_ABSENT",
+    "NON_MEDICINE_ITEM",
 )
 
 _SEVERITY_RANK: Final[dict[str, int]] = {"critical": 0, "warning": 1, "info": 2}

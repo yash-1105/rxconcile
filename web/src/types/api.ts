@@ -63,6 +63,8 @@ export interface BilledItem {
   pack_size: string | null
   units_basis: UnitsBasis | null
   unit_price: string | null
+  /** Line discount as printed. Null means no discount column, not zero. */
+  discount: string | null
   line_total: string | null
   batch_no: string | null
   hsn_code: string | null
@@ -128,6 +130,8 @@ export interface Prescription {
 export interface PharmacyBill {
   pharmacy_name: string | null
   pharmacy_licence_no: string | null
+  gstin: string | null
+  pharmacy_address: string | null
   bill_no: string | null
   bill_date: string | null
   patient_name: string | null
@@ -135,6 +139,7 @@ export interface PharmacyBill {
   /** Lab lines. A lab invoice populates this with `items` empty, and vice versa. */
   tests: BilledTest[]
   subtotal: string | null
+  discount_total: string | null
   tax_total: string | null
   grand_total: string | null
   currency: string
@@ -150,7 +155,11 @@ export interface PharmacyBill {
  * because prescriptions print brands rather than compositions. This is the
  * lookup result for that brand, kept separate so the two are never conflated.
  */
-export type ReimbursementCategory = 'eligible' | 'not_eligible' | 'needs_review'
+export type ReimbursementCategory =
+  | 'eligible'
+  | 'not_eligible'
+  | 'needs_review'
+  | 'non_medicine'
 
 export interface ReimbursementLine {
   item_id: string
@@ -176,6 +185,8 @@ export interface ReimbursementSummary {
   not_eligible_line_count: number
   needs_review_total: string
   needs_review_line_count: number
+  non_medicine_total: string
+  non_medicine_line_count: number
   /** Billed lines with no printed amount: excluded from the totals above. */
   lines_without_amount: number
   currency: string

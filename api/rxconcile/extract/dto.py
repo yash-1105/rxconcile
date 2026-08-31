@@ -177,6 +177,11 @@ class BilledItemDTO(_DTO):
         "Set ONLY if the bill says so explicitly. Null if it does not. Never guess.",
     )
     unit_price: float | None = Field(default=None, description="Rate or MRP per unit.")
+    discount: float | None = Field(
+        default=None,
+        description="Line discount IN CURRENCY, if the bill prints one. Null if there "
+        "is no discount column. Never write 0 for 'no discount shown'.",
+    )
     line_total: float | None = Field(default=None, description="Net amount for this line.")
     batch_no: str | None = Field(default=None)
     hsn_code: str | None = Field(default=None)
@@ -215,7 +220,17 @@ class PharmacyBillDTO(_DTO):
     """A pharmacy bill as returned by the model."""
 
     pharmacy_name: str | None = Field(default=None)
-    pharmacy_licence_no: str | None = Field(default=None)
+    pharmacy_licence_no: str | None = Field(
+        default=None, description="Drug licence / D.L. No. exactly as printed."
+    )
+    gstin: str | None = Field(
+        default=None,
+        description="GSTIN / GST No. exactly as printed, 15 characters. Do not correct "
+        "or complete it -- a transcription fix would defeat the checksum check.",
+    )
+    pharmacy_address: str | None = Field(
+        default=None, description="The pharmacy's address block as printed."
+    )
     bill_no: str | None = Field(default=None)
     bill_date_raw: str | None = Field(
         default=None, description="The bill date EXACTLY as printed. Do not reformat."
@@ -231,6 +246,9 @@ class PharmacyBillDTO(_DTO):
         "only these and no medicines; a pharmacy bill may have none. Both are normal.",
     )
     subtotal: float | None = Field(default=None)
+    discount_total: float | None = Field(
+        default=None, description="Bill-level discount in currency, if printed."
+    )
     tax_total: float | None = Field(default=None, description="Total GST/tax.")
     grand_total: float | None = Field(default=None, description="Net payable.")
     currency: str | None = Field(default=None, description="ISO code, e.g. INR.")

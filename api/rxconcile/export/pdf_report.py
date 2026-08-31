@@ -221,6 +221,7 @@ def build_pdf(context: ExportContext) -> bytes:
         ("eligible", purse.eligible_total, purse.eligible_line_count),
         ("not_eligible", purse.not_eligible_total, purse.not_eligible_line_count),
         ("needs_review", purse.needs_review_total, purse.needs_review_line_count),
+        ("non_medicine", purse.non_medicine_total, purse.non_medicine_line_count),
     ):
         totals.append([
             _p(CATEGORY_LABEL[key], BODY),

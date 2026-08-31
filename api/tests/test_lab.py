@@ -44,7 +44,7 @@ def prescription(
 
 def bill(*names: str) -> PharmacyBill:
     return PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         tests=[
             BilledTest(
                 item_id=f"billtest-{index:02d}", raw_text=f"{name} .... 250.00",
@@ -324,7 +324,7 @@ def test_test_ids_and_item_ids_share_one_namespace_without_collision() -> None:
 def test_a_test_billed_with_quantity_two_is_a_duplicate() -> None:
     """The other shape of repeat billing: one line, quantity above one."""
     bl = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         tests=[BilledTest(item_id="billtest-01", raw_text="CBC x2", test_name="CBC",
                           quantity=2.0, confidence=0.9)],
     )
@@ -349,7 +349,7 @@ def test_a_missing_quantity_records_that_repeat_billing_was_unchecked() -> None:
 
 def test_quantity_of_one_is_not_a_duplicate() -> None:
     bl = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         tests=[BilledTest(item_id="billtest-01", raw_text="CBC", test_name="CBC",
                           quantity=1.0, confidence=0.9)],
     )
@@ -368,7 +368,7 @@ def test_a_pharmacy_only_bill_does_not_accuse_ordered_tests() -> None:
     from rxconcile.models import BilledItem
 
     bl = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[BilledItem(item_id="bill-01", raw_text="DOLO 650", drug_name="Dolo",
                           confidence=0.9)],
     )
@@ -520,7 +520,7 @@ def test_a_bill_with_any_lab_line_is_never_treated_as_a_missing_lab_bill() -> No
     ):
         bl = bill(*billed_names)
         bl = PharmacyBill(
-            currency="INR",
+            currency="INR", pharmacy_licence_no="TN/2019/337821",
             items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
                               confidence=0.9)],
             tests=bl.tests,
@@ -535,7 +535,7 @@ def test_a_bill_with_no_lab_lines_at_all_still_reports_the_missing_document() ->
     from rxconcile.models import BilledItem
 
     bl = PharmacyBill(
-        currency="INR",
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
         items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
                           confidence=0.9)],
     )

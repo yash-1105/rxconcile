@@ -19,6 +19,7 @@ const LABEL: Record<ReimbursementCategory, string> = {
   eligible: 'Covered by prescription',
   not_eligible: 'Not on prescription',
   needs_review: 'Needs a manual check',
+  non_medicine: 'Not a medicine',
 }
 
 /** One line each, for a reader who has never seen a rule code. */
@@ -26,6 +27,7 @@ const BLURB: Record<ReimbursementCategory, string> = {
   eligible: "Billed items that match the doctor's prescription.",
   not_eligible: 'Billed items with nothing on the prescription behind them.',
   needs_review: 'Someone needs to look at these before approving.',
+  non_medicine: 'Cosmetics, devices, supplements and charges — usually out of scope.',
 }
 
 /** Grey for anything unresolved. Red only where the bill is unsupported. */
@@ -33,6 +35,8 @@ const MARK: Record<ReimbursementCategory, SpineState> = {
   eligible: 'clean',
   not_eligible: 'problem',
   needs_review: 'unchecked',
+  // Grey, never red. A delivery charge is out of scope, not an accusation.
+  non_medicine: 'unchecked',
 }
 
 function money(currency: string, amount: string): string {
@@ -156,6 +160,17 @@ export function Reimbursement({ summary }: { summary: ReimbursementSummary | und
           summary={summary}
         />
       </div>
+      {summary.non_medicine_line_count > 0 ? (
+        <div className="lg:w-1/3">
+          <Bucket
+            category="non_medicine"
+            total={summary.non_medicine_total}
+            count={summary.non_medicine_line_count}
+            currency={summary.currency}
+            summary={summary}
+          />
+        </div>
+      ) : null}
       {summary.lines_without_amount > 0 ? (
         <p className="t-small text-muted">
           {summary.lines_without_amount} billed{' '}

@@ -33,6 +33,11 @@ const DISCREPANCY_CODES = new Set([
   'TEST_NOT_PRESCRIBED',
   'PANEL_PARTIAL',
   'TEST_DUPLICATE',
+  'LINE_TOTAL_MISMATCH',
+  'SUBTOTAL_MISMATCH',
+  'GRAND_TOTAL_MISMATCH',
+  'GSTIN_INVALID',
+  'LICENCE_ABSENT',
 ])
 
 /** Findings that say a check was attempted but could not conclude. */
@@ -46,7 +51,12 @@ const UNVERIFIED_CODES = new Set([
 const NOT_RUN_CODES = new Set(['CHECK_UNAVAILABLE'])
 
 /** Worth telling the client, but not a problem. */
-const NOTED_CODES = new Set(['BRAND_SUBSTITUTION'])
+const NOTED_CODES = new Set([
+  'BRAND_SUBSTITUTION',
+  'NON_MEDICINE_ITEM',
+  'GSTIN_STATE_MISMATCH',
+  'TAX_INCLUSIVE_PRICING',
+])
 
 export interface Grouped {
   discrepancies: Finding[]
@@ -192,6 +202,30 @@ export function phrase(
       return `“${String(detail['written'])}” on the ${String(
         detail['side'],
       )} is not a test this build recognises, so it could not be checked`
+    case 'LINE_TOTAL_MISMATCH':
+      return `${String(detail['quantity'])} x ${String(detail['unit_price'])} comes to ${String(
+        detail['expected'],
+      )}, but this line is charged ${String(detail['charged'])}`
+    case 'SUBTOTAL_MISMATCH':
+      return `The line totals come to ${String(
+        detail['expected'],
+      )}, but the subtotal is printed as ${String(detail['printed'])}`
+    case 'GRAND_TOTAL_MISMATCH':
+      return `Subtotal plus tax comes to ${String(
+        detail['expected'],
+      )}, but the amount payable is printed as ${String(detail['printed'])}`
+    case 'GSTIN_INVALID':
+      return `The printed GST number is not a valid GSTIN format — ${String(detail['reason'])}`
+    case 'GSTIN_STATE_MISMATCH':
+      return `The GSTIN is registered in ${String(
+        detail['gstin_state'],
+      )} but the bill's address is in ${String(detail['address_state'])}`
+    case 'LICENCE_ABSENT':
+      return 'No drug licence number is printed on this bill'
+    case 'NON_MEDICINE_ITEM':
+      return `${String(detail['line'])} is not a medicine and is usually outside reimbursement`
+    case 'TAX_INCLUSIVE_PRICING':
+      return 'The printed rates appear to include tax, so the grand-total check was skipped'
     case 'CHECK_UNAVAILABLE':
       return `${String(detail['check'])} — needs ${
         (detail['missing'] as string[] | undefined)?.join(', ') ?? 'missing input'
@@ -297,7 +331,9 @@ const REMARKS: ReadonlyArray<readonly [string, string]> = [
   ['QUANTITY_EXCESS', 'More dispensed than the course requires'],
   ['DUPLICATE_THERAPY', 'Same medicine on more than one line'],
   ['BRAND_SUBSTITUTION', 'Brand substitution'],
+  ['LINE_TOTAL_MISMATCH', 'Line total does not match quantity x rate'],
   ['QUANTITY_AMBIGUOUS', 'Quantity could not be confirmed'],
+  ['NON_MEDICINE_ITEM', 'Not a medicine'],
   ['STRENGTH_UNIT_UNSTATED', 'Strength not printed on one document'],
 ]
 
