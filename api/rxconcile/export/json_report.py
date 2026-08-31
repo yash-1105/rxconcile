@@ -1,7 +1,7 @@
 """JSON export for HRMS ingestion.
 
 The full ReconciliationResult verbatim, wrapped in an envelope carrying the
-employee fields and the disclaimer. Verbatim matters: an HRMS integrator
+employee fields. Verbatim matters: an HRMS integrator
 diffing this against the live API response should find the result identical, so
 nothing here reshapes, rounds or prunes it.
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from rxconcile.export.common import DISCLAIMER, REIMBURSEMENT_NOTE, ExportContext
+from rxconcile.export.common import REIMBURSEMENT_NOTE, ExportContext
 
 #: Bump when the envelope changes shape. The `result` object inside it is
 #: versioned by the API, not by this.
@@ -23,7 +23,6 @@ def build_json(context: ExportContext) -> bytes:
     payload = {
         "envelope_version": ENVELOPE_VERSION,
         "generated_from": "rxconcile",
-        "disclaimer": DISCLAIMER,
         "reimbursement_note": REIMBURSEMENT_NOTE,
         "scan": {
             "id": context.scan_id,

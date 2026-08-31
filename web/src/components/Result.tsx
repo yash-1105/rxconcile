@@ -316,9 +316,17 @@ export function Result({
   // Non-medicine noise is filtered from the DEFAULT view only. Technical
   // details shows everything, and the header count follows whichever list is
   // on screen so the two always agree.
+  // Checks about the DOCUMENT rather than a line. They attach to no billed
+  // line, so no table row can carry them, and they are listed with everything
+  // else rather than in a panel of their own. They are NOT dropped: a check
+  // that could not run is not a check that passed, and one that silently
+  // vanishes is the exact failure this project keeps fixing.
+  const documentChecks = grouped.notRun.filter(
+    (f) => f.prescribed_ref === null && f.billed_ref === null,
+  )
   const visible = technical
-    ? [...grouped.discrepancies, ...grouped.noted]
-    : hideNonMedicineNoise([...grouped.discrepancies, ...grouped.noted])
+    ? [...grouped.discrepancies, ...grouped.noted, ...documentChecks]
+    : [...hideNonMedicineNoise([...grouped.discrepancies, ...grouped.noted]), ...documentChecks]
   const analysis = groupByItem(visible, result)
   const medicineCounts = countRows(medicineRowsOf(result))
   const testCounts = countRows(testRowsOf(result))
@@ -327,14 +335,6 @@ export function Result({
   // Counted from the reimbursement assessment rather than from finding codes:
   // that is where a reader can now see the reason for each one.
   const manualChecks = result.reimbursement?.needs_review_line_count ?? 0
-  // Checks about the DOCUMENT rather than a line. These attach to no billed
-  // line, so the reimbursement card cannot carry them, and removing the old
-  // "checks could not run" panel left them visible nowhere but the raw JSON.
-  // A date check that silently vanishes is the exact failure this project
-  // keeps fixing.
-  const documentChecks = grouped.notRun.filter(
-    (f) => f.prescribed_ref === null && f.billed_ref === null,
-  )
 
   return (
     <div className="space-y-10">
@@ -399,29 +399,6 @@ export function Result({
         </Section>
       ) : null}
 
-      {documentChecks.length > 0 ? (
-        <div className="rounded border border-ink-200 bg-paper px-5 py-4">
-          <Disclosure
-            summary={`${documentChecks.length} ${
-              documentChecks.length === 1 ? 'check' : 'checks'
-            } about the documents could not run`}
-          >
-            <p className="t-small mb-2 max-w-3xl text-muted">
-              These were not performed, because the documents did not carry the values
-              they need. <strong className="font-semibold text-ink">They are not
-              passes.</strong>
-            </p>
-            <ul className="space-y-1">
-              {documentChecks.map((finding, index) => (
-                <li key={`doc-check-${index}`} className="t-small text-muted">
-                  {say(finding)}
-                </li>
-              ))}
-            </ul>
-          </Disclosure>
-        </div>
-      ) : null}
-
       {/* 3 — TABLES */}
       <Section title="Medicines">
         <div className="mb-3 flex justify-end">
@@ -432,14 +409,19 @@ export function Result({
           />
         </div>
         <div className="overflow-hidden rounded border border-ink-200 bg-surface">
-          <MedicinesTable
-            result={result}
-            onHover={hoverRow}
-            technical={technical}
-            filter={filters.medicines}
-            decisions={decisions}
-            onDecision={decide}
-          />
+          {/* The table fits without scrolling from 1280px up. Below that it
+              scrolls inside its own card rather than being clipped — a column
+              a phone cannot reach is worse than one it has to scroll to. */}
+          <div className="overflow-x-auto">
+            <MedicinesTable
+              result={result}
+              onHover={hoverRow}
+              technical={technical}
+              filter={filters.medicines}
+              decisions={decisions}
+              onDecision={decide}
+            />
+          </div>
           <BulkDecisions onAll={(d) => decideAll(medicineRowsOf(result), d)} />
         </div>
       </Section>
@@ -453,14 +435,16 @@ export function Result({
           />
         </div>
         <div className="overflow-hidden rounded border border-ink-200 bg-surface">
-          <LabTestsTable
-            result={result}
-            onHover={hoverRow}
-            technical={technical}
-            filter={filters.tests}
-            decisions={decisions}
-            onDecision={decide}
-          />
+          <div className="overflow-x-auto">
+            <LabTestsTable
+              result={result}
+              onHover={hoverRow}
+              technical={technical}
+              filter={filters.tests}
+              decisions={decisions}
+              onDecision={decide}
+            />
+          </div>
           <BulkDecisions onAll={(d) => decideAll(testRowsOf(result), d)} />
         </div>
       </Section>

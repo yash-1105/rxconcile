@@ -113,18 +113,11 @@ export function Shell({
       <SpineRule className="sticky top-0 h-screen self-start" />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className="flex-1 px-6 py-8 sm:px-10">
-          <div className="mx-auto w-full max-w-5xl">{children}</div>
+        {/* One width for the whole page. Everything inside shares these edges,
+            so the summary panel, the tables and every other widget line up. */}
+        <main className="min-w-0 flex-1 px-6 py-8 sm:px-10">
+          <div className="mx-auto w-full max-w-[1560px]">{children}</div>
         </main>
-        <footer className="px-6 py-5 sm:px-10">
-          <div className="mx-auto max-w-5xl">
-            <p className="t-small text-muted">
-              Proof of concept. Automated document comparison only, not clinical verification and
-              not an insurance determination. Nothing here approves or rejects anything.
-              All findings require human review.
-            </p>
-          </div>
-        </footer>
       </div>
     </div>
   )

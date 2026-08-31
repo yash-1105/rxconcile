@@ -12,11 +12,12 @@ import zipfile
 from datetime import datetime
 from decimal import Decimal
 from io import BytesIO
+from typing import Final
 
 import pytest
 
 from rxconcile.export import ExportContext, build_json, build_pdf, build_xlsx
-from rxconcile.export.common import DISCLAIMER, document_gaps
+from rxconcile.export.common import document_gaps
 from rxconcile.models import (
     BilledItem,
     BilledTest,
@@ -96,12 +97,10 @@ def test_json_carries_the_result_verbatim() -> None:
     assert payload["result"] == result.model_dump(mode="json"), "must not reshape the result"
 
 
-def test_json_carries_the_employee_fields_and_disclaimer() -> None:
+def test_json_carries_the_employee_fields() -> None:
     payload = json.loads(build_json(context(result_with_discrepancy())))
     assert payload["scan"]["employee_name"] == "Yash"
     assert payload["scan"]["employee_number"] == "EMP-4417"
-    assert payload["disclaimer"] == DISCLAIMER
-    assert "not an insurance determination" in payload["disclaimer"]
 
 
 # ---------------------------------------------------------------------------
@@ -115,15 +114,13 @@ def test_xlsx_has_a_summary_sheet_and_one_per_table() -> None:
     assert book.sheetnames == ["Summary", "Reimbursement", "Medicines", "Lab tests", "Findings"]
 
 
-def test_xlsx_summary_states_the_disclaimer_and_the_reimbursement_totals() -> None:
+def test_xlsx_summary_states_the_reimbursement_totals() -> None:
     openpyxl = pytest.importorskip("openpyxl")
     result = result_with_discrepancy()
     book = openpyxl.load_workbook(BytesIO(build_xlsx(context(result))))
     text = " ".join(
         str(cell.value) for row in book["Summary"].iter_rows() for cell in row if cell.value
     )
-    assert DISCLAIMER in text
-    assert "not an insurance determination" in text
     assert str(result.reimbursement.not_eligible_total) in text
 
 
@@ -219,13 +216,38 @@ def test_amounts_are_formatted_to_two_decimals() -> None:
     assert money("INR", None) == "not printed"
 
 
-def test_the_disclaimer_footer_does_not_break_mid_word() -> None:
-    import textwrap
+#: Phrases from the disclaimer that used to sit on every export and every
+#: screen. It was removed on request, and "remove it" means no shortened
+#: version survives in a footer, a summary sheet or a JSON envelope either.
+_REMOVED_DISCLAIMER: Final[tuple[str, ...]] = (
+    "Proof of concept",
+    "not clinical verification",
+    "not an insurance determination",
+    "require human review",
+    "approves or rejects",
+)
 
-    lines = textwrap.wrap(DISCLAIMER, width=125)[:2]
-    assert " ".join(lines) == DISCLAIMER, "the whole disclaimer must fit in two lines"
-    for line in lines:
-        assert not line.endswith("-")
+
+def test_no_export_carries_the_removed_disclaimer() -> None:
+    ctx = context(result_with_discrepancy())
+
+    payload = json.loads(build_json(ctx))
+    assert "disclaimer" not in payload
+    as_json = json.dumps(payload)
+
+    book = zipfile.ZipFile(BytesIO(build_xlsx(ctx)))
+    as_xlsx = " ".join(
+        book.read(name).decode("utf-8", "replace")
+        for name in book.namelist()
+        if name.endswith(".xml")
+    )
+
+    # The PDF stores its text compressed, so the wording is checked through the
+    # builder's own inputs rather than the bytes: nothing in this module may
+    # import it, which the import at the top of the file no longer can.
+    for phrase in _REMOVED_DISCLAIMER:
+        assert phrase not in as_json, f"{phrase!r} still in the JSON export"
+        assert phrase not in as_xlsx, f"{phrase!r} still in the workbook"
 
 
 # ---------------------------------------------------------------------------

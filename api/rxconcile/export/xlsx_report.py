@@ -11,7 +11,6 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rxconcile.export.common import (
     CATEGORY_LABEL,
-    DISCLAIMER,
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
@@ -103,11 +102,6 @@ def _summary_sheet(sheet: Worksheet, context: ExportContext) -> None:
                   "not counted as zero",
         )
         row += 1
-
-    row += 1
-    sheet.cell(row=row, column=1, value="Disclaimer").font = Font(bold=True)
-    cell = sheet.cell(row=row, column=2, value=DISCLAIMER)
-    cell.alignment = _WRAP
 
 
 def _findings_sheet(sheet: Worksheet, context: ExportContext) -> None:

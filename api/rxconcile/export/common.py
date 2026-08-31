@@ -10,12 +10,6 @@ from pydantic import BaseModel, ConfigDict
 
 from rxconcile.models import CanonicalMatch, Finding, ReconciliationResult
 
-DISCLAIMER: Final[str] = (
-    "Proof of concept. Automated document comparison only, not clinical verification "
-    "and not an insurance determination. Nothing in this report approves or rejects "
-    "anything. All findings require human review."
-)
-
 REIMBURSEMENT_NOTE: Final[str] = (
     "An assessment of which billed items are supported by the prescription. Coverage "
     "rules, copay tiers and policy limits appear in neither document, are not modelled, "

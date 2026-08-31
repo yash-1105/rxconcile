@@ -1,10 +1,10 @@
 /**
  * The two comparison tables: medicines and lab tests.
  *
- * Each attribute splits into a prescribed column and a billed column under one
- * grouped heading, so the table reads as two halves rather than as eleven
- * unrelated columns. Rows with nothing wrong recede: the eye should land on the
- * flagged rows first.
+ * Each attribute is ONE column showing "prescribed → billed", not two columns
+ * under a grouped heading. Six columns became three, the table fits a 1280px
+ * viewport without scrolling sideways, and Decision — the only thing a reviewer
+ * is here to do — sits fourth instead of past the right edge.
  *
  * Presentation only. Every value shown is read from the response as computed —
  * nothing here derives a quantity, resolves a drug or decides a status. Where a
@@ -36,21 +36,20 @@ import type {
 import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineMark, type SpineState } from './Spine'
 
-
 /**
- * Row colour, alongside the mark.
+ * Row colour, alongside the mark and the status word.
  *
- * Confident tints so a reader can scan the table without reading it. The mark
- * and the status word carry the same meaning in shape and in text, so the table
- * survives being printed or read by someone who cannot separate the hues.
+ * Saturated enough to scan without reading. The mark and the word carry the
+ * same meaning in shape and in text, so the table survives being printed or
+ * read by someone who cannot separate the hues.
  */
 const ROW_TINT: Record<SpineState, string> = {
-  clean: 'bg-emerald-50/70',
-  substitution: 'bg-amber-50/80',
-  warning: 'bg-red-50/60',
-  problem: 'bg-red-50/80',
-  unchecked: 'bg-ink-100/70',
-  'out-of-scope': 'bg-ink-100/70',
+  clean: 'bg-tint-clean',
+  substitution: 'bg-tint-substitution',
+  warning: 'bg-tint-warning',
+  problem: 'bg-tint-problem',
+  unchecked: 'bg-tint-neutral',
+  'out-of-scope': 'bg-tint-neutral',
 }
 
 export function TableFilter({
@@ -98,22 +97,22 @@ function DecisionCell({
 }) {
   const claimable = isClaimable(row as never)
   const current = decisions[row.key]?.decision ?? defaultDecision(row as never)
-  const remark = decisions[row.key]?.remark ?? ''
+  const remarkText = decisions[row.key]?.remark ?? ''
   return (
-    <td className="border-l border-ink-200 px-4 py-4 align-top">
+    <td className="border-l border-ink-200/60 px-3 py-5 align-top">
       <div className="flex gap-1.5">
         {(['accept', 'reject'] as const).map((choice) => (
           <button
             key={choice}
             type="button"
             aria-pressed={current === choice}
-            onClick={() => onChange(row.key, current === choice ? 'unset' : choice, remark)}
+            onClick={() => onChange(row.key, current === choice ? 'unset' : choice, remarkText)}
             className={`t-small rounded border px-2.5 py-1 capitalize ${
               current === choice
                 ? choice === 'accept'
-                  ? 'border-seal bg-seal text-white'
-                  : 'border-flag bg-flag text-white'
-                : 'border-ink-300 bg-surface text-muted hover:text-ink'
+                  ? 'border-seal bg-seal font-medium text-white'
+                  : 'border-flag bg-flag font-medium text-white'
+                : 'border-ink-400/60 bg-surface/80 text-muted hover:text-ink'
             }`}
           >
             {choice}
@@ -127,10 +126,10 @@ function DecisionCell({
       ) : null}
       {current === 'reject' ? (
         <input
-          value={remark}
+          value={remarkText}
           onChange={(event) => onChange(row.key, 'reject', event.target.value)}
           placeholder="Why?"
-          className="t-small mt-1.5 w-full rounded bg-ink-50 px-2 py-1 text-ink placeholder:text-ink-400"
+          className="t-small mt-1.5 w-full rounded bg-surface/90 px-2 py-1 text-ink placeholder:text-ink-400"
         />
       ) : null}
     </td>
@@ -164,20 +163,60 @@ export function BulkDecisions({
 
 function RowNumber({ index }: { index: number }) {
   return (
-    <td className="t-small px-4 py-4 align-top text-muted tabular-nums">{index + 1}</td>
+    <td className="t-small px-3 py-5 align-top text-muted tabular-nums">{index + 1}</td>
   )
 }
 
-function Val({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {
-  const empty = children === null || children === undefined || children === ''
-  if (empty) {
-    return (
-      <span className="t-data text-unknown" title="Not present on the document">
-        —
-      </span>
-    )
+/** An absent value. Never a zero, never a blank cell that reads as agreement. */
+function Absent() {
+  return (
+    <span className="t-data text-unknown" title="Not present on the document">
+      —
+    </span>
+  )
+}
+
+/**
+ * One attribute, as prescribed and as billed.
+ *
+ * When only one side exists there is NO arrow: an unmatched line was never
+ * compared, and "Hexigel → —" would draw a comparison that did not happen. The
+ * row status and the remark already say what became of it.
+ *
+ * When both sides agree the value is printed once. Repeating "tablet → tablet"
+ * on every clean row is noise that buries the rows where the two differ.
+ */
+function Pair({
+  rx,
+  bill,
+  marking,
+  quiet,
+  mono = true,
+}: {
+  rx: string | null
+  bill: string | null
+  /** How loudly this field is flagged, from the engine's severity. */
+  marking?: string
+  quiet?: boolean
+  mono?: boolean
+}) {
+  const type = mono ? 't-data' : 't-small'
+  const tone = quiet ? 'text-muted' : 'text-ink'
+  if (rx === null && bill === null) return <Absent />
+  if (rx === null || bill === null) {
+    return <span className={`${type} ${tone} whitespace-nowrap`}>{rx ?? bill}</span>
   }
-  return <span className={`t-data ${muted ? 'text-muted' : 'text-ink'}`}>{children}</span>
+  if (rx === bill) return <span className={`${type} ${tone} whitespace-nowrap`}>{rx}</span>
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-1">
+      <span className={`${type} whitespace-nowrap text-muted`}>{rx}</span>
+      <span className="t-small text-ink-400" aria-label="billed as">
+        →
+      </span>
+      {/* The billed side is the one that changed, so it is the one marked. */}
+      <span className={`${type} whitespace-nowrap ${marking ?? tone}`}>{bill}</span>
+    </span>
+  )
 }
 
 function strengthOf(item: PrescribedItem | BilledItem | null): string | null {
@@ -233,14 +272,17 @@ const FIELD_OF: Record<string, 'drug' | 'strength' | 'form' | 'qty'> = {
   SCHEDULE_H_UNBACKED: 'drug',
 }
 
+/** A changed value has to be unmissable against an already-tinted row. */
 const MARK_CLASS: Record<Severity, string> = {
-  critical: 'bg-flag/10 ring-1 ring-flag/40',
-  warning: 'bg-caution/10 ring-1 ring-caution/40',
-  info: 'bg-ink-100',
+  critical: 'rounded bg-flag px-1.5 font-semibold text-white',
+  warning: 'rounded bg-caution px-1.5 font-semibold text-white',
+  info: 'rounded bg-ink-200 px-1.5 text-ink',
 }
 
 /** The loudest marking any finding puts on one field of a row. */
-function marksFor(findings: Finding[]): Partial<Record<'drug' | 'strength' | 'form' | 'qty', Severity>> {
+function marksFor(
+  findings: Finding[],
+): Partial<Record<'drug' | 'strength' | 'form' | 'qty', Severity>> {
   const rank: Record<Severity, number> = { critical: 0, warning: 1, info: 2 }
   const out: Partial<Record<'drug' | 'strength' | 'form' | 'qty', Severity>> = {}
   for (const found of findings) {
@@ -254,36 +296,46 @@ function marksFor(findings: Finding[]): Partial<Record<'drug' | 'strength' | 'fo
   return out
 }
 
-function mark(severity: Severity | undefined): string {
-  return severity ? `rounded px-1.5 ${MARK_CLASS[severity]}` : ''
+/**
+ * Column widths, as shares of the table.
+ *
+ * Fixed rather than automatic. Left to the browser, the longest salt in the
+ * batch decided how much room the Drug column took and the Remark sentence got
+ * whatever was left — so the column carrying the explanation was the narrowest
+ * on the page. `max-width` does not bind on a cell in the automatic algorithm,
+ * so the layout has to be stated.
+ */
+const MEDICINE_COLS: readonly string[] = [
+  '3.5%', // #
+  '14%', //  Status — sized for the longest word, SUBSTITUTED
+  '23%', //  Remark — the sentence, and the widest column on purpose
+  '14.5%', // Decision
+  '17%', //  Drug, with the salt wrapping beneath it
+  '10%', //  Strength
+  '7.5%', // Form
+  '11.5%', // Qty
+]
+
+const TEST_COLS: readonly string[] = ['4%', '13%', '30%', '16%', '37%']
+
+/** Technical mode adds an Ids column, which takes its share off the widest. */
+function withIds(widths: readonly string[], technical: boolean): readonly string[] {
+  return technical ? [...widths, '10%'] : widths
 }
 
-function GroupHead({
-  label,
-  span = 2,
-}: {
-  label: string
-  span?: number
-}) {
+function Columns({ widths }: { widths: readonly string[] }) {
   return (
-    <th
-      colSpan={span}
-      scope="colgroup"
-      className="t-micro border-b border-l border-ink-200 px-4 pt-3 pb-1.5 text-center text-muted first:border-l-0"
-    >
-      {label}
-    </th>
+    <colgroup>
+      {widths.map((width, index) => (
+        <col key={index} style={{ width }} />
+      ))}
+    </colgroup>
   )
 }
 
-function SubHead({ label, side }: { label: string; side?: 'rx' | 'bill' }) {
+function Head({ label, className = '' }: { label: string; className?: string }) {
   return (
-    <th
-      scope="col"
-      className={`t-micro px-3 pb-2 text-left font-normal text-muted ${
-        side === 'rx' ? 'border-l border-ink-200' : ''
-      }`}
-    >
+    <th scope="col" className={`t-colhead px-3 pb-2.5 text-left ${className}`}>
       {label}
     </th>
   )
@@ -291,13 +343,13 @@ function SubHead({ label, side }: { label: string; side?: 'rx' | 'bill' }) {
 
 function StatusCell({ status, partial }: { status: SpineState; partial: boolean }) {
   return (
-    <td className="px-4 py-4 align-top whitespace-nowrap">
-      <span className="inline-flex items-center gap-2">
+    <td className="px-3 py-5 align-top">
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
         <SpineMark state={status} />
-        <span className="t-micro text-muted">{STATUS_LABEL[status]}</span>
+        <span className="t-colhead text-ink">{STATUS_LABEL[status]}</span>
         {partial ? (
           <span
-            className="t-micro text-unknown"
+            className="t-colhead text-unknown"
             title="One check on this line could not be concluded. It is not a discrepancy."
             aria-label="one check could not be concluded"
           >
@@ -310,15 +362,14 @@ function StatusCell({ status, partial }: { status: SpineState; partial: boolean 
 }
 
 /**
- * Remark sits second, immediately after status.
+ * Remark sits third, and wraps.
  *
- * It carries the summary of the row, so it is read first. It used to be pinned
- * to the right edge to stop it scrolling away; leading the row solves that
- * outright and the pin is gone.
+ * It carries the summary of the row, so it is read before any detail. No fixed
+ * width: forcing one was half of what pushed the table past the viewport.
  */
 function RemarkCell({ text }: { text: string }) {
   return (
-    <td className="min-w-[14rem] border-l border-ink-200 px-4 py-4 align-top">
+    <td className="border-l border-ink-200/60 px-3 py-5 align-top">
       {text ? (
         <span className="t-small text-ink">{text}</span>
       ) : (
@@ -347,7 +398,7 @@ export function MedicinesTable({
   const canonical = new Map((result.canonical ?? []).map((c) => [c.item_id, c]))
   if (rows.length === 0) {
     return (
-      <p className="t-small text-muted">
+      <p className="t-small px-4 py-4 text-muted">
         {filter === 'all'
           ? 'Neither document carries a medicine line. Nothing to compare here.'
           : 'No lines match this filter.'}
@@ -355,152 +406,105 @@ export function MedicinesTable({
     )
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[54rem] border-collapse">
-        <thead>
-          <tr>
-            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
-              #
-            </th>
-            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
-              Status
-            </th>
-            {/* Remark leads: it carries the summary and is what a reviewer
-                reads first. */}
-            <th
-              rowSpan={2}
-              scope="col"
-              className="t-micro min-w-[14rem] border-l border-ink-200 px-4 pb-3 text-left text-muted"
+    <table className="w-full min-w-[46rem] table-fixed border-collapse">
+      <Columns widths={withIds(MEDICINE_COLS, technical)} />
+      <thead>
+        <tr className="border-b border-ink-300">
+          <Head label="#" />
+          <Head label="Status" />
+          <Head label="Remark" className="border-l border-ink-200/60" />
+          <Head label="Decision" className="border-l border-ink-200/60" />
+          <Head label="Drug" className="border-l border-ink-200/60" />
+          <Head label="Strength" />
+          <Head label="Form" />
+          <Head label="Qty" />
+          {technical ? <Head label="Ids" className="border-l border-ink-200/60" /> : null}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => {
+          const quiet = row.status === 'clean'
+          const m = marksFor(row.findings)
+          // Only mark a pair when both halves exist: on an unmatched line the
+          // row status already says everything, and painting a lone cell would
+          // imply a comparison that never happened.
+          const pair = row.prescribed !== null && row.billed !== null
+          const at = (field: 'drug' | 'strength' | 'form' | 'qty') => {
+            const severity = pair ? m[field] : undefined
+            return severity ? MARK_CLASS[severity] : undefined
+          }
+          const salt = saltOf(row, canonical)
+          return (
+            <tr
+              key={row.key}
+              onMouseEnter={() =>
+                onHover?.({
+                  prescribedId: row.prescribed?.item_id ?? null,
+                  billedId: row.billed?.item_id ?? null,
+                })
+              }
+              onMouseLeave={() => onHover?.(null)}
+              className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
             >
-              Remark
-            </th>
-            <GroupHead label="Drug" />
-            <th
-              rowSpan={2}
-              scope="col"
-              className="t-micro max-w-[13rem] border-l border-ink-200 px-4 pb-3 text-left text-muted"
-            >
-              Salt
-            </th>
-            <GroupHead label="Strength" />
-            <GroupHead label="Form" />
-            <GroupHead label="Quantity" />
-            {technical ? <GroupHead label="Ids" /> : null}
-            <th
-              rowSpan={2}
-              scope="col"
-              className="t-micro border-l border-ink-200 px-4 pb-3 text-left text-muted"
-            >
-              Decision
-            </th>
-          </tr>
-          <tr className="border-b border-ink-200">
-            <SubHead label="Prescribed" side="rx" />
-            <SubHead label="Billed" />
-            <SubHead label="Prescribed" side="rx" />
-            <SubHead label="Billed" />
-            <SubHead label="Prescribed" side="rx" />
-            <SubHead label="Billed" />
-            <SubHead label="Prescribed" side="rx" />
-            <SubHead label="Billed" />
-            {technical ? (
-              <>
-                <SubHead label="Rx" side="rx" />
-                <SubHead label="Bill" />
-              </>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            const quiet = row.status === 'clean'
-            const m = marksFor(row.findings)
-            // Only mark a pair when both halves exist: on an unmatched line the
-            // row status already says everything, and painting a lone cell
-            // would imply a comparison that never happened.
-            const pair = row.prescribed !== null && row.billed !== null
-            const at = (field: 'drug' | 'strength' | 'form' | 'qty') =>
-              pair ? mark(m[field]) : ''
-            return (
-              <tr
-                key={row.key}
-                onMouseEnter={() =>
-                  onHover?.({
-                    prescribedId: row.prescribed?.item_id ?? null,
-                    billedId: row.billed?.item_id ?? null,
-                  })
-                }
-                onMouseLeave={() => onHover?.(null)}
-                className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
-              >
-                <RowNumber index={index} />
-                <StatusCell status={row.status} partial={row.partial} />
-                <RemarkCell text={remark(row.codes, row.findings)} />
-                <td className="border-l border-ink-200 px-4 py-4">
-                  <span className={at('drug')}>
-                    <Val muted={quiet}>{row.prescribed?.drug_name}</Val>
-                  </span>
-                </td>
-                <td className="px-4 py-4">
-                  <span className={at('drug')}>
-                    <Val muted={quiet}>{row.billed?.drug_name}</Val>
-                  </span>
-                </td>
-                <td className="max-w-[13rem] border-l border-ink-200 px-4 py-4 break-words">
-                  <Val muted>{saltOf(row, canonical)}</Val>
-                </td>
-                <td className="border-l border-ink-200 px-4 py-4">
-                  <span className={at('strength')}>
-                    <Val muted={quiet}>{strengthOf(row.prescribed)}</Val>
-                  </span>
-                </td>
-                <td className="px-4 py-4">
-                  <span className={at('strength')}>
-                    <Val muted={quiet}>{strengthOf(row.billed)}</Val>
-                  </span>
-                </td>
-                <td className="border-l border-ink-200 px-4 py-4">
-                  <span className={at('form')}>
-                    <Val muted={quiet}>{row.prescribed?.form}</Val>
-                  </span>
-                </td>
-                <td className="px-4 py-4">
-                  <span className={at('form')}>
-                    <Val muted={quiet}>{row.billed?.form}</Val>
-                  </span>
-                </td>
-                <td className="border-l border-ink-200 px-4 py-4">
-                  <span className={at('qty')}>
-                    <Val muted={quiet}>{expectedQty(row.findings)}</Val>
-                  </span>
-                </td>
-                <td className="px-4 py-4">
-                  <span className={at('qty')}>
-                    <Val muted={quiet}>{billedQty(row.billed)}</Val>
-                  </span>
-                </td>
-                {technical ? (
-                  <>
-                    <td className="border-l border-ink-200 px-4 py-4">
-                      <span className="t-data text-muted" title={row.prescribed?.raw_text}>
-                        {row.prescribed?.item_id ?? '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="t-data text-muted" title={row.billed?.raw_text}>
-                        {row.billed?.item_id ?? '—'}
-                        {row.similarity !== null ? ` · ${row.similarity.toFixed(2)}` : ''}
-                      </span>
-                    </td>
-                  </>
+              <RowNumber index={index} />
+              <StatusCell status={row.status} partial={row.partial} />
+              <RemarkCell text={remark(row.codes, row.findings)} />
+              <DecisionCell row={row} decisions={decisions} onChange={onDecision} />
+              <td className="border-l border-ink-200/60 px-3 py-5">
+                <Pair
+                  rx={row.prescribed?.drug_name ?? null}
+                  bill={row.billed?.drug_name ?? null}
+                  marking={at('drug')}
+                  quiet={quiet}
+                />
+                {/* Context under the name rather than a column of its own: a
+                    salt is worth reading once you care about a row, and not
+                    worth a share of the width on every row. */}
+                {salt ? (
+                  <p className="t-small mt-0.5 break-words text-muted">{salt}</p>
                 ) : null}
-                <DecisionCell row={row} decisions={decisions} onChange={onDecision} />
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+              </td>
+              <td className="px-3 py-5">
+                <Pair
+                  rx={strengthOf(row.prescribed)}
+                  bill={strengthOf(row.billed)}
+                  marking={at('strength')}
+                  quiet={quiet}
+                />
+              </td>
+              <td className="px-3 py-5">
+                <Pair
+                  rx={row.prescribed?.form ?? null}
+                  bill={row.billed?.form ?? null}
+                  marking={at('form')}
+                  quiet={quiet}
+                  mono={false}
+                />
+              </td>
+              <td className="px-3 py-5">
+                <Pair
+                  rx={expectedQty(row.findings)}
+                  bill={billedQty(row.billed)}
+                  marking={at('qty')}
+                  quiet={quiet}
+                />
+              </td>
+              {technical ? (
+                <td className="border-l border-ink-200/60 px-3 py-5">
+                  <span
+                    className="t-small text-muted"
+                    title={`${row.prescribed?.raw_text ?? ''} / ${row.billed?.raw_text ?? ''}`}
+                  >
+                    {row.prescribed?.item_id ?? '—'} → {row.billed?.item_id ?? '—'}
+                    {row.similarity !== null ? ` · ${row.similarity.toFixed(2)}` : ''}
+                  </span>
+                </td>
+              ) : null}
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
@@ -536,7 +540,7 @@ export function LabTestsTable({
       : 0
 
   if (all.length > 0 && rows.length === 0) {
-    return <p className="t-small text-muted">No lines match this filter.</p>
+    return <p className="t-small px-4 py-4 text-muted">No lines match this filter.</p>
   }
 
   // An empty table reads as a rendering failure or a missed section. These two
@@ -547,7 +551,7 @@ export function LabTestsTable({
     const present = result.prescription.investigations_present ?? null
     if (result.prescription.tests === undefined) {
       return (
-        <p className="t-body text-muted">
+        <p className="t-body px-4 py-4 text-muted">
           This result was recorded before lab tests were reconciled, so it carries no
           investigations data. Nothing here says tests were or were not ordered.
         </p>
@@ -555,7 +559,7 @@ export function LabTestsTable({
     }
     if (present === true) {
       return (
-        <p className="t-body text-ink">
+        <p className="t-body px-4 py-4 text-ink">
           <strong className="font-semibold">
             The investigations section could not be read.
           </strong>{' '}
@@ -566,14 +570,14 @@ export function LabTestsTable({
     }
     if (present === false) {
       return (
-        <p className="t-body text-muted">
+        <p className="t-body px-4 py-4 text-muted">
           No investigations ordered on this prescription. Nothing to compare, and nothing
           missing.
         </p>
       )
     }
     return (
-      <p className="t-body text-ink">
+      <p className="t-body px-4 py-4 text-ink">
         No investigations section was found on this prescription, but its presence could not be
         confirmed. Read the page before treating this as "no tests ordered".
       </p>
@@ -581,102 +585,69 @@ export function LabTestsTable({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[40rem] border-collapse">
-        <thead>
-          <tr>
-            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
-              #
-            </th>
-            <th rowSpan={2} scope="col" className="t-micro px-4 pb-3 text-left text-muted">
-              Status
-            </th>
-            <th
-              rowSpan={2}
-              scope="col"
-              className="t-micro min-w-[14rem] border-l border-ink-200 px-4 pb-3 text-left text-muted"
+    <table className="w-full min-w-[34rem] table-fixed border-collapse">
+      <Columns widths={withIds(TEST_COLS, technical)} />
+      <thead>
+        <tr className="border-b border-ink-300">
+          <Head label="#" />
+          <Head label="Status" />
+          <Head label="Remark" className="border-l border-ink-200/60" />
+          <Head label="Decision" className="border-l border-ink-200/60" />
+          <Head label="Test" className="border-l border-ink-200/60" />
+          {technical ? <Head label="Ids" className="border-l border-ink-200/60" /> : null}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => {
+          const quiet = row.status === 'clean'
+          const panel = panelOf(row)
+          return (
+            <tr
+              key={row.key}
+              onMouseEnter={() =>
+                onHover?.({
+                  prescribedId: row.prescribed?.item_id ?? null,
+                  billedId: row.billed?.item_id ?? null,
+                })
+              }
+              onMouseLeave={() => onHover?.(null)}
+              className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
             >
-              Remark
-            </th>
-            <GroupHead label="Test" />
-            <th rowSpan={2} scope="col" className="t-micro border-l border-ink-200 px-4 pb-3 text-left text-muted">
-              Panel
-            </th>
-            {technical ? <GroupHead label="Ids" /> : null}
-            <th
-              rowSpan={2}
-              scope="col"
-              className="t-micro border-l border-ink-200 px-4 pb-3 text-left text-muted"
-            >
-              Decision
-            </th>
-          </tr>
-          <tr className="border-b border-ink-200">
-            <SubHead label="Prescribed" side="rx" />
-            <SubHead label="Billed" />
-            {technical ? (
-              <>
-                <SubHead label="Rx" side="rx" />
-                <SubHead label="Bill" />
-              </>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            const quiet = row.status === 'clean'
-            return (
-              <tr
-                key={row.key}
-                onMouseEnter={() =>
-                  onHover?.({
-                    prescribedId: row.prescribed?.item_id ?? null,
-                    billedId: row.billed?.item_id ?? null,
-                  })
+              <RowNumber index={index} />
+              <StatusCell status={row.status} partial={row.partial} />
+              <RemarkCell
+                text={
+                  row.findings.length === 0 && row.prescribed === null && row.billed !== null
+                    ? 'Billed as part of an ordered panel'
+                    : row.findings.length === 0 && row.prescribed !== null && coveredCount > 0
+                      ? `Ordered as a panel — billed as ${coveredCount + 1} itemised lines`
+                      : testRemark(row.codes, row.findings)
                 }
-                onMouseLeave={() => onHover?.(null)}
-                className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
-              >
-                <RowNumber index={index} />
-                <StatusCell status={row.status} partial={row.partial} />
-                <RemarkCell
-                  text={
-                    row.findings.length === 0 && row.prescribed === null && row.billed !== null
-                      ? 'Billed as part of an ordered panel'
-                      : row.findings.length === 0 && row.prescribed !== null && coveredCount > 0
-                        ? `Ordered as a panel — billed as ${coveredCount + 1} itemised lines`
-                        : testRemark(row.codes, row.findings)
-                  }
+              />
+              <DecisionCell row={row} decisions={decisions} onChange={onDecision} />
+              <td className="border-l border-ink-200/60 px-3 py-5">
+                <Pair
+                  rx={row.prescribed?.test_name ?? null}
+                  bill={row.billed?.test_name ?? null}
+                  quiet={quiet}
+                  mono={false}
                 />
-                <td className="border-l border-ink-200 px-4 py-4">
-                  <Val muted={quiet}>{row.prescribed?.test_name}</Val>
+                {panel ? <p className="t-small mt-0.5 text-muted">Panel: {panel}</p> : null}
+              </td>
+              {technical ? (
+                <td className="border-l border-ink-200/60 px-3 py-5">
+                  <span
+                    className="t-small text-muted"
+                    title={`${row.prescribed?.raw_text ?? ''} / ${row.billed?.raw_text ?? ''}`}
+                  >
+                    {row.prescribed?.item_id ?? '—'} → {row.billed?.item_id ?? '—'}
+                  </span>
                 </td>
-                <td className="px-4 py-4">
-                  <Val muted={quiet}>{row.billed?.test_name}</Val>
-                </td>
-                <td className="border-l border-ink-200 px-4 py-4">
-                  <Val muted>{panelOf(row)}</Val>
-                </td>
-                {technical ? (
-                  <>
-                    <td className="border-l border-ink-200 px-4 py-4">
-                      <span className="t-data text-muted" title={row.prescribed?.raw_text}>
-                        {row.prescribed?.item_id ?? '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="t-data text-muted" title={row.billed?.raw_text}>
-                        {row.billed?.item_id ?? '—'}
-                      </span>
-                    </td>
-                  </>
-                ) : null}
-                <DecisionCell row={row} decisions={decisions} onChange={onDecision} />
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+              ) : null}
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }

@@ -15,7 +15,6 @@ never assessed" reads as a clean result.
 
 from __future__ import annotations
 
-import textwrap
 from io import BytesIO
 from typing import Any
 
@@ -38,7 +37,6 @@ from reportlab.platypus import (
 
 from rxconcile.export.common import (
     CATEGORY_LABEL,
-    DISCLAIMER,
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
@@ -110,12 +108,6 @@ def _footer(canvas: Canvas, doc: SimpleDocTemplate) -> None:
     canvas.setFont("Helvetica", 6.6)
     canvas.setFillColor(MUTED)
     width, _ = A4
-    text = canvas.beginText(18 * mm, 12 * mm)
-    # Wrapped on word boundaries. A fixed character split broke "Nothing" in
-    # half, in the one paragraph of this report that must read cleanly.
-    for line in textwrap.wrap(DISCLAIMER, width=125)[:2]:
-        text.textLine(line)
-    canvas.drawText(text)
     canvas.drawRightString(width - 18 * mm, 12 * mm, f"Page {doc.page}")
     canvas.restoreState()
 
