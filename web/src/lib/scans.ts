@@ -27,16 +27,31 @@ export function formatTime(iso: string): string {
 export interface ScanFilters {
   verdict: Verdict | 'all'
   employee: string
+  /** Free-text match on the NAME typed on the scan, not the account. */
+  name: string
+  /** Free-text match on the employee number typed on the scan. */
+  number: string
   from: string
   to: string
 }
 
-export const NO_FILTERS: ScanFilters = { verdict: 'all', employee: 'all', from: '', to: '' }
+export const NO_FILTERS: ScanFilters = {
+  verdict: 'all',
+  employee: 'all',
+  name: '',
+  number: '',
+  from: '',
+  to: '',
+}
 
 export function applyFilters(scans: ScanSummary[], filters: ScanFilters): ScanSummary[] {
   return scans.filter((scan) => {
     if (filters.verdict !== 'all' && scan.verdict !== filters.verdict) return false
     if (filters.employee !== 'all' && scan.user_email !== filters.employee) return false
+    const name = filters.name.trim().toLowerCase()
+    if (name && !scan.employee_name.toLowerCase().includes(name)) return false
+    const number = filters.number.trim().toLowerCase()
+    if (number && !scan.employee_number.toLowerCase().includes(number)) return false
     const day = scan.created_at.slice(0, 10)
     if (filters.from && day < filters.from) return false
     if (filters.to && day > filters.to) return false

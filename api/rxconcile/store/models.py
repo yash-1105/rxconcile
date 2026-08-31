@@ -14,6 +14,7 @@ would silently lose fields that no longer had a column.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlmodel import Field, SQLModel
@@ -57,6 +58,14 @@ class ScanRecord(SQLModel, table=True):
 
     result_json: str
 
+    # What the reviewer decided, line by line, and what that came to. The
+    # amount is stored rather than recomputed on read: it is the figure the
+    # reviewer saw and approved, and a later change to a rule must not silently
+    # rewrite history. `decisions_json` keeps the reasoning beside it.
+    decisions_json: str = Field(default="{}")
+    claimed_amount: Decimal = Field(default=Decimal("0"), max_digits=12, decimal_places=2)
+    allowance_year: str = Field(default="", index=True)
+
     # The PREPROCESSED pages, exactly as the model saw them (2000px, JPEG q90).
     # Stored rather than the originals for two reasons: bounding boxes are
     # normalised against these dimensions so highlights land correctly, and a
@@ -88,3 +97,20 @@ def summarise(result: dict[str, Any]) -> dict[str, int]:
         "discrepancy_count": critical + warning,
         "checks_unavailable_count": unavailable,
     }
+
+
+class EmployeeAllowance(SQLModel, table=True):
+    """One employee's annual reimbursement allowance.
+
+    Keyed on the employee NUMBER rather than the name: a name is typed by hand
+    on every scan and will not be typed the same way twice.
+    """
+
+    __tablename__ = "employee_allowance"
+
+    employee_number: str = Field(primary_key=True)
+    employee_name: str = ""
+    annual_amount: Decimal = Field(
+        default=Decimal("12000.00"), max_digits=12, decimal_places=2,
+        description="The yearly limit. Configurable per employee.",
+    )

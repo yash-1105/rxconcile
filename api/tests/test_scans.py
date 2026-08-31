@@ -7,6 +7,7 @@ widen what they see by asserting a role.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,11 +15,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 from rxconcile import main
 from rxconcile.demo_auth import issue_token
-from rxconcile.store import set_engine
+from rxconcile.store import ScanRecord, set_engine
+from rxconcile.store.db import engine as get_engine
 
 
 @pytest.fixture(autouse=True)
@@ -350,3 +352,84 @@ def test_an_export_of_a_legacy_record_still_builds(client: TestClient) -> None:
     for fmt in ("pdf", "xlsx", "json"):
         response = client.get(f"/api/scans/{saved['id']}/export.{fmt}", headers=auth(EMPLOYEE))
         assert response.status_code == 200, f"{fmt}: {response.text}"
+
+
+class TestDecisionsSurviveTheRecord:
+    """Accept/reject is a record, so it has to come back the way it went in."""
+
+    def test_decisions_are_returned_when_the_scan_is_reopened(
+        self, client: TestClient
+    ) -> None:
+        scan = save(client, EMPLOYEE)
+        decisions = {
+            "rx-01-bill-01": {"decision": "reject", "remark": "80mg billed against 40mg"},
+            "bill-only-bill-02": {"decision": "unset"},
+        }
+        revised = client.patch(
+            f"/api/scans/{scan['id']}/decisions",
+            json={"decisions": decisions, "claimed_amount": "410.50"},
+            headers=auth(EMPLOYEE),
+        )
+        assert revised.status_code == 200
+
+        reopened = client.get(f"/api/scans/{scan['id']}", headers=auth(EMPLOYEE)).json()
+        assert reopened["decisions"] == decisions
+        assert reopened["claimed_amount"] == "410.50"
+
+    def test_a_scan_nobody_has_reviewed_returns_no_decisions(
+        self, client: TestClient
+    ) -> None:
+        """Not an empty approval -- an absence, which the screen reads as undecided."""
+        scan = save(client, EMPLOYEE)
+        reopened = client.get(f"/api/scans/{scan['id']}", headers=auth(EMPLOYEE)).json()
+        assert reopened["decisions"] == {}
+
+    def test_deciding_on_an_older_scan_stamps_the_year_it_belongs_to(
+        self, client: TestClient
+    ) -> None:
+        """The claim would otherwise count against nothing.
+
+        A record written before allowance years existed carries a blank one, and
+        `usage()` matches on the year. Without the backfill the amount is stored,
+        shown on the scan, and left out of every balance on the system.
+        """
+        scan = save(client, EMPLOYEE)
+        record_id = int(scan["id"])
+        with Session(get_engine()) as session:
+            stored = session.get(ScanRecord, record_id)
+            assert stored is not None
+            stored.allowance_year = ""  # as a pre-allowance record was written
+            stored.created_at = dt.datetime(2025, 6, 1, 10, 0)
+            session.add(stored)
+            session.commit()
+
+        client.patch(
+            f"/api/scans/{record_id}/decisions",
+            json={"decisions": {}, "claimed_amount": "900.00"},
+            headers=auth(EMPLOYEE),
+        )
+        with Session(get_engine()) as session:
+            stored = session.get(ScanRecord, record_id)
+            assert stored is not None
+            # 1 June 2025 falls in the Indian financial year 2025-26, NOT today's.
+            assert stored.allowance_year == "2025-26"
+
+    def test_the_year_already_on_a_scan_is_never_moved(self, client: TestClient) -> None:
+        scan = save(client, EMPLOYEE)
+        record_id = int(scan["id"])
+        with Session(get_engine()) as session:
+            stored = session.get(ScanRecord, record_id)
+            assert stored is not None
+            stored.allowance_year = "2024-25"
+            session.add(stored)
+            session.commit()
+
+        client.patch(
+            f"/api/scans/{record_id}/decisions",
+            json={"decisions": {}, "claimed_amount": "50.00"},
+            headers=auth(EMPLOYEE),
+        )
+        with Session(get_engine()) as session:
+            stored = session.get(ScanRecord, record_id)
+            assert stored is not None
+            assert stored.allowance_year == "2024-25"

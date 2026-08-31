@@ -23,6 +23,7 @@ from typing import Any
 from sqlmodel import Session, col, delete, select
 
 from rxconcile.store import ScanRecord, summarise
+from rxconcile.store.allowance import year_label
 from rxconcile.store.db import engine
 
 #: Written into every seeded record so they can be found and removed again.
@@ -203,10 +204,14 @@ def build() -> list[tuple[tuple[str, str, str, str], int, str, dict[str, Any]]]:
 def seed(session: Session, *, today: dt.date) -> int:
     written = 0
     for (email, name, number, role), days_ago, why, payload in build():
+        when = dt.datetime.combine(today - dt.timedelta(days=days_ago), dt.time(10, 30))
         record = ScanRecord(
-            created_at=dt.datetime.combine(
-                today - dt.timedelta(days=days_ago), dt.time(10, 30)
-            ),
+            created_at=when,
+            # The allowance window the scan falls in. Stamped from its own date,
+            # so a seeded record dated last March counts against last year.
+            # Nothing is claimed on these: they carry no matched pairs, and a
+            # claim figure invented for a demo is still an invented figure.
+            allowance_year=year_label(when.date()),
             employee_name=name,
             employee_number=number,
             user_email=email,

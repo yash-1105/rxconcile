@@ -14,11 +14,13 @@ quota-fallback wrapper independently.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import io
 import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final
 
@@ -56,7 +58,8 @@ from rxconcile.reconcile.history import (
     PriorLine,
     PriorScan,
 )
-from rxconcile.store import ScanRecord, get_session, summarise
+from rxconcile.store import EmployeeAllowance, ScanRecord, get_session, summarise
+from rxconcile.store.allowance import AllowanceView, view_for, year_label
 
 logger: Final = logging.getLogger(__name__)
 
@@ -480,6 +483,13 @@ class ScanCreate(BaseModel):
     condition: str | None = None
     description: str | None = None
     extraction_runs: int = 0
+    #: Per-line accept/reject decisions, keyed by row. Stored verbatim.
+    decisions: dict[str, Any] = Field(default_factory=dict)
+    #: The claim the reviewer saw and approved. Sent by the client because it
+    #: is derived from the same rows the tables render -- recomputing it here
+    #: from a second implementation is exactly how it would drift from what was
+    #: on screen when it was approved.
+    claimed_amount: str = "0"
     result: dict[str, Any]
 
 
@@ -496,6 +506,8 @@ class ScanSummary(BaseModel):
     bill_filename: str
     condition: str | None = None
     description: str | None = None
+    claimed_amount: str = "0"
+    allowance_year: str = ""
     verdict: str
     discrepancy_count: int
     critical_count: int
@@ -511,6 +523,10 @@ class ScanSummary(BaseModel):
 
 class ScanDetail(ScanSummary):
     result: dict[str, Any]
+    #: The accept/reject decisions as they were last saved. Returned so that
+    #: re-opening a scan shows what was decided rather than silently reverting
+    #: to defaults -- a decision that does not survive the page is not a record.
+    decisions: dict[str, Any] = Field(default_factory=dict)
 
 
 def _summary(record: ScanRecord) -> ScanSummary:
@@ -532,6 +548,8 @@ def _summary(record: ScanRecord) -> ScanSummary:
         bill_filename=record.bill_filename,
         condition=record.condition,
         description=record.description,
+        claimed_amount=str(record.claimed_amount),
+        allowance_year=record.allowance_year,
         verdict=record.verdict,
         discrepancy_count=record.discrepancy_count,
         critical_count=record.critical_count,
@@ -605,6 +623,9 @@ async def create_scan(
         bill_filename=payload.bill_filename,
         condition=payload.condition,
         description=payload.description,
+        decisions_json=json.dumps(payload.decisions),
+        claimed_amount=Decimal(payload.claimed_amount or "0"),
+        allowance_year=year_label(dt.date.today()),
         verdict=str(payload.result.get("verdict", "unknown")),
         result_json=json.dumps(payload.result),
         prescription_image=_prepared(rx_bytes),
@@ -653,7 +674,111 @@ async def get_scan(
             hint="Open it from the History screen, which lists the scans you can see.",
         )
     summary = _summary(record)
-    return ScanDetail(**summary.model_dump(), result=json.loads(record.result_json))
+    try:
+        stored = json.loads(record.decisions_json)
+    except ValueError:
+        stored = {}
+    return ScanDetail(
+        **summary.model_dump(),
+        result=json.loads(record.result_json),
+        decisions=stored if isinstance(stored, dict) else {},
+    )
+
+
+class AllowanceUpdate(BaseModel):
+    """Set one employee's annual allowance."""
+
+    employee_number: str = Field(min_length=1)
+    employee_name: str = ""
+    annual_amount: Decimal = Field(gt=0)
+
+
+class DecisionUpdate(BaseModel):
+    """Revised per-line decisions for a stored scan."""
+
+    decisions: dict[str, Any] = Field(default_factory=dict)
+    claimed_amount: str = "0"
+
+
+@app.get("/api/allowance")
+async def list_allowances(
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> list[AllowanceView]:
+    """Allowance and balance per employee, narrowed by the same role rule.
+
+    Built from the employees who actually appear in the scans this account can
+    see, so an employee cannot learn who else exists by reading their balance.
+    """
+    statement = select(ScanRecord)
+    if user.role != "admin":
+        statement = statement.where(ScanRecord.user_email == user.email)
+    names: dict[str, str] = {}
+    for record in session.exec(statement).all():
+        names.setdefault(record.employee_number, record.employee_name)
+    return [
+        view_for(session, number, employee_name=name)
+        for number, name in sorted(names.items())
+    ]
+
+
+@app.get("/api/allowance/{employee_number}")
+async def get_allowance(
+    employee_number: str,
+    exclude_scan_id: int | None = None,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> AllowanceView:
+    """One employee's allowance. ``exclude_scan_id`` leaves a scan out of used-so-far."""
+    return view_for(session, employee_number, exclude_scan_id=exclude_scan_id)
+
+
+@app.put("/api/allowance")
+async def set_allowance(
+    payload: AllowanceUpdate,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> AllowanceView:
+    """Set an employee's annual allowance. Admin only."""
+    if user.role != "admin":
+        raise ApiError(
+            status_code=403,
+            error_code="NOT_PERMITTED",
+            message="Only an admin account may change an allowance.",
+            hint="Sign in with the admin demo account.",
+        )
+    row = session.get(EmployeeAllowance, payload.employee_number)
+    if row is None:
+        row = EmployeeAllowance(employee_number=payload.employee_number)
+    row.employee_name = payload.employee_name or row.employee_name
+    row.annual_amount = payload.annual_amount
+    session.add(row)
+    session.commit()
+    return view_for(session, payload.employee_number)
+
+
+@app.patch("/api/scans/{scan_id}/decisions")
+async def update_decisions(
+    scan_id: int,
+    payload: DecisionUpdate,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> ScanSummary:
+    """Revise the accept/reject decisions on a stored scan."""
+    record = _owned_scan(scan_id, user, session)
+    record.decisions_json = json.dumps(payload.decisions)
+    record.claimed_amount = Decimal(payload.claimed_amount or "0")
+    # Stamped from the scan's OWN date, not today's. A record written before
+    # allowance years existed carries a blank one, and an amount in a blank year
+    # counts against nothing -- the claim would be recorded and then silently
+    # ignored by every balance on the system. Backfilled the first time anybody
+    # decides on it, into the year the scan actually belongs to.
+    if not record.allowance_year:
+        record.allowance_year = year_label(record.created_at.date())
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    return _summary(record)
 
 
 EXPORTS: Final[dict[str, tuple[str, str]]] = {
@@ -679,6 +804,10 @@ def _export_context(record: ScanRecord) -> ExportContext:
             message="This record cannot be exported: its stored result no longer validates.",
             hint="Re-run the reconciliation to produce an exportable record.",
         ) from exc
+    try:
+        decisions = json.loads(record.decisions_json)
+    except ValueError:
+        decisions = {}
     return ExportContext(
         result=result,
         employee_name=record.employee_name,
@@ -690,6 +819,8 @@ def _export_context(record: ScanRecord) -> ExportContext:
         extraction_runs=record.extraction_runs,
         prescription_image=record.prescription_image,
         bill_image=record.bill_image,
+        decisions=decisions if isinstance(decisions, dict) else {},
+        claimed_amount=record.claimed_amount,
     )
 
 

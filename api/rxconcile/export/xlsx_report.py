@@ -15,10 +15,13 @@ from rxconcile.export.common import (
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
+    decision_remark,
+    decision_word,
     discrepancy_groups,
     document_gaps,
     group_findings,
     money,
+    row_key,
     short_remark,
     status_word,
     unchecked_line,
@@ -139,12 +142,13 @@ def _findings_sheet(sheet: Worksheet, context: ExportContext) -> None:
 def _medicines_sheet(sheet: Worksheet, context: ExportContext) -> None:
     result = context.result
     sheet.title = "Medicines"
-    _widths(sheet, [10, 18, 18, 30, 14, 14, 12, 12, 12, 12, 40])
+    _widths(sheet, [10, 18, 18, 30, 14, 14, 12, 12, 12, 12, 40, 13, 34])
     _headers(sheet, 1, [
         "Status", "Drug (prescribed)", "Drug (billed)", "Salt",
         "Strength (prescribed)", "Strength (billed)",
         "Form (prescribed)", "Form (billed)",
         "Qty (prescribed)", "Qty (billed)", "Remark",
+        "Decision", "Reviewer's reason",
     ])
     canonical = canonical_by_id(result)
     rx = {item.item_id: item for item in result.prescription.items}
@@ -189,13 +193,21 @@ def _medicines_sheet(sheet: Worksheet, context: ExportContext) -> None:
         sheet.cell(row=row, column=10, value=quantity if quantity is not None else "—")
         cell = sheet.cell(row=row, column=11, value=short_remark(found))
         cell.alignment = _WRAP
+        key = row_key(rx_id, bill_id)
+        sheet.cell(row=row, column=12, value=decision_word(context.decisions, key))
+        sheet.cell(
+            row=row, column=13, value=decision_remark(context.decisions, key) or "—"
+        ).alignment = _WRAP
 
 
 def _tests_sheet(sheet: Worksheet, context: ExportContext) -> None:
     result = context.result
     sheet.title = "Lab tests"
-    _widths(sheet, [10, 26, 26, 26, 50])
-    _headers(sheet, 1, ["Status", "Test (prescribed)", "Test (billed)", "Panel", "Remark"])
+    _widths(sheet, [10, 26, 26, 26, 50, 13, 34])
+    _headers(sheet, 1, [
+        "Status", "Test (prescribed)", "Test (billed)", "Panel", "Remark",
+        "Decision", "Reviewer's reason",
+    ])
 
     if not result.prescription.tests and not result.bill.tests:
         present = result.prescription.investigations_present
@@ -212,13 +224,20 @@ def _tests_sheet(sheet: Worksheet, context: ExportContext) -> None:
 
     rx = {t.item_id: t for t in result.prescription.tests}
     bill = {t.item_id: t for t in result.bill.tests}
-    rows: list[tuple[str | None, str | None]] = [
-        (pair.prescribed_id, pair.billed_id) for pair in result.matched_tests
+    # The flag marks a line billed under an ordered panel. The workbook used to
+    # omit these rows entirely, so an ordered CBC billed as six analytes showed
+    # one line and dropped five -- the sheet did not account for the whole bill.
+    rows: list[tuple[str | None, str | None, bool]] = [
+        (pair.prescribed_id, pair.billed_id, False) for pair in result.matched_tests
     ]
-    rows += [(item_id, None) for item_id in result.unmatched_prescribed_tests]
-    rows += [(None, item_id) for item_id in result.unmatched_billed_tests]
+    rows += [(item_id, None, False) for item_id in result.unmatched_prescribed_tests]
+    rows += [(None, item_id, False) for item_id in result.unmatched_billed_tests]
+    accounted = {pair.billed_id for pair in result.matched_tests} | set(
+        result.unmatched_billed_tests
+    )
+    rows += [(None, t.item_id, True) for t in result.bill.tests if t.item_id not in accounted]
 
-    for row, (rx_id, bill_id) in enumerate(rows, start=2):
+    for row, (rx_id, bill_id, covered) in enumerate(rows, start=2):
         found = [
             f for f in result.findings
             if (rx_id and f.prescribed_ref == rx_id) or (bill_id and f.billed_ref == bill_id)
@@ -234,16 +253,34 @@ def _tests_sheet(sheet: Worksheet, context: ExportContext) -> None:
         billed_name = getattr(bill.get(bill_id or ""), "test_name", None) or "—"
         sheet.cell(row=row, column=3, value=billed_name)
         sheet.cell(row=row, column=4, value=panel or "—")
-        cell = sheet.cell(row=row, column=5, value=short_remark(found))
+        remark = short_remark(found)
+        if covered and not found:
+            remark = "Billed as part of an ordered panel"
+        cell = sheet.cell(row=row, column=5, value=remark)
         cell.alignment = _WRAP
+        key = row_key(rx_id, bill_id, tests=True, covered=covered)
+        sheet.cell(row=row, column=6, value=decision_word(context.decisions, key))
+        sheet.cell(
+            row=row, column=7, value=decision_remark(context.decisions, key) or "—"
+        ).alignment = _WRAP
 
 
 def _reimbursement_sheet(sheet: Worksheet, context: ExportContext) -> None:
     sheet.title = "Reimbursement"
     _widths(sheet, [16, 30, 14, 30, 55])
-    _headers(sheet, 1, ["Category", "Item", "Amount", "Line", "Why"])
     purse = context.result.reimbursement
-    for row, line in enumerate(purse.lines, start=2):
+    offset = 0
+    if context.claimed_amount is not None:
+        sheet.cell(row=1, column=1, value="Accepted for this claim").font = Font(bold=True)
+        sheet.cell(row=1, column=3, value=float(context.claimed_amount))
+        sheet.cell(row=2, column=1, value=(
+            "The total of the lines a reviewer accepted, from the Decision column on the "
+            "Medicines and Lab tests sheets. Lines not on the prescription and lines that "
+            "are not medicines are never part of it."
+        )).alignment = _WRAP
+        offset = 3
+    _headers(sheet, 1 + offset, ["Category", "Item", "Amount", "Line", "Why"])
+    for row, line in enumerate(purse.lines, start=2 + offset):
         sheet.cell(row=row, column=1, value=CATEGORY_LABEL[line.category])
         sheet.cell(row=row, column=2, value=line.description)
         sheet.cell(
@@ -254,7 +291,7 @@ def _reimbursement_sheet(sheet: Worksheet, context: ExportContext) -> None:
         sheet.cell(row=row, column=5, value=line.reason).alignment = _WRAP
     explanation = unchecked_line(context.result)
     if explanation:
-        note = sheet.cell(row=len(purse.lines) + 3, column=1, value=explanation)
+        note = sheet.cell(row=len(purse.lines) + 3 + offset, column=1, value=explanation)
         note.alignment = _WRAP
 
 

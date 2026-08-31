@@ -4,6 +4,8 @@ import type { Session } from '../auth/session'
 import { BarList, TrendLine } from '../components/Charts'
 import { EmptyState, PageHeader } from '../components/Shell'
 import { SpineMark } from '../components/Spine'
+import { listAllowances } from '../api/client'
+import type { AllowanceView } from '../types/api'
 import {
   countBy,
   formatDate,
@@ -52,6 +54,14 @@ export function Overview({
 }) {
   const admin = session.role === 'admin'
   const [scans, setScans] = useState<ScanSummary[] | null>(null)
+  const [allowances, setAllowances] = useState<AllowanceView[]>([])
+
+  useEffect(() => {
+    listAllowances()
+      .then(setAllowances)
+      .catch(() => setAllowances([]))
+  }, [])
+
 
   useEffect(() => {
     listScans()
@@ -204,9 +214,48 @@ export function Overview({
         </Panel>
 
         {admin ? (
-          <Panel title="Scans per employee">
-            <BarList rows={perEmployee} />
-          </Panel>
+          <>
+            <Panel title="Allowance per employee">
+              {allowances.length === 0 ? (
+                <p className="t-small text-muted">No allowances to show yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {allowances.map((view) => {
+                    const annual = Number(view.annual_amount)
+                    const used = Number(view.used)
+                    const share = annual > 0 ? Math.min(100, (used / annual) * 100) : 0
+                    return (
+                      <li key={view.employee_number}>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="t-small text-ink">
+                            {view.employee_name || view.employee_number}
+                            <span className="t-small ml-2 text-muted">{view.employee_number}</span>
+                          </span>
+                          <span className="t-data text-muted">
+                            {view.balance} of {view.annual_amount} left
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full rounded bg-ink-100">
+                          <div
+                            className={`h-1.5 rounded ${share >= 100 ? 'bg-flag' : 'bg-seal'}`}
+                            style={{ width: `${share}%` }}
+                          />
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              <p className="t-small mt-3 text-muted">
+                Allowance year {allowances[0]?.year ?? '\u2014'}. Used so far is the total of
+                accepted lines on that employee&rsquo;s earlier claims in this window.
+              </p>
+            </Panel>
+
+            <Panel title="Scans per employee">
+              <BarList rows={perEmployee} />
+            </Panel>
+          </>
         ) : (
           <Panel title="Your verdicts">
             <BarList

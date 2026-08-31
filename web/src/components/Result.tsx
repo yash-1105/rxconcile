@@ -13,7 +13,7 @@
  *    than no screen at all.
  */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { documentGaps, groupFindings, headline, phrase, type Grouped } from '../lib/phrasing'
 import {
   criticalCount,
@@ -28,9 +28,19 @@ import { UNCHECKED_CODES } from '../lib/rowStatus'
 import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineLegend, SpineMark, type SpineState } from './Spine'
 import { ExportBar } from './Export'
-import { Reimbursement } from './Reimbursement'
-import { LabTestsTable, MedicinesTable, TableFilter } from './Tables'
-import { countRows, medicineRowsOf, testRowsOf, type RowFilter } from '../lib/rows'
+import { BulkDecisions, LabTestsTable, MedicinesTable, TableFilter } from './Tables'
+import { Allowance, Excluded } from './Allowance'
+import {
+  claimTotal,
+  countRows,
+  decisionsFor,
+  medicineRowsOf,
+  testRowsOf,
+  type Decisions,
+  type RowFilter,
+} from '../lib/rows'
+import { fetchAllowance, saveDecisions } from '../api/client'
+import type { AllowanceView } from '../types/api'
 
 /** Whether a finding's source line could be pointed at on the image. */
 export type LocateResult = 'located' | 'not-located' | 'no-ref'
@@ -316,6 +326,8 @@ export function Result({
   onReset,
   readOnly = false,
   scanId = null,
+  employeeNumber = '',
+  storedDecisions,
 }: {
   result: ReconciliationResult
   prescriptionImage: string | null
@@ -325,12 +337,63 @@ export function Result({
   readOnly?: boolean
   /** The stored record exports are built from. Null until the save completes. */
   scanId?: number | null
+  /** Whose allowance this claim draws against. */
+  employeeNumber?: string
+  /** Decisions as they were last saved. Empty for a scan being run now. */
+  storedDecisions?: Decisions
 }) {
   const [technical, setTechnical] = useState(false)
   const [filters, setFilters] = useState<{ medicines: RowFilter; tests: RowFilter }>({
     medicines: 'all',
     tests: 'all',
   })
+  const allRows = useMemo(
+    () => [...medicineRowsOf(result), ...testRowsOf(result)],
+    [result],
+  )
+  // Seeded from what was saved, falling back to the rows themselves: matched
+  // lines start accepted, anything with a problem starts undecided.
+  const [decisions, setDecisions] = useState<Decisions>(() =>
+    decisionsFor(allRows, storedDecisions),
+  )
+  // Reseeded during render rather than in an effect, so the first save after
+  // opening a different scan cannot write this scan's decisions onto it.
+  const [seededFor, setSeededFor] = useState(result)
+  if (seededFor !== result) {
+    setSeededFor(result)
+    setDecisions(decisionsFor(allRows, storedDecisions))
+  }
+
+  const [allowance, setAllowance] = useState<AllowanceView | null>(null)
+  useEffect(() => {
+    if (!employeeNumber) return
+    fetchAllowance(employeeNumber, scanId)
+      .then(setAllowance)
+      .catch(() => setAllowance(null))
+  }, [employeeNumber, scanId])
+
+  // The claim reads the same rows the tables render, so the figure on screen
+  // and the figure sent to the server cannot disagree.
+  const claim = claimTotal(allRows, decisions)
+
+  const decide = (key: string, decision: 'accept' | 'reject' | 'unset', remark?: string) =>
+    setDecisions((current) => ({ ...current, [key]: { decision, remark } }))
+
+  const decideAll = (rows: typeof allRows, decision: 'accept' | 'reject') =>
+    setDecisions((current) => {
+      const next = { ...current }
+      for (const row of rows) next[row.key] = { decision, remark: current[row.key]?.remark }
+      return next
+    })
+
+  // Persisted after the reviewer stops changing their mind, not on every click.
+  useEffect(() => {
+    if (scanId === null || scanId === undefined) return
+    const timer = setTimeout(() => {
+      void saveDecisions(scanId, decisions, claim).catch(() => undefined)
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [scanId, decisions, claim])
   const [highlight, setHighlight] = useState<{ side: DocSide; itemId: string } | null>(null)
   const grouped = groupFindings(result.findings)
   const say = (f: Finding) => phrase(f, result.prescription, result.bill)
@@ -456,7 +519,24 @@ export function Result({
       ) : null}
 
       <Section title="Reimbursement">
-        <Reimbursement summary={result.reimbursement} />
+        <div className="space-y-5">
+          <Allowance
+            allowance={allowance}
+            claim={claim}
+            currency={result.reimbursement?.currency ?? 'INR'}
+          />
+          <Excluded
+            currency={result.reimbursement?.currency ?? 'INR'}
+            notOnPrescription={{
+              total: result.reimbursement?.not_eligible_total ?? '0',
+              lines: result.reimbursement?.not_eligible_line_count ?? 0,
+            }}
+            notMedicine={{
+              total: result.reimbursement?.non_medicine_total ?? '0',
+              lines: result.reimbursement?.non_medicine_line_count ?? 0,
+            }}
+          />
+        </div>
       </Section>
 
       {documentChecks.length > 0 ? (
@@ -497,7 +577,10 @@ export function Result({
             onHover={hoverRow}
             technical={technical}
             filter={filters.medicines}
+            decisions={decisions}
+            onDecision={decide}
           />
+          <BulkDecisions onAll={(d) => decideAll(medicineRowsOf(result), d)} />
         </div>
       </Section>
 
@@ -515,7 +598,10 @@ export function Result({
             onHover={hoverRow}
             technical={technical}
             filter={filters.tests}
+            decisions={decisions}
+            onDecision={decide}
           />
+          <BulkDecisions onAll={(d) => decideAll(testRowsOf(result), d)} />
         </div>
       </Section>
 

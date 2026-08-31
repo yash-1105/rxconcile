@@ -15,6 +15,9 @@
 import { remark, testRemark } from '../lib/phrasing'
 import {
   applyFilter,
+  defaultDecision,
+  isClaimable,
+  type Decisions,
   medicineRowsOf,
   testRowsOf,
   ROW_FILTERS,
@@ -74,6 +77,88 @@ export function TableFilter({
         ))}
       </select>
     </label>
+  )
+}
+
+/**
+ * Accept or reject one line, with a remark when it is rejected.
+ *
+ * Shown on every row so a reviewer can annotate anything, but only a CLAIMABLE
+ * line moves the total — accepting a delivery charge does not make it
+ * reimbursable, and the label says so rather than letting the control imply it.
+ */
+function DecisionCell({
+  row,
+  decisions,
+  onChange,
+}: {
+  row: { key: string; status: SpineState; billed: unknown; prescribed: unknown; findings: unknown[] }
+  decisions: Decisions
+  onChange: (key: string, decision: 'accept' | 'reject' | 'unset', remark?: string) => void
+}) {
+  const claimable = isClaimable(row as never)
+  const current = decisions[row.key]?.decision ?? defaultDecision(row as never)
+  const remark = decisions[row.key]?.remark ?? ''
+  return (
+    <td className="border-l border-ink-200 px-4 py-4 align-top">
+      <div className="flex gap-1.5">
+        {(['accept', 'reject'] as const).map((choice) => (
+          <button
+            key={choice}
+            type="button"
+            aria-pressed={current === choice}
+            onClick={() => onChange(row.key, current === choice ? 'unset' : choice, remark)}
+            className={`t-small rounded border px-2.5 py-1 capitalize ${
+              current === choice
+                ? choice === 'accept'
+                  ? 'border-seal bg-seal text-white'
+                  : 'border-flag bg-flag text-white'
+                : 'border-ink-300 bg-surface text-muted hover:text-ink'
+            }`}
+          >
+            {choice}
+          </button>
+        ))}
+      </div>
+      {!claimable ? (
+        <p className="t-small mt-1 text-muted">Not claimable</p>
+      ) : current === 'unset' ? (
+        <p className="t-small mt-1 text-muted">Undecided</p>
+      ) : null}
+      {current === 'reject' ? (
+        <input
+          value={remark}
+          onChange={(event) => onChange(row.key, 'reject', event.target.value)}
+          placeholder="Why?"
+          className="t-small mt-1.5 w-full rounded bg-ink-50 px-2 py-1 text-ink placeholder:text-ink-400"
+        />
+      ) : null}
+    </td>
+  )
+}
+
+export function BulkDecisions({
+  onAll,
+}: {
+  onAll: (decision: 'accept' | 'reject') => void
+}) {
+  return (
+    <div className="flex gap-2 border-t border-ink-200 px-4 py-3">
+      <button
+        type="button"
+        onClick={() => onAll('accept')}
+        className="t-small rounded border border-ink-300 px-3 py-1.5 text-ink hover:bg-paper"
+      >
+        Accept all
+      </button>
+      <button
+        type="button"
+        onClick={() => onAll('reject')}
+        className="t-small rounded border border-ink-300 px-3 py-1.5 text-ink hover:bg-paper"
+      >
+        Reject all
+      </button>
+    </div>
   )
 }
 
@@ -248,11 +333,15 @@ export function MedicinesTable({
   onHover,
   technical = false,
   filter = 'all',
+  decisions,
+  onDecision,
 }: {
   result: ReconciliationResult
   onHover?: (row: { prescribedId: string | null; billedId: string | null } | null) => void
   technical?: boolean
   filter?: RowFilter
+  decisions: Decisions
+  onDecision: (key: string, decision: 'accept' | 'reject' | 'unset', remark?: string) => void
 }) {
   const rows = applyFilter(medicineRowsOf(result), filter)
   const canonical = new Map((result.canonical ?? []).map((c) => [c.item_id, c]))
@@ -297,6 +386,13 @@ export function MedicinesTable({
             <GroupHead label="Form" />
             <GroupHead label="Quantity" />
             {technical ? <GroupHead label="Ids" /> : null}
+            <th
+              rowSpan={2}
+              scope="col"
+              className="t-micro border-l border-ink-200 px-4 pb-3 text-left text-muted"
+            >
+              Decision
+            </th>
           </tr>
           <tr className="border-b border-ink-200">
             <SubHead label="Prescribed" side="rx" />
@@ -398,6 +494,7 @@ export function MedicinesTable({
                     </td>
                   </>
                 ) : null}
+                <DecisionCell row={row} decisions={decisions} onChange={onDecision} />
               </tr>
             )
           })}
@@ -420,11 +517,15 @@ export function LabTestsTable({
   onHover,
   technical = false,
   filter = 'all',
+  decisions,
+  onDecision,
 }: {
   result: ReconciliationResult
   onHover?: (row: { prescribedId: string | null; billedId: string | null } | null) => void
   technical?: boolean
   filter?: RowFilter
+  decisions: Decisions
+  onDecision: (key: string, decision: 'accept' | 'reject' | 'unset', remark?: string) => void
 }) {
   const all = testRowsOf(result)
   const rows = applyFilter(all, filter)
@@ -502,6 +603,13 @@ export function LabTestsTable({
               Panel
             </th>
             {technical ? <GroupHead label="Ids" /> : null}
+            <th
+              rowSpan={2}
+              scope="col"
+              className="t-micro border-l border-ink-200 px-4 pb-3 text-left text-muted"
+            >
+              Decision
+            </th>
           </tr>
           <tr className="border-b border-ink-200">
             <SubHead label="Prescribed" side="rx" />
@@ -563,6 +671,7 @@ export function LabTestsTable({
                     </td>
                   </>
                 ) : null}
+                <DecisionCell row={row} decisions={decisions} onChange={onDecision} />
               </tr>
             )
           })}

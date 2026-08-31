@@ -1,4 +1,5 @@
 import type {
+  AllowanceView,
   ApiErrorBody,
   DemoSession,
   DictionaryResponse,
@@ -40,6 +41,39 @@ async function unwrap<T>(response: Response): Promise<T> {
     }
   }
   throw new ApiError(body)
+}
+
+export async function fetchAllowance(
+  employeeNumber: string,
+  excludeScanId?: number | null,
+): Promise<AllowanceView> {
+  const query = excludeScanId ? `?exclude_scan_id=${excludeScanId}` : ''
+  return unwrap<AllowanceView>(
+    await fetch(
+      `${BASE_URL}/api/allowance/${encodeURIComponent(employeeNumber)}${query}`,
+      { headers: authHeaders() },
+    ),
+  )
+}
+
+export async function listAllowances(): Promise<AllowanceView[]> {
+  return unwrap<AllowanceView[]>(
+    await fetch(`${BASE_URL}/api/allowance`, { headers: authHeaders() }),
+  )
+}
+
+export async function saveDecisions(
+  scanId: number,
+  decisions: unknown,
+  claimedAmount: number,
+): Promise<void> {
+  await unwrap<unknown>(
+    await fetch(`${BASE_URL}/api/scans/${scanId}/decisions`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ decisions, claimed_amount: claimedAmount.toFixed(2) }),
+    }),
+  )
 }
 
 export async function fetchDictionary(): Promise<DictionaryResponse> {
@@ -145,6 +179,8 @@ export interface ScanCreate {
   condition?: string | null
   description?: string | null
   extraction_runs: number
+  decisions?: Record<string, unknown>
+  claimed_amount?: string
   result: ReconciliationResult
 }
 

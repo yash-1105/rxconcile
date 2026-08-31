@@ -42,8 +42,11 @@ from rxconcile.export.common import (
     STATUS_WORD,
     ExportContext,
     canonical_by_id,
+    decision_remark,
+    decision_word,
     discrepancy_groups,
     document_gaps,
+    row_key,
     short_remark,
     status_word,
     unchecked_line,
@@ -115,6 +118,17 @@ def _footer(canvas: Canvas, doc: SimpleDocTemplate) -> None:
     canvas.drawText(text)
     canvas.drawRightString(width - 18 * mm, 12 * mm, f"Page {doc.page}")
     canvas.restoreState()
+
+
+def _decision(context: ExportContext, key: str) -> str:
+    """One line's decision, with the reviewer's reason if they gave one.
+
+    Word and reason share a cell: a rejection without its reason is the half of
+    the record that is no use to whoever reads the report afterwards.
+    """
+    word = decision_word(context.decisions, key)
+    remark = decision_remark(context.decisions, key)
+    return f"{word} — {remark}" if remark else word
 
 
 def _strength(item: PrescribedItem | BilledItem | None) -> str:
@@ -216,6 +230,18 @@ def build_pdf(context: ExportContext) -> bytes:
     purse = result.reimbursement
     story.append(Paragraph("Reimbursement", H2))
     story.append(Spacer(1, 2))
+    if context.claimed_amount is not None:
+        story.append(Paragraph(
+            f"<b>Accepted for this claim: "
+            f"{money_str(purse.currency, context.claimed_amount)}</b>", BODY,
+        ))
+        story.append(Paragraph(
+            "The total of the lines a reviewer accepted, from the Decision column below. "
+            "Lines not on the prescription and lines that are not medicines are never "
+            "part of it. Accepting a line records a judgement; it does not settle it.",
+            SMALL,
+        ))
+        story.append(Spacer(1, 6))
     totals: list[Row] = [["", "AMOUNT", "LINES"]]
     for key, total, count in (
         ("eligible", purse.eligible_total, purse.eligible_line_count),
@@ -265,7 +291,7 @@ def build_pdf(context: ExportContext) -> bytes:
     # Short heads on purpose: "STRENGTH prescribed" broke as "STREN/GTH prescri/bed"
     # in a column only wide enough for the value beneath it.
     rows = [["STATUS", "DRUG<br/>Rx", "DRUG<br/>Bill", "SALT", "STR<br/>Rx",
-             "STR<br/>Bill", "FORM<br/>Rx", "FORM<br/>Bill", "REMARK"]]
+             "STR<br/>Bill", "FORM<br/>Bill", "REMARK", "DECISION"]]
     for rx_id, bill_id in pairs:
         found_row = [
             f for f in result.findings
@@ -281,14 +307,14 @@ def build_pdf(context: ExportContext) -> bytes:
             _p(salt or "—"),
             _p(_strength(rx_item) if rx_item else "—"),
             _p(_strength(bill_item) if bill_item else "—"),
-            _p(getattr(rx_item, "form", None) or "—"),
             _p(getattr(bill_item, "form", None) or "—"),
             _p(short_remark(found_row)),
+            _p(_decision(context, row_key(rx_id, bill_id))),
         ])
     if len(rows) > 1:
         story.append(_table(rows, [
-            width * 0.09, width * 0.11, width * 0.14, width * 0.14,
-            width * 0.075, width * 0.075, width * 0.075, width * 0.075, width * 0.22,
+            width * 0.08, width * 0.11, width * 0.13, width * 0.13,
+            width * 0.07, width * 0.07, width * 0.07, width * 0.18, width * 0.16,
         ]))
     else:
         story.append(Paragraph("Neither document carries a medicine line.", SMALL))
@@ -309,18 +335,23 @@ def build_pdf(context: ExportContext) -> bytes:
     else:
         rx_t = {t.item_id: t for t in result.prescription.tests}
         bill_t = {t.item_id: t for t in result.bill.tests}
-        tpairs: list[tuple[str | None, str | None]] = [
-            (p.prescribed_id, p.billed_id) for p in result.matched_tests
+        # The third element marks a line billed under an ordered panel. It is
+        # carried rather than re-derived because the row key differs, and a
+        # decision recorded against it would otherwise never be found.
+        tpairs: list[tuple[str | None, str | None, bool]] = [
+            (p.prescribed_id, p.billed_id, False) for p in result.matched_tests
         ]
-        tpairs += [(i, None) for i in result.unmatched_prescribed_tests]
-        tpairs += [(None, i) for i in result.unmatched_billed_tests]
+        tpairs += [(i, None, False) for i in result.unmatched_prescribed_tests]
+        tpairs += [(None, i, False) for i in result.unmatched_billed_tests]
         accounted = {p.billed_id for p in result.matched_tests} | set(
             result.unmatched_billed_tests
         )
-        tpairs += [(None, t.item_id) for t in result.bill.tests if t.item_id not in accounted]
+        tpairs += [
+            (None, t.item_id, True) for t in result.bill.tests if t.item_id not in accounted
+        ]
 
-        rows = [["STATUS", "TEST<br/>Rx", "TEST<br/>Bill", "PANEL", "REMARK"]]
-        for rx_id, bill_id in tpairs:
+        rows = [["STATUS", "TEST<br/>Rx", "TEST<br/>Bill", "PANEL", "REMARK", "DECISION"]]
+        for rx_id, bill_id, covered in tpairs:
             found_row = [
                 f for f in result.findings
                 if (rx_id and f.prescribed_ref == rx_id) or (bill_id and f.billed_ref == bill_id)
@@ -339,9 +370,10 @@ def build_pdf(context: ExportContext) -> bytes:
                 _p(getattr(bill_t.get(bill_id or ""), "test_name", None) or "—"),
                 _p(panel or "—"),
                 _p(remark or "—"),
+                _p(_decision(context, row_key(rx_id, bill_id, tests=True, covered=covered))),
             ])
         story.append(_table(rows, [
-            width * 0.12, width * 0.20, width * 0.20, width * 0.18, width * 0.30,
+            width * 0.11, width * 0.18, width * 0.18, width * 0.15, width * 0.22, width * 0.16,
         ]))
 
     # ---- source pages ----

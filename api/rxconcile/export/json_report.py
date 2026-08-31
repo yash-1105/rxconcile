@@ -34,6 +34,24 @@ def build_json(context: ExportContext) -> bytes:
             "bill_filename": context.bill_filename,
             "extraction_runs": context.extraction_runs,
         },
+        # What a reviewer decided, keyed by the same row identifiers the screen
+        # and the other two reports use. `decision` is one of accept, reject or
+        # unset; unset means nobody has ruled on that line, which is NOT the
+        # same as rejecting it and must not be read as an approval either.
+        "review": {
+            "claimed_amount": (
+                str(context.claimed_amount) if context.claimed_amount is not None else None
+            ),
+            "currency": context.result.reimbursement.currency,
+            "decisions": context.decisions,
+            "note": (
+                "claimed_amount is the total of the lines marked accept that are claimable: "
+                "a medicine matched to a prescription line, or a lab test matched to an "
+                "ordered test. Lines not on the prescription and lines that are not "
+                "medicines are never claimable. This is a recorded judgement, not a "
+                "settlement."
+            ),
+        },
         # Verbatim. Not reshaped, not rounded, not pruned.
         "result": context.result.model_dump(mode="json"),
     }

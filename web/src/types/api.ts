@@ -347,6 +347,8 @@ export interface ScanSummary {
 }
 
 export interface ScanDetail extends ScanSummary {
+  /** Per-line accept/reject as last saved. Absent on records predating review. */
+  decisions?: Record<string, { decision: 'accept' | 'reject' | 'unset'; remark?: string }>
   result: ReconciliationResult
 }
 
@@ -383,4 +385,17 @@ export interface DictionaryResponse {
   panels: DictionaryPanel[]
   therapeutic_classes: string[]
   schedules: string[]
+}
+
+/** An employee's annual allowance and what is left of it. */
+export interface AllowanceView {
+  employee_number: string
+  employee_name: string
+  year: string
+  year_starts: string
+  year_ends: string
+  annual_amount: string
+  used: string
+  scans_counted: number
+  balance: string
 }

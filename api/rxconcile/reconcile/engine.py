@@ -41,8 +41,8 @@ from rxconcile.models import (
     PrescribedItem,
     Prescription,
     ReconciliationResult,
-    Submission,
     Severity,
+    Submission,
     Verdict,
 )
 from rxconcile.normalize import (

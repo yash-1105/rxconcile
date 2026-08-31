@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { Decisions } from './lib/rows'
 import {
   ApiError,
   fetchSamples,
@@ -97,6 +98,7 @@ export default function App() {
   const [employeeNumber, setEmployeeNumber] = useState(restored?.employeeNumber ?? '')
   /** A reopened history record is read-only: it is a record of what was reported. */
   const [readOnly, setReadOnly] = useState(false)
+  const [storedDecisions, setStoredDecisions] = useState<Decisions>({})
   const [historyKey, setHistoryKey] = useState(0)
 
   useEffect(() => {
@@ -141,6 +143,7 @@ export default function App() {
   const openScan = (detail: ScanDetail) => {
     setResult(detail.result)
     setScanId(detail.id)
+    setStoredDecisions(detail.decisions ?? {})
     // Source pages are stored with the scan now, so a reopened result can show
     // its audit panel instead of an empty one. Fetched with the token rather
     // than linked, because an <img src> cannot carry one.
@@ -163,6 +166,7 @@ export default function App() {
     setError(null)
     setReadOnly(false)
     setScanId(null)
+    setStoredDecisions({})
     setStage('processing')
     try {
       const outcome = await task()
@@ -333,6 +337,8 @@ export default function App() {
           billImage={images.bill}
           readOnly={readOnly}
           scanId={scanId}
+          employeeNumber={employeeNumber}
+          storedDecisions={storedDecisions}
           onReset={() => {
             setStage('upload')
             setResult(null)

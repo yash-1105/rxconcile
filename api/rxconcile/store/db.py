@@ -43,6 +43,9 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
     ("image_media_type", "VARCHAR DEFAULT 'image/jpeg'"),
     ("condition", "VARCHAR"),
     ("description", "VARCHAR"),
+    ("decisions_json", "VARCHAR DEFAULT '{}'"),
+    ("claimed_amount", "NUMERIC DEFAULT 0"),
+    ("allowance_year", "VARCHAR DEFAULT ''"),
 )
 
 

@@ -115,9 +115,31 @@ export function History({
               </select>
             </label>
 
+            <label className="block">
+              <span className="t-micro block text-muted">Employee name</span>
+              <input
+                type="search"
+                value={filters.name}
+                onChange={(e) => setFilters({ ...filters, name: e.target.value })}
+                placeholder="Any name"
+                className="t-small mt-1 rounded bg-surface px-2.5 py-1.5 text-ink placeholder:text-ink-400"
+              />
+            </label>
+
+            <label className="block">
+              <span className="t-micro block text-muted">Employee number</span>
+              <input
+                type="search"
+                value={filters.number}
+                onChange={(e) => setFilters({ ...filters, number: e.target.value })}
+                placeholder="Any number"
+                className="t-small mt-1 rounded bg-surface px-2.5 py-1.5 text-ink placeholder:text-ink-400"
+              />
+            </label>
+
             {admin ? (
               <label className="block">
-                <span className="t-micro block text-muted">Employee</span>
+                <span className="t-micro block text-muted">Account</span>
                 <select
                   value={filters.employee}
                   onChange={(e) => setFilters({ ...filters, employee: e.target.value })}

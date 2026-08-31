@@ -49,6 +49,56 @@ def money(currency: str, amount: Decimal | None) -> str:
     return f"{currency} {amount.quantize(Decimal('0.01')):,}"
 
 
+#: How a table row is named. MIRRORS web/src/lib/rows.ts -- the decisions a
+#: reviewer records on screen are keyed by these strings, and a report that
+#: built them differently would print "not decided" beside every line somebody
+#: had just accepted. Changing either side without the other breaks the join,
+#: which is why test_export_decisions.py asserts both forms.
+def row_key(
+    prescribed_id: str | None,
+    billed_id: str | None,
+    *,
+    tests: bool = False,
+    covered: bool = False,
+) -> str:
+    if covered and billed_id is not None:
+        return f"covered-{billed_id}"
+    if prescribed_id is not None and billed_id is not None:
+        return f"{prescribed_id}-{billed_id}"
+    if prescribed_id is not None:
+        return f"rxt-{prescribed_id}" if tests else f"rx-only-{prescribed_id}"
+    return f"bt-{billed_id}" if tests else f"bill-only-{billed_id}"
+
+
+#: What a reviewer decided about one line, as words.
+DECISION_WORD: Final[dict[str, str]] = {
+    "accept": "Accepted",
+    "reject": "Rejected",
+    "unset": "Not decided",
+}
+
+
+def decision_word(decisions: dict[str, object], key: str) -> str:
+    """The decision on one row.
+
+    An absent key is "Not decided", NOT "Accepted": a report must never show a
+    line as approved because nobody looked at it.
+    """
+    entry = decisions.get(key)
+    if not isinstance(entry, dict):
+        return "Not decided"
+    return DECISION_WORD.get(str(entry.get("decision", "unset")), "Not decided")
+
+
+def decision_remark(decisions: dict[str, object], key: str) -> str:
+    """The reviewer's own words for rejecting a line, if they wrote any."""
+    entry = decisions.get(key)
+    if not isinstance(entry, dict):
+        return ""
+    remark = entry.get("remark")
+    return str(remark).strip() if isinstance(remark, str) else ""
+
+
 class ExportContext(BaseModel):
     """Everything a report needs that is not in the result itself."""
 
@@ -64,6 +114,12 @@ class ExportContext(BaseModel):
     extraction_runs: int = 0
     prescription_image: bytes | None = None
     bill_image: bytes | None = None
+    #: Per-line accept/reject, keyed by `row_key`. Empty for a scan recorded
+    #: before approval existed -- which prints as "Not decided", correctly.
+    decisions: dict[str, object] = {}
+    #: The amount the reviewer accepted, as they accepted it. Not recomputed
+    #: here: the screen and the report must not be able to disagree.
+    claimed_amount: Decimal | None = None
 
     @property
     def when(self) -> str:

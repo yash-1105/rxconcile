@@ -246,3 +246,102 @@ export function countRows<T extends { status: SpineState }>(rows: T[]): RowCount
     problems: rows.filter((r) => r.status === 'problem' || r.status === 'warning').length,
   }
 }
+
+// ---------------------------------------------------------------------------
+// What can be claimed, and what the reviewer decided about it
+// ---------------------------------------------------------------------------
+
+/** Accept, reject, or not yet decided. */
+export type Decision = 'accept' | 'reject' | 'unset'
+
+export interface LineDecision {
+  decision: Decision
+  remark?: string
+}
+
+/** Every decision on a scan, keyed by row key. */
+export type Decisions = Record<string, LineDecision>
+
+/**
+ * Whether a line can be claimed at all.
+ *
+ * Claimable means matched: a medicine paired to a prescription line, or a lab
+ * test covered by an ordered test. A billed line with nothing behind it and a
+ * line that is not a medicine are never claimable, whatever anyone decides
+ * about them — deciding is how a reviewer records a judgement, not how they
+ * make something reimbursable.
+ *
+ * A line with no printed amount is not claimable either. There is no figure to
+ * add, and assuming one would put an invented number into a total.
+ */
+export function isClaimable(row: MedRow | TestRow): boolean {
+  if (row.status === 'out-of-scope') return false
+  if (row.billed === null) return false
+  if (row.billed.line_total === null) return false
+  // Paired to a prescribed line, or covered by an ordered panel.
+  const paired = row.prescribed !== null
+  const panelCovered = row.status === 'clean' && row.findings.length === 0
+  return paired || panelCovered
+}
+
+/** The amount a line would contribute, or zero when it cannot contribute. */
+export function claimableAmount(row: MedRow | TestRow): number {
+  if (!isClaimable(row)) return 0
+  return Number(row.billed?.line_total ?? 0) || 0
+}
+
+/**
+ * The decision a row starts with.
+ *
+ * Matched lines default to accept, because that is the answer for the common
+ * case. Anything carrying a problem starts UNSET: the reviewer has to look at
+ * it, and pre-accepting it would put their name against a judgement they never
+ * made.
+ */
+export function defaultDecision(row: MedRow | TestRow): Decision {
+  if (!isClaimable(row)) return 'unset'
+  return row.status === 'clean' || row.status === 'substitution' ? 'accept' : 'unset'
+}
+
+export function decisionsFor(rows: Array<MedRow | TestRow>, stored?: Decisions): Decisions {
+  const out: Decisions = {}
+  for (const row of rows) {
+    // What was decided last time wins over the default. Without this, reopening
+    // a reviewed scan would show every line back at its starting position and
+    // then save that over the record -- losing the review by displaying it.
+    const kept = stored?.[row.key]
+    out[row.key] = kept ?? { decision: defaultDecision(row) }
+  }
+  return out
+}
+
+/**
+ * The claim total: accepted, claimable lines and nothing else.
+ *
+ * Derived from the same rows the tables render, so the figure on screen and the
+ * figure sent to the server cannot disagree — and that is the one number a
+ * client will check by hand.
+ */
+export function claimTotal(rows: Array<MedRow | TestRow>, decisions: Decisions): number {
+  return rows.reduce((total, row) => {
+    const decision = decisions[row.key]?.decision ?? defaultDecision(row)
+    return decision === 'accept' ? total + claimableAmount(row) : total
+  }, 0)
+}
+
+export function countDecisions(
+  rows: Array<MedRow | TestRow>,
+  decisions: Decisions,
+): { accepted: number; rejected: number; undecided: number } {
+  let accepted = 0
+  let rejected = 0
+  let undecided = 0
+  for (const row of rows) {
+    if (!isClaimable(row)) continue
+    const decision = decisions[row.key]?.decision ?? defaultDecision(row)
+    if (decision === 'accept') accepted += 1
+    else if (decision === 'reject') rejected += 1
+    else undecided += 1
+  }
+  return { accepted, rejected, undecided }
+}
