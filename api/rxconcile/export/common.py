@@ -184,7 +184,7 @@ _REMARKS: Final[tuple[tuple[str, str], ...]] = (
     ("BILL_NOT_PRESCRIBED", "Not on the prescription"),
     ("RX_NOT_BILLED", "Prescribed but not dispensed"),
     ("TEST_NOT_PRESCRIBED", "Not on the prescription"),
-    ("TEST_NOT_BILLED", "Ordered but not done"),
+    ("TEST_NOT_BILLED", "Ordered but not on the bill"),
     ("FORM_MISMATCH", "Dispensed in a different form"),
     ("QUANTITY_SHORT", "Less dispensed than the course requires"),
     ("QUANTITY_EXCESS", "More dispensed than the course requires"),

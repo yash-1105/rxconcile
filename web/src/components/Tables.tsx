@@ -18,7 +18,6 @@ import {
   applyFilter,
   defaultDecision,
   isClaimable,
-  type Decision,
   type Decisions,
   medicineRowsOf,
   testRowsOf,
@@ -56,48 +55,59 @@ const ROW_TINT: Record<SpineState, string> = {
 }
 
 /**
- * How tall a row is allowed to be at its shortest.
+ * Aligning the decision panel with the table it sits beside.
  *
- * The decision control lives beside the table rather than in it, and each entry
- * is sized to its row. A rejected line grows a reason field, so its row is
- * given the extra room FIRST and the panel follows — the height flows one way,
- * table to panel, and never back, so the two cannot chase each other.
+ * BOTH sides derive their height from one measured source: the larger of the
+ * row's natural height and its control's natural height. Neither can outgrow
+ * the other, because neither decides alone.
+ *
+ * The previous version guessed what a control needed — a floor of 68px, or 104
+ * once a rejection reason was open. It did not account for the "Not claimable"
+ * and "Undecided" lines beneath the buttons, so those entries were given less
+ * room than they took and spilled across the row boundary below.
+ *
+ * The measurement is not circular. A control's natural height is read from an
+ * INNER element that is never given a height, so it depends only on what the
+ * control contains. That figure is applied to the row, where CSS treats a
+ * `height` on a `tr` as a minimum — so the row renders at the larger of the
+ * two. The rendered row height is then applied back to the control's outer box.
+ * The loop terminates because the inner element never changes size in response
+ * to either.
  */
-const ROW_FLOOR = 68
-const REJECTED_ROW_FLOOR = 104
-
-function rowFloor(decision: Decision): number {
-  return decision === 'reject' ? REJECTED_ROW_FLOOR : ROW_FLOOR
-}
-
 interface Alignment {
+  /** True while the panel is beside the table rather than stacked under it. */
+  aligned: boolean
   /** Height of the table head, so the panel's own head lines up with it. */
   head: number
-  /** Height of each row, by row key. */
+  /** What each control needs, by row key. Applied to the ROW as a minimum. */
+  needs: Record<string, number>
+  /** What each row ended up at. Applied to the CONTROL as its exact height. */
   rows: Record<string, number>
 }
 
-function sameAlignment(a: Alignment, b: Alignment): boolean {
-  if (Math.abs(a.head - b.head) > 0.5) return false
-  const keys = Object.keys(b.rows)
-  if (Object.keys(a.rows).length !== keys.length) return false
-  return keys.every((key) => Math.abs((a.rows[key] ?? -1) - (b.rows[key] ?? -1)) <= 0.5)
+const UNALIGNED: Alignment = { aligned: false, head: 0, needs: {}, rows: {} }
+
+function sameMap(a: Record<string, number>, b: Record<string, number>): boolean {
+  const keys = Object.keys(b)
+  if (Object.keys(a).length !== keys.length) return false
+  return keys.every((key) => Math.abs((a[key] ?? -1) - (b[key] ?? -1)) <= 0.5)
 }
 
-/**
- * Measures the table so the decision panel beside it can line up with it.
- *
- * Rows are not a fixed height — a remark wraps to one, two or three lines — so
- * the alignment has to be measured rather than assumed. Re-measured on every
- * render and on any resize of the table, which covers a filter change, a
- * window resize and a font finishing loading.
- */
+function sameAlignment(a: Alignment, b: Alignment): boolean {
+  return (
+    a.aligned === b.aligned &&
+    Math.abs(a.head - b.head) <= 0.5 &&
+    sameMap(a.needs, b.needs) &&
+    sameMap(a.rows, b.rows)
+  )
+}
+
 function useRowAlignment(): {
   ref: React.RefObject<HTMLDivElement | null>
   alignment: Alignment
 } {
   const ref = useRef<HTMLDivElement>(null)
-  const [alignment, setAlignment] = useState<Alignment>({ head: 0, rows: {} })
+  const [alignment, setAlignment] = useState<Alignment>(UNALIGNED)
 
   useLayoutEffect(() => {
     const node = ref.current
@@ -106,31 +116,34 @@ function useRowAlignment(): {
       const table = node.querySelector('table')
       if (table === null) return
       // Below `lg` the panel sits UNDER the table rather than beside it, where
-      // matching a row's height would only add empty space. Entries take their
-      // natural height and name the row they belong to instead.
+      // matching heights would only add empty space. Both take their natural
+      // height and each control names the row it belongs to instead.
       if (!window.matchMedia('(min-width: 1024px)').matches) {
         // eslint-disable-next-line react/set-state-in-effect
-        setAlignment((current) =>
-          current.head === 0 && Object.keys(current.rows).length === 0
-            ? current
-            : { head: 0, rows: {} },
-        )
+        setAlignment((current) => (current.aligned ? UNALIGNED : current))
         return
       }
-      const head = table.querySelector('thead')?.getBoundingClientRect().height ?? 0
+      const needs: Record<string, number> = {}
+      for (const inner of node.querySelectorAll('[data-decision-for]')) {
+        const key = inner.getAttribute('data-decision-for')
+        if (key !== null) needs[key] = inner.getBoundingClientRect().height
+      }
       const rows: Record<string, number> = {}
       for (const row of table.querySelectorAll('tbody tr[data-row-key]')) {
         const key = row.getAttribute('data-row-key')
         if (key !== null) rows[key] = row.getBoundingClientRect().height
       }
+      const head = table.querySelector('thead')?.getBoundingClientRect().height ?? 0
+      const next: Alignment = { aligned: true, head, needs, rows }
       // Guarded, or the observer's own callback would re-render for ever.
       // eslint-disable-next-line react/set-state-in-effect
-      setAlignment((current) => (sameAlignment(current, { head, rows }) ? current : { head, rows }))
+      setAlignment((current) => (sameAlignment(current, next) ? current : next))
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(node)
     for (const row of node.querySelectorAll('tbody tr')) observer.observe(row)
+    for (const inner of node.querySelectorAll('[data-decision-for]')) observer.observe(inner)
     return () => observer.disconnect()
   })
 
@@ -195,11 +208,15 @@ function DecisionEntry({
     <div
       // Carries its row's tint, so which control belongs to which line is
       // obvious rather than inferred from a shared horizontal position.
-      className={`overflow-hidden border-b border-ink-200 px-3 py-5 ${ROW_TINT[row.status]}`}
+      className={`border-b border-ink-200 ${ROW_TINT[row.status]}`}
       // Matched to the row it sits beside. Undefined before the first
-      // measurement, when the entry simply takes its natural height.
+      // measurement and whenever the panel is stacked, where the entry simply
+      // takes its natural height.
       style={height === undefined ? undefined : { height }}
     >
+      {/* Never given a height. This is what the alignment measures, so it has
+          to stay free to size itself to what the control actually contains. */}
+      <div data-decision-for={row.key} className="px-3 py-5">
       {/* Stacked under the table, an entry has to say which row it decides. */}
       <p className="t-colhead mb-1 text-muted lg:hidden">Line {index + 1}</p>
       <div className="flex gap-1.5">
@@ -234,6 +251,7 @@ function DecisionEntry({
           className="t-small mt-1.5 w-full rounded bg-surface px-2 py-1 text-ink placeholder:text-ink-400"
         />
       ) : null}
+      </div>
     </div>
   )
 }
@@ -498,9 +516,9 @@ export function MedicinesTable({
     )
   }
   return (
-    <div className="flex flex-col lg:flex-row lg:items-start">
+    <div ref={ref} className="flex flex-col lg:flex-row lg:items-start">
       {/* The table scrolls under the panel; the panel never moves. */}
-      <div ref={ref} className="w-full overflow-x-auto lg:min-w-0 lg:flex-1">
+      <div className="w-full overflow-x-auto lg:min-w-0 lg:flex-1">
         <table className="w-full min-w-[54rem] border-collapse">
         <thead>
           <tr>
@@ -570,14 +588,12 @@ export function MedicinesTable({
                 }
                 onMouseLeave={() => onHover?.(null)}
                 data-row-key={row.key}
-                // The floor is set here, on the row, and the panel beside it
-                // follows. One direction only, so the two cannot chase each
-                // other's height.
-                style={{
-                  height: rowFloor(
-                    decisions[row.key]?.decision ?? defaultDecision(row as never),
-                  ),
-                }}
+                // A minimum, not a height: CSS lets a `tr` grow past it, so the
+                // row renders at whichever of the two is taller. Measured from
+                // the control rather than guessed at.
+                style={
+                  alignment.aligned ? { height: alignment.needs[row.key] } : undefined
+                }
                 className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
               >
                 <RowNumber index={index} />
@@ -738,8 +754,8 @@ export function LabTestsTable({
   }
 
   return (
-    <div className="flex flex-col lg:flex-row lg:items-start">
-      <div ref={ref} className="w-full overflow-x-auto lg:min-w-0 lg:flex-1">
+    <div ref={ref} className="flex flex-col lg:flex-row lg:items-start">
+      <div className="w-full overflow-x-auto lg:min-w-0 lg:flex-1">
         <table className="w-full min-w-[40rem] border-collapse">
         <thead>
           <tr>
@@ -787,14 +803,12 @@ export function LabTestsTable({
                 }
                 onMouseLeave={() => onHover?.(null)}
                 data-row-key={row.key}
-                // The floor is set here, on the row, and the panel beside it
-                // follows. One direction only, so the two cannot chase each
-                // other's height.
-                style={{
-                  height: rowFloor(
-                    decisions[row.key]?.decision ?? defaultDecision(row as never),
-                  ),
-                }}
+                // A minimum, not a height: CSS lets a `tr` grow past it, so the
+                // row renders at whichever of the two is taller. Measured from
+                // the control rather than guessed at.
+                style={
+                  alignment.aligned ? { height: alignment.needs[row.key] } : undefined
+                }
                 className={`border-b border-ink-200 align-top ${ROW_TINT[row.status]}`}
               >
                 <RowNumber index={index} />

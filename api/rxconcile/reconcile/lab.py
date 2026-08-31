@@ -161,15 +161,34 @@ def reconcile_tests(
         billed for billed in bill_tests if not bill_matches[billed.item_id].resolved
     ]
 
-    # The mirror of the lab-only-bill guard on the medicine side.
+    # Whether an ordered test CAN be checked is a property of the documents, not
+    # of which upload slot a file was dropped into.
     #
-    # With a submission, this is a FACT the operator stated: no lab bill was
-    # uploaded. Without one, fall back to the old inference so a direct caller
-    # of the engine still behaves sensibly.
+    # Reading `submission.lab_bill_supplied` alone was wrong: an Indian pharmacy
+    # that is also a diagnostics centre bills medicines and lab work on ONE
+    # document, so no separate lab bill is uploaded and lab lines arrive on the
+    # pharmacy bill anyway. That softened two genuinely unbilled tests into
+    # warnings and reported them as "not assessed" when they had been assessed
+    # against five billed lab lines sitting right there.
+    #
+    # So the evidence decides whether to soften, and the submission only
+    # explains WHY there is none -- which is the part that must be stated
+    # rather than inferred.
+    nothing_to_check_against = not bill_tests
     if submission is not None:
-        no_lab_bill = not submission.lab_bill_supplied
+        no_lab_bill = nothing_to_check_against and not submission.lab_bill_supplied
+        # A lab bill that WAS uploaded and carries no readable test line is a
+        # different statement, and a worse one: the document is there and could
+        # not be read. "No lab bill was supplied" about it would be false.
+        lab_bill_unreadable = nothing_to_check_against and submission.lab_bill_supplied
     else:
-        no_lab_bill = bool(bill.items) and not bill_tests
+        # No submission to state it, so infer -- but only from evidence that a
+        # separate lab bill plausibly exists. A bill carrying medicines and no
+        # lab lines is a pharmacy bill. An EMPTY bill is evidence of nothing,
+        # and softening on it would excuse every ordered test on the strength
+        # of a document nobody supplied.
+        no_lab_bill = bool(bill.items) and nothing_to_check_against
+        lab_bill_unreadable = False
 
     consumed: set[str] = set()
     unmatched_rx: list[str] = []
@@ -222,6 +241,12 @@ def reconcile_tests(
                 uncertain = (
                     "no lab bill was uploaded, so there is nothing to check this "
                     "against"
+                )
+            elif lab_bill_unreadable:
+                uncertain_code = "lab_bill_unreadable"
+                uncertain = (
+                    "a lab bill was uploaded but no test line on it could be read, "
+                    "so there is nothing to check this against"
                 )
             elif unresolved_bills:
                 uncertain_code = "unidentified_billed_lines"

@@ -609,3 +609,85 @@ def test_a_supplied_pharmacy_bill_never_excuses_a_missing_medicine() -> None:
     not_billed = [f for f in result.findings if f.rule_code == "RX_NOT_BILLED"]
     assert [f.severity for f in not_billed] == ["critical"]
     assert not_billed[0].detail["lab_only_bill"] is False
+
+
+# ---------------------------------------------------------------------------
+# A combined pharmacy-and-diagnostics bill
+# ---------------------------------------------------------------------------
+
+
+def test_lab_lines_on_the_pharmacy_bill_are_something_to_check_against() -> None:
+    """The false negative this guards.
+
+    An Indian pharmacy that is also a diagnostics centre bills medicines and lab
+    work on ONE document. No separate lab bill is uploaded, so
+    `lab_bill_supplied` is False -- but the lab lines are right there on the
+    pharmacy bill. Reading the upload slot instead of the document softened two
+    genuinely unbilled tests into warnings and reported them as "not assessed"
+    against five billed lab lines sitting in the same result.
+    """
+    from rxconcile.models import BilledItem, BilledTest, Submission
+
+    combined = PharmacyBill(
+        currency="INR",
+        pharmacy_licence_no="TN/2019/337821",
+        items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
+                          confidence=0.9)],
+        tests=[BilledTest(item_id="billtest-01", raw_text="Lipid Profile .... 600.00",
+                          test_name="Lipid Profile", line_total=Decimal("600.00"),
+                          confidence=0.9)],
+    )
+    # The operator uploaded a prescription and a pharmacy bill. No lab bill.
+    stated = Submission(
+        prescription_supplied=True, pharmacy_bill_supplied=True,
+        lab_report_supplied=False, lab_bill_supplied=False,
+    )
+    result = engine.reconcile(
+        prescription("Lipid Profile", "HbA1c"), combined, processing_ms=0, submission=stated
+    )
+    unbilled = [f for f in result.findings if f.rule_code == "TEST_NOT_BILLED"]
+    assert len(unbilled) == 1, "HbA1c is the only ordered test not on the bill"
+    assert unbilled[0].severity == "critical", "it was checked, and it is absent"
+    assert unbilled[0].detail.get("softened_code") is None
+    assert unbilled[0].detail.get("softened_because") is None
+
+
+def test_no_billed_lab_line_anywhere_is_still_softened() -> None:
+    """The genuine case the softening exists for, unchanged."""
+    from rxconcile.models import BilledItem, Submission
+
+    medicines_only = PharmacyBill(
+        currency="INR",
+        items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
+                          confidence=0.9)],
+    )
+    result = engine.reconcile(
+        prescription("HbA1c"), medicines_only, processing_ms=0,
+        submission=Submission(pharmacy_bill_supplied=True, lab_bill_supplied=False),
+    )
+    found = next(f for f in result.findings if f.rule_code == "TEST_NOT_BILLED")
+    assert found.severity == "warning"
+    assert found.detail["softened_code"] == "no_lab_bill"
+
+
+def test_an_uploaded_lab_bill_with_no_readable_test_line_says_so() -> None:
+    """Not 'no lab bill was supplied'. One was; it could not be read.
+
+    A different statement, and a worse one — the document is there and the
+    system could make nothing of it.
+    """
+    from rxconcile.models import BilledItem, Submission
+
+    unreadable_lab_bill = PharmacyBill(
+        currency="INR",
+        items=[BilledItem(item_id="bill-01", raw_text="DOLO", drug_name="Dolo",
+                          confidence=0.9)],
+    )
+    result = engine.reconcile(
+        prescription("HbA1c"), unreadable_lab_bill, processing_ms=0,
+        submission=Submission(pharmacy_bill_supplied=True, lab_bill_supplied=True),
+    )
+    found = next(f for f in result.findings if f.rule_code == "TEST_NOT_BILLED")
+    assert found.severity == "warning", "still softened: there is nothing to check against"
+    assert found.detail["softened_code"] == "lab_bill_unreadable"
+    assert "no lab bill was uploaded" not in found.message

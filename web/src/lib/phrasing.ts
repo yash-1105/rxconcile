@@ -489,6 +489,7 @@ export function remark(codes: string[], findings: Finding[]): string {
  */
 const SOFTENED_TEST_NOT_BILLED: Record<string, string> = {
   no_lab_bill: 'Not assessed — no lab bill supplied',
+  lab_bill_unreadable: 'Not assessed — no test line on the lab bill could be read',
   unidentified_billed_lines: 'Not assessed — some billed lab lines could not be read',
 }
 
@@ -517,7 +518,7 @@ export function testRemark(codes: string[], findings: Finding[]): string {
     if (reason) {
       return SOFTENED_TEST_NOT_BILLED[reason] ?? 'Ordered — this could not be fully checked'
     }
-    return 'Not done'
+    return 'Ordered but not on the bill'
   }
   if (has('PANEL_PARTIAL')) {
     const found = findings.find((f) => f.rule_code === 'PANEL_PARTIAL')
@@ -568,6 +569,22 @@ export function documentGaps(result: ReconciliationResult): DocumentGap[] {
         'assessed. Nothing below says they were dispensed correctly — they were not checked. ' +
         'Upload the pharmacy bill to compare them.',
       count: unassessedMedicines.length,
+    })
+  }
+
+  const unreadableLabBill = result.findings.filter(
+    (f) =>
+      f.rule_code === 'TEST_NOT_BILLED' && f.detail['softened_code'] === 'lab_bill_unreadable',
+  )
+  if (unreadableLabBill.length > 0) {
+    gaps.push({
+      title: 'The lab bill could not be read',
+      detail:
+        `A lab bill was uploaded, but no test line on it could be made out, so ` +
+        `${unreadableLabBill.length} ordered ${
+          unreadableLabBill.length === 1 ? 'test was' : 'tests were'
+        } NOT ASSESSED. This is not a finding that they were not done.`,
+      count: unreadableLabBill.length,
     })
   }
 
