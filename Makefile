@@ -78,6 +78,9 @@ check: test typecheck lint build ## Everything CI would run
 # Vertex and samples
 # --------------------------------------------------------------------------
 
+seed-demo: ## Reset and write reproducible scan history for a demo
+	$(PY) api/scripts/seed_demo.py
+
 warm: ## Pre-compute the extraction cache for the bundled samples so the demo is instant
 	$(PY) api/scripts/warm_samples.py
 

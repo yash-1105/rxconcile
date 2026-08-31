@@ -123,6 +123,9 @@ def document_gaps(result: ReconciliationResult) -> list[tuple[str, str]]:
 #: Mirrors web/src/lib/phrasing.ts so the screen and a printed report never say
 #: two different things about the same row.
 _REMARKS: Final[tuple[tuple[str, str], ...]] = (
+    ("DUPLICATE_BILL", "Already submitted"),
+    ("POSSIBLE_RESUBMISSION", "Possible corrected re-issue"),
+    ("EARLY_REPEAT", "Claimed again before the course ran out"),
     ("SALT_DIFFERENT_CLASS", "Different kind of medicine to the one prescribed"),
     ("SCHEDULE_H_UNBACKED", "Prescription-only medicine with nothing backing it"),
     ("STRENGTH_MISMATCH", "Strength differs"),
@@ -214,6 +217,7 @@ PINNED_CODE: Final[str] = "SCHEDULE_H_UNBACKED"
 #: web/src/lib/grouping.ts so all three surfaces tell the same story.
 _SPECIFICITY: Final[tuple[str, ...]] = (
     PINNED_CODE,
+    "DUPLICATE_BILL",
     "SALT_DIFFERENT_CLASS",
     "STRENGTH_MISMATCH",
     "DUPLICATE_THERAPY",

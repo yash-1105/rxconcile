@@ -447,3 +447,64 @@ reimbursement view it is its own quiet category rather than "not on
 prescription" — a delivery charge is out of scope, not an accusation.
 `SCHEDULE_H_UNBACKED` and `TEST_NOT_PRESCRIBED` still outrank it.
 
+---
+
+## 12. History checks
+
+Three checks that compare a bill against scans already on record, in
+`reconcile/history.py`.
+
+**No database access.** Prior scans arrive as plain `PriorScan` data that the
+API has already loaded and already narrowed to what the signed-in account may
+see. The engine stays pure, and a history check cannot widen its own
+visibility. `reconcile()` takes `priors=None` to skip the checks entirely, or an
+empty list to run them against no history — which reports that they could not
+run.
+
+| Code | Severity | Fires when |
+| --- | --- | --- |
+| `DUPLICATE_BILL` | critical | same bill number and pharmacy, with identical lines and totals |
+| `POSSIBLE_RESUBMISSION` | warning | the same bill, but something differs |
+| `EARLY_REPEAT` | warning | the same salt claimed again inside the earlier course |
+| `LICENCE_INCONSISTENT` | warning | one pharmacy carrying different licence numbers |
+
+### 12a. A correction is not fraud
+
+The same pharmacy re-issuing a bill with a fixed line looks, on a bill number,
+exactly like someone claiming twice. Where the earlier scan and this one differ
+in lines or totals, this reports `POSSIBLE_RESUBMISSION` and names the
+differences, rather than an accusation. An honest correction reported as fraud
+is the more expensive error.
+
+### 12b. Thin history is not a clean result
+
+A duplicate check against one prior scan proves almost nothing. Below
+`MIN_MEANINGFUL_HISTORY` prior scans, an absence of duplicates is reported as a
+check that could not run rather than passing silently. A first scan produces
+that for all three checks: it is not a clean history, it is no history.
+
+### 12c. Never a repeat of itself
+
+A prior identified as *this* bill is excluded from the repeat check. Without
+that, re-running a bill reported every salt on it as "claimed 0 days ago" — a
+second accusation about a document the duplicate check had already named. One
+finding per salt, against the most recent prior claim of it.
+
+### 12d. Course length is never assumed
+
+`EARLY_REPEAT` depends on `duration_days`, which is null far more often than
+not. Where the earlier prescription stated no resolvable duration, the check
+reports that it could not run and names why. **No default course is
+substituted** — that is the fabricated-duration problem already fixed once in
+extraction.
+
+Matching is on the canonical salt, not the brand, or a Dolo-then-Calpol repeat
+slips through.
+
+### 12e. Visibility travels with the finding
+
+Every history finding carries a `history_scope` note stating what was searched.
+An employee's duplicate check reads only their own scans and says so; it must
+not imply the whole record was searched, and must not reveal that another
+account's scans exist.
+

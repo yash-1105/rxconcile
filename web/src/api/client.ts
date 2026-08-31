@@ -60,7 +60,11 @@ export async function reconcile(
   form.append('bill', bill)
   form.append('runs', String(runs))
   return unwrap<ReconciliationResult>(
-    await fetch(`${BASE_URL}/api/reconcile`, { method: 'POST', body: form }),
+    await fetch(`${BASE_URL}/api/reconcile`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+    }),
   )
 }
 
@@ -71,7 +75,7 @@ export async function reconcileSample(
   return unwrap<ReconciliationResult>(
     await fetch(`${BASE_URL}/api/reconcile/sample?runs=${runs}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ sample_id: sampleId }),
     }),
   )

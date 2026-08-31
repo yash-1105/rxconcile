@@ -59,6 +59,7 @@ from rxconcile.normalize.matcher import entry_for
 from rxconcile.normalize.units import strengths_equal
 from rxconcile.reconcile._findings import finding, unavailable
 from rxconcile.reconcile.arithmetic import check_arithmetic
+from rxconcile.reconcile.history import HistoryScope, PriorScan, check_history
 from rxconcile.reconcile.lab import reconcile_tests
 from rxconcile.reconcile.reimbursement import assess
 from rxconcile.validate import check_gstin, check_licence
@@ -1173,6 +1174,8 @@ def reconcile(
     bill: PharmacyBill,
     *,
     processing_ms: int | None = None,
+    priors: Sequence[PriorScan] | None = None,
+    history_scope: HistoryScope | None = None,
 ) -> ReconciliationResult:
     """Reconcile a prescription against a bill. Pure, deterministic, no LLM.
 
@@ -1180,6 +1183,14 @@ def reconcile(
         prescription: extracted prescription.
         bill: extracted pharmacy bill.
         processing_ms: override the measured wall time, for reproducible tests.
+        priors: scans already on record, ALREADY narrowed to what the caller may
+            see. Passed as plain data so this module never touches a database
+            and never widens its own visibility. Omit to skip the history
+            checks entirely; pass an empty list to run them against no history,
+            which reports that they could not run.
+        history_scope: what the caller was able to compare against, carried into
+            every history finding so a report cannot imply the whole record was
+            searched.
 
     Returns:
         A :class:`ReconciliationResult`. Findings are always computed in full,
@@ -1199,6 +1210,22 @@ def reconcile(
 
     rx_items = {item.item_id: item for item in prescription.items}
     bill_items = {item.item_id: item for item in bill.items}
+
+    # The matcher resolved these on the way in; report them rather than letting
+    # a salt escape only when a particular finding happens to fire.
+    canonical: list[CanonicalMatch] = []
+    sides: tuple[tuple[Literal["prescription", "bill"], dict[str, CanonicalDrug]], ...] = (
+        ("prescription", rx_by_id),
+        ("bill", bill_by_id),
+    )
+    for side, table in sides:
+        canonical.extend(
+            CanonicalMatch(
+                item_id=item_id, side=side, name=drug.name, salt=drug.salt,
+                match_score=drug.match_score, method=drug.method,
+            )
+            for item_id, drug in table.items()
+        )
 
     findings: list[Finding] = []
     for pair in pairs:
@@ -1222,27 +1249,18 @@ def reconcile(
     findings.extend(lab.findings)
 
     findings.extend(_document_rules(prescription, bill, bill_by_id))
+    if priors is not None:
+        findings.extend(
+            check_history(
+                prescription, bill, canonical, list(priors),
+                history_scope or HistoryScope(scans_compared=len(priors)),
+            )
+        )
     # Checks about the bill as a document: does it add up, and does it carry
     # the identifiers a pharmacy invoice is required to carry.
     findings.extend(check_arithmetic(bill))
     findings.extend(_bill_integrity_findings(bill, bill_by_id))
     findings.extend(_low_agreement_findings(prescription, bill))
-
-    # The matcher resolved these on the way in; report them rather than letting
-    # a salt escape only when a particular finding happens to fire.
-    canonical: list[CanonicalMatch] = []
-    sides: tuple[tuple[Literal["prescription", "bill"], dict[str, CanonicalDrug]], ...] = (
-        ("prescription", rx_by_id),
-        ("bill", bill_by_id),
-    )
-    for side, table in sides:
-        canonical.extend(
-            CanonicalMatch(
-                item_id=item_id, side=side, name=drug.name, salt=drug.salt,
-                match_score=drug.match_score, method=drug.method,
-            )
-            for item_id, drug in table.items()
-        )
 
     verdict, reasons = decide_verdict(prescription, bill, findings)
     if verdict == "inconclusive":

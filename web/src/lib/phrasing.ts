@@ -38,6 +38,10 @@ const DISCREPANCY_CODES = new Set([
   'GRAND_TOTAL_MISMATCH',
   'GSTIN_INVALID',
   'LICENCE_ABSENT',
+  'DUPLICATE_BILL',
+  'POSSIBLE_RESUBMISSION',
+  'EARLY_REPEAT',
+  'LICENCE_INCONSISTENT',
 ])
 
 /** Findings that say a check was attempted but could not conclude. */
@@ -226,6 +230,22 @@ export function phrase(
       return `${String(detail['line'])} is not a medicine and is usually outside reimbursement`
     case 'TAX_INCLUSIVE_PRICING':
       return 'The printed rates appear to include tax, so the grand-total check was skipped'
+    case 'DUPLICATE_BILL':
+      return `This bill was already submitted as scan #${String(
+        detail['prior_scan_id'],
+      )} on ${String(detail['prior_scan_date'])}`
+    case 'POSSIBLE_RESUBMISSION':
+      return `A similar bill was recorded as scan #${String(
+        detail['prior_scan_id'],
+      )}, but this one differs — likely a corrected re-issue`
+    case 'EARLY_REPEAT':
+      return `${String(detail['salt'])} was claimed ${String(
+        detail['days_since_previous'],
+      )} days ago against a ${String(detail['previous_course_days'])}-day course`
+    case 'LICENCE_INCONSISTENT':
+      return `${String(detail['pharmacy'])} has appeared with ${
+        (detail['licence_numbers'] as string[] | undefined)?.length ?? 2
+      } different drug licence numbers`
     case 'CHECK_UNAVAILABLE':
       return `${String(detail['check'])} — needs ${
         (detail['missing'] as string[] | undefined)?.join(', ') ?? 'missing input'
@@ -331,6 +351,9 @@ const REMARKS: ReadonlyArray<readonly [string, string]> = [
   ['QUANTITY_EXCESS', 'More dispensed than the course requires'],
   ['DUPLICATE_THERAPY', 'Same medicine on more than one line'],
   ['BRAND_SUBSTITUTION', 'Brand substitution'],
+  ['DUPLICATE_BILL', 'Already submitted'],
+  ['POSSIBLE_RESUBMISSION', 'Possible corrected re-issue'],
+  ['EARLY_REPEAT', 'Claimed again before the course ran out'],
   ['LINE_TOTAL_MISMATCH', 'Line total does not match quantity x rate'],
   ['QUANTITY_AMBIGUOUS', 'Quantity could not be confirmed'],
   ['NON_MEDICINE_ITEM', 'Not a medicine'],

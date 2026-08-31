@@ -45,6 +45,12 @@ from rxconcile.models import PharmacyBill, Prescription, ReconciliationResult
 from rxconcile.normalize import lab_panels
 from rxconcile.normalize.drug_dictionary import load_entries
 from rxconcile.reconcile import reconcile
+from rxconcile.reconcile.history import (
+    HistoryScope,
+    PriorCourse,
+    PriorLine,
+    PriorScan,
+)
 from rxconcile.store import ScanRecord, get_session, summarise
 
 logger: Final = logging.getLogger(__name__)
@@ -417,6 +423,19 @@ def current_user(authorization: str | None = Header(default=None)) -> DemoUser:
     return user
 
 
+def optional_user(authorization: str | None = Header(default=None)) -> DemoUser | None:
+    """The caller if signed in, None if not.
+
+    Reconciliation itself never required a session, and adding one for the
+    history checks would break that. Signed out, the history checks simply do
+    not run rather than running against everything.
+    """
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    return user_from_token(token) if token else None
+
+
 @app.post("/api/demo/session")
 async def demo_session(request: DemoSessionRequest) -> DemoSessionResponse:
     """Exchange demo credentials for a token bound to the email."""
@@ -774,7 +793,10 @@ async def list_samples() -> list[SampleSummary]:
 
 
 async def _reconcile_bytes(
-    prescription_bytes: bytes, bill_bytes: bytes, runs: int
+    prescription_bytes: bytes,
+    bill_bytes: bytes,
+    runs: int,
+    history: tuple[list[PriorScan], HistoryScope] | None = None,
 ) -> ReconciliationResult:
     """Extract both documents concurrently, then reconcile.
 
@@ -789,7 +811,10 @@ async def _reconcile_bytes(
     _guard_disagreement(prescription, "prescription")
     _guard_disagreement(bill, "bill")
     elapsed_ms = int((time.monotonic() - started) * 1000)
-    return reconcile(prescription, bill, processing_ms=elapsed_ms)
+    priors, scope = history if history is not None else (None, None)
+    return reconcile(
+        prescription, bill, processing_ms=elapsed_ms, priors=priors, history_scope=scope,
+    )
 
 
 @app.get("/api/samples/{sample_id}/image/{which}")
@@ -899,21 +924,103 @@ async def dictionary() -> DictionaryResponse:
     )
 
 
+def _prior_from_record(record: ScanRecord) -> PriorScan | None:
+    """Reduce a stored scan to what the history checks read.
+
+    Built from ``result_json`` rather than from summary columns, so it cannot
+    drift from the result it describes. That means loading each blob, which is
+    fine at demo volume and would want indexed columns at scale.
+    """
+    try:
+        payload = json.loads(record.result_json)
+    except ValueError:
+        return None
+    bill = payload.get("bill") or {}
+    prescription = payload.get("prescription") or {}
+
+    salts: dict[str, str] = {
+        entry["item_id"]: entry["salt"]
+        for entry in payload.get("canonical") or []
+        if entry.get("side") == "prescription" and entry.get("salt")
+    }
+    courses: list[PriorCourse] = []
+    for item in prescription.get("items") or []:
+        # The canonical match is the reliable source; the transcribed salt is
+        # the fallback for records written before it was reported.
+        salt = salts.get(item.get("item_id", "")) or item.get("salt")
+        if salt:
+            courses.append(PriorCourse(salt=salt, duration_days=item.get("duration_days")))
+
+    lines = [
+        PriorLine(
+            name=line.get("drug_name") or line.get("test_name") or line.get("raw_text") or "",
+            line_total=line.get("line_total"),
+        )
+        for line in [*(bill.get("items") or []), *(bill.get("tests") or [])]
+    ]
+
+    return PriorScan(
+        scan_id=record.id or 0,
+        created_at=record.created_at,
+        employee_name=record.employee_name,
+        pharmacy_name=bill.get("pharmacy_name"),
+        pharmacy_licence_no=bill.get("pharmacy_licence_no"),
+        bill_no=bill.get("bill_no"),
+        bill_date=bill.get("bill_date"),
+        patient_name=bill.get("patient_name"),
+        grand_total=bill.get("grand_total"),
+        lines=tuple(lines),
+        courses=tuple(courses),
+    )
+
+
+def _load_history(user: DemoUser, session: Session) -> tuple[list[PriorScan], HistoryScope]:
+    """Prior scans this account may see, and a statement of that limitation.
+
+    Narrowed HERE, by the same role rule the listing uses. An employee's
+    duplicate check must not reveal that another account's scans exist, so the
+    engine is handed only what this account can already read, and the scope
+    travels into every finding.
+    """
+    statement = select(ScanRecord).order_by(col(ScanRecord.created_at).desc())
+    if user.role != "admin":
+        statement = statement.where(ScanRecord.user_email == user.email)
+    records = list(session.exec(statement).all())
+    priors = [prior for prior in map(_prior_from_record, records) if prior is not None]
+    return priors, HistoryScope(
+        scans_compared=len(priors),
+        role=user.role,
+        limited_to_own_scans=user.role != "admin",
+    )
+
+
 @app.post("/api/reconcile")
 async def reconcile_endpoint(
     prescription: UploadFile = File(..., description="Prescription image or PDF."),
     bill: UploadFile = File(..., description="Pharmacy bill image or PDF."),
     runs: int | None = Form(default=None, description="Extraction runs per document."),
+    user: DemoUser | None = Depends(optional_user),
+    session: Session = Depends(get_session),
 ) -> ReconciliationResult:
-    """Reconcile a prescription against a bill. Returns the complete result."""
+    """Reconcile a prescription against a bill. Returns the complete result.
+
+    History checks run only for a signed-in account, against the scans that
+    account may already see.
+    """
     run_count = _resolved_runs(runs)
     prescription_bytes = await read_upload(prescription)
     bill_bytes = await read_upload(bill)
-    return await _reconcile_bytes(prescription_bytes, bill_bytes, run_count)
+    history = _load_history(user, session) if user is not None else None
+    return await _reconcile_bytes(prescription_bytes, bill_bytes, run_count, history)
 
 
 @app.post("/api/reconcile/sample")
-async def reconcile_sample(request: SampleRequest, runs: int | None = None) -> ReconciliationResult:
+async def reconcile_sample(
+    request: SampleRequest,
+    runs: int | None = None,
+    user: DemoUser | None = Depends(optional_user),
+    session: Session = Depends(get_session),
+) -> ReconciliationResult:
     """Run the pipeline over a bundled sample pair."""
     sample = next((s for s in SAMPLES if s.sample_id == request.sample_id), None)
     if sample is None:
@@ -932,8 +1039,9 @@ async def reconcile_sample(request: SampleRequest, runs: int | None = None) -> R
             message=f"Sample {sample.sample_id!r} is listed but its files are missing.",
             hint="Check the samples/ directory in the repository is intact.",
         )
+    history = _load_history(user, session) if user is not None else None
     return await _reconcile_bytes(
-        prescription_path.read_bytes(), bill_path.read_bytes(), _resolved_runs(runs)
+        prescription_path.read_bytes(), bill_path.read_bytes(), _resolved_runs(runs), history,
     )
 
 
