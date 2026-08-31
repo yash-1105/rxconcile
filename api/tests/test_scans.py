@@ -433,3 +433,39 @@ class TestDecisionsSurviveTheRecord:
             stored = session.get(ScanRecord, record_id)
             assert stored is not None
             assert stored.allowance_year == "2024-25"
+
+
+class TestAllowanceIsRoleFiltered:
+    """An employee number is not a key to somebody else's spending.
+
+    `/api/allowance/{number}` had no role check, so any signed-in account could
+    read any colleague's annual allowance, used-so-far, balance and scan count
+    by typing their number — the leak the scan endpoints are careful to avoid.
+    """
+
+    def test_an_employee_can_read_their_own(self, client: TestClient) -> None:
+        save(client, EMPLOYEE)
+        got = client.get("/api/allowance/EMP-4417", headers=auth(EMPLOYEE))
+        assert got.status_code == 200
+        assert got.json()["employee_number"] == "EMP-4417"
+
+    def test_an_employee_cannot_read_another_number(self, client: TestClient) -> None:
+        save(client, EMPLOYEE)
+        save(client, ADMIN, employee_number="ADM-0001", employee_name="Ishan")
+        denied = client.get("/api/allowance/ADM-0001", headers=auth(EMPLOYEE))
+        assert denied.status_code == 404
+
+    def test_probing_a_number_that_does_not_exist_looks_the_same(
+        self, client: TestClient
+    ) -> None:
+        """Identical response either way, so the endpoint confirms nothing."""
+        save(client, EMPLOYEE)
+        real = client.get("/api/allowance/ADM-0001", headers=auth(EMPLOYEE))
+        invented = client.get("/api/allowance/EMP-9999", headers=auth(EMPLOYEE))
+        assert real.status_code == invented.status_code == 404
+        assert real.json()["error_code"] == invented.json()["error_code"]
+
+    def test_an_admin_reads_any_number(self, client: TestClient) -> None:
+        save(client, EMPLOYEE)
+        got = client.get("/api/allowance/EMP-4417", headers=auth(ADMIN))
+        assert got.status_code == 200

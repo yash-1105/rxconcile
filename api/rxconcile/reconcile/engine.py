@@ -709,7 +709,25 @@ def _unmatched_rules(
     # An unmatched line on the other document that nobody could identify might be
     # the missing counterpart. While one exists, "this was not dispensed" is not
     # a claim the data supports, however clearly this side was read.
-    unknown_bill = [i for i in unmatched_bill if not bill_drugs[i].resolved]
+    #
+    # A line POSITIVELY classified as a non-medicine is not a candidate. A
+    # sunscreen and a delivery charge are not unidentified — they were read and
+    # understood — and neither could ever be the missing Becosules. Counting
+    # them softened a real "prescribed but not dispensed" into a warning on the
+    # strength of counterparts that could not exist.
+    #
+    # `unclassified` still counts. That is the whole point of the third state:
+    # a line nobody could place might genuinely be the medicine, and guessing
+    # otherwise is how a real discrepancy gets buried.
+    unknown_bill = [
+        i
+        for i in unmatched_bill
+        if not bill_drugs[i].resolved
+        and classify_line(bill_by_id[i], bill_drugs[i]) != "non_medicine"
+    ]
+    # The prescription side carries no non-medicine class to exclude: a
+    # prescription does not bill sunscreen or delivery. Every unresolved line
+    # here is a genuine candidate, so this set is unchanged.
     unknown_rx = [i for i in unmatched_rx if not rx_drugs[i].resolved]
 
     # A prescribed medicine is only "not dispensed" if a pharmacy bill was

@@ -110,7 +110,7 @@ function money(amount: number | string, currency = 'INR'): string {
 function GapStrip({ gaps }: { gaps: DocumentGap[] }) {
   if (gaps.length === 0) return null
   return (
-    <div className="border-b border-dashed border-unknown bg-ink-50 px-7 py-4">
+    <div className="border-b border-dashed border-unknown bg-ink-50 px-5 py-4 sm:px-7">
       {gaps.map((gap) => (
         <div key={gap.title} className="flex items-start gap-3">
           <SpineMark state="unchecked" className="mt-1" />
@@ -278,7 +278,7 @@ export function SummaryPanel({
 
       <div className="grid lg:grid-cols-[1.35fr_1fr]">
         {/* LEFT — what the documents say */}
-        <div className="px-7 py-7">
+        <div className="min-w-0 px-5 py-6 sm:px-7 sm:py-7">
           <div className="flex items-start gap-4">
             <SpineMark state={mark} className="mt-2.5" />
             <div className="min-w-0 flex-1">
@@ -337,7 +337,7 @@ export function SummaryPanel({
         </div>
 
         {/* RIGHT — the money */}
-        <div className="border-t border-ink-100 bg-ink-50/60 px-7 py-7 lg:border-l lg:border-t-0">
+        <div className="min-w-0 border-t border-ink-100 bg-ink-50/60 px-5 py-6 sm:px-7 sm:py-7 lg:border-l lg:border-t-0">
           {allowance === null ? (
             <>
               <p className="t-micro text-muted">Balance remaining</p>

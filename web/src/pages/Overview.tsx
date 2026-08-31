@@ -5,6 +5,16 @@ import { BarList, TrendLine } from '../components/Charts'
 import { EmptyState, PageHeader } from '../components/Shell'
 import { SpineMark } from '../components/Spine'
 import { listAllowances } from '../api/client'
+
+/** One money format for the whole app: "INR 12,000.00", never a bare number. */
+function money(amount: string, currency = 'INR'): string {
+  const value = Number(amount)
+  return `${currency} ${
+    Number.isFinite(value)
+      ? value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : amount
+  }`
+}
 import type { AllowanceView } from '../types/api'
 import {
   countBy,
@@ -232,7 +242,7 @@ export function Overview({
                             <span className="t-small ml-2 text-muted">{view.employee_number}</span>
                           </span>
                           <span className="t-data text-muted">
-                            {view.balance} of {view.annual_amount} left
+                            {money(view.balance)} of {money(view.annual_amount)} left
                           </span>
                         </div>
                         <div className="mt-1 h-1.5 w-full rounded bg-ink-100">

@@ -827,3 +827,52 @@ def test_canonical_ids_must_reference_real_lines() -> None:
             canonical=[CanonicalMatch(item_id="rx-99", side="prescription")],
             prescription=prescription, bill=bill, processing_ms=1,
         )
+
+
+class TestNonMedicinesAreNotPlausibleCounterparts:
+    """A sunscreen cannot be the missing Becosules.
+
+    RX_NOT_BILLED softens to a warning while an unidentified billed line might
+    be the medicine nobody matched. A line positively classified as a
+    non-medicine is not unidentified — it was read and understood — so it must
+    not buy that softening. On a real bill carrying a sunscreen and a delivery
+    charge, it downgraded a genuine "prescribed but not dispensed" to a warning.
+    """
+
+    def test_a_non_medicine_line_does_not_soften_rx_not_billed(self) -> None:
+        result = engine.reconcile(
+            rx(rx_item("rx-01", drug_name="Becosules", raw_text="Cap. Becosules 1-0-0")),
+            bill(
+                bill_item("bill-01", drug_name="LAKME SUNSCREEN SPF50",
+                          raw_text="LAKME SUNSCREEN SPF50", form="other"),
+                bill_item("bill-02", drug_name="DELIVERY CHARGE",
+                          raw_text="DELIVERY CHARGE", form="other"),
+            ),
+        )
+        found = next(f for f in result.findings if f.rule_code == "RX_NOT_BILLED")
+        assert found.severity == "critical"
+        assert found.detail["unidentified_billed_lines"] == []
+
+    def test_a_genuinely_unidentified_line_still_softens_it(self) -> None:
+        """The protection itself is untouched: an unreadable line may be it."""
+        result = engine.reconcile(
+            rx(rx_item("rx-01", drug_name="Becosules", raw_text="Cap. Becosules 1-0-0")),
+            bill(bill_item("bill-01", drug_name=None, raw_text="Zqx 500")),
+        )
+        found = next(f for f in result.findings if f.rule_code == "RX_NOT_BILLED")
+        assert found.severity == "warning"
+        assert found.detail["unidentified_billed_lines"] == ["bill-01"]
+
+    def test_a_non_medicine_alongside_an_unreadable_line_still_softens(self) -> None:
+        """Only the non-medicine is discounted, not the whole set."""
+        result = engine.reconcile(
+            rx(rx_item("rx-01", drug_name="Becosules", raw_text="Cap. Becosules 1-0-0")),
+            bill(
+                bill_item("bill-01", drug_name="DELIVERY CHARGE",
+                          raw_text="DELIVERY CHARGE", form="other"),
+                bill_item("bill-02", drug_name=None, raw_text="Zqx 500"),
+            ),
+        )
+        found = next(f for f in result.findings if f.rule_code == "RX_NOT_BILLED")
+        assert found.severity == "warning"
+        assert found.detail["unidentified_billed_lines"] == ["bill-02"]

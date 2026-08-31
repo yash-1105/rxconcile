@@ -724,6 +724,19 @@ async def list_allowances(
     ]
 
 
+def _readable_numbers(user: DemoUser, session: Session) -> set[str]:
+    """The employee numbers this account is allowed to see a balance for.
+
+    An employee number is typed by hand on every scan, so an account may have
+    several. The set is the numbers on the scans this account can see, plus its
+    own — the same rule the scan list uses, so the two cannot disagree.
+    """
+    statement = select(ScanRecord).where(ScanRecord.user_email == user.email)
+    numbers = {record.employee_number for record in session.exec(statement).all()}
+    numbers.add(user.employee_number)
+    return numbers
+
+
 @app.get("/api/allowance/{employee_number}")
 async def get_allowance(
     employee_number: str,
@@ -731,7 +744,21 @@ async def get_allowance(
     user: DemoUser = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> AllowanceView:
-    """One employee's allowance. ``exclude_scan_id`` leaves a scan out of used-so-far."""
+    """One employee's allowance. ``exclude_scan_id`` leaves a scan out of used-so-far.
+
+    Role-filtered. Without this an employee could read any colleague's annual
+    allowance, spending and scan count by typing their employee number — the
+    same thing the scan endpoints are careful never to leak.
+    """
+    if user.role != "admin" and employee_number not in _readable_numbers(user, session):
+        # Same response whether or not that employee exists, so probing numbers
+        # teaches nothing.
+        raise ApiError(
+            status_code=404,
+            error_code="ALLOWANCE_NOT_FOUND",
+            message=f"No allowance visible for {employee_number}.",
+            hint="An account can only see the allowance behind its own scans.",
+        )
     return view_for(session, employee_number, exclude_scan_id=exclude_scan_id)
 
 
