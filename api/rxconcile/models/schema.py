@@ -474,6 +474,14 @@ class MatchedPair(_Base):
     prescribed_id: str = Field(min_length=1, description="PrescribedItem.item_id.")
     billed_id: str = Field(min_length=1, description="BilledItem.item_id.")
     similarity: float = Field(ge=0.0, le=1.0, description="Composite pairing score, 0-1.")
+    covers: list[str] = Field(
+        default_factory=list,
+        description="Every billed line this pair accounts for, primary first. A lab "
+        "panel is ordered once and billed as several analytes; without this the "
+        "response named only the primary and a reader had to guess which ordered "
+        "panel the others belonged to. Empty on the medicine side, where a pair is "
+        "always one line to one line.",
+    )
 
 
 class ReviewSummary(_Base):

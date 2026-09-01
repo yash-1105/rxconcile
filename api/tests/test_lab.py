@@ -281,11 +281,61 @@ def test_an_unresolvable_panel_does_not_accuse_every_billed_component() -> None:
             assert "could not be identified" in found.message
 
 
-def test_an_unresolvable_billed_line_softens_a_missing_test() -> None:
-    """The mirror image, on the bill side."""
-    result = run(prescription("CBC"), bill("Www [?] Assay"))
+def test_an_UNREADABLE_billed_line_softens_a_missing_test() -> None:
+    """A line with no name read off it might be anything, including the CBC."""
+    illegible = PharmacyBill(
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
+        tests=[BilledTest(item_id="billtest-01", raw_text="~~ smudge ~~",
+                          test_name=None, line_total=Decimal("250.00"), confidence=0.4)],
+    )
+    result = engine.reconcile(prescription("CBC"), illegible, processing_ms=0)
     assert codes(result, "TEST_NOT_BILLED") == ["warning"]
-    assert not [f for f in result.findings if f.severity == "critical"]
+    found = next(f for f in result.findings if f.rule_code == "TEST_NOT_BILLED")
+    assert found.detail["softened_code"] == "unidentified_billed_lines"
+
+
+def test_a_LEGIBLE_but_unrecognised_billed_line_does_not_soften_a_missing_test() -> None:
+    """The defect this replaces.
+
+    "Vitamin D (25-OH)" is read perfectly and is simply absent from
+    lab_panels. It is a known, different test, so it cannot be the missing one
+    — and reporting it as "some billed lab lines could not be read" was false
+    about a bill every line of which had been read.
+    """
+    result = run(prescription("KFT"), bill("Vitamin D (25-OH)"))
+    assert codes(result, "TEST_NOT_BILLED") == ["critical"]
+    found = next(f for f in result.findings if f.rule_code == "TEST_NOT_BILLED")
+    assert found.detail["softened_code"] is None
+    assert found.detail["softened_because"] is None
+
+
+def test_a_legible_billed_test_the_dictionary_never_saw_is_still_unordered() -> None:
+    """Resolution is needed to MATCH, not to observe absence.
+
+    An unresolved billed line used to emit TEST_UNRESOLVED and `continue`, so a
+    legible test that nobody ordered was never reported as unordered at all.
+    Deliberately a name this build has never heard of: the rule has to hold for
+    tests our reference data does not cover, which is the whole point.
+    """
+    result = run(prescription("KFT"), bill("Serum Zonulin Assay"))
+    assert codes(result, "TEST_NOT_PRESCRIBED") == ["critical"]
+    found = next(f for f in result.findings if f.rule_code == "TEST_NOT_PRESCRIBED")
+    assert found.detail["resolved_as"] == "Serum Zonulin Assay"
+    assert found.detail["identified"] is False
+    # The dictionary gap is still stated, as an info note beside it.
+    assert codes(result, "TEST_UNRESOLVED") == ["info"]
+
+
+def test_an_unreadable_billed_line_is_never_accused_of_being_unordered() -> None:
+    """Nothing was read off it, so nothing can be said about it."""
+    illegible = PharmacyBill(
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
+        tests=[BilledTest(item_id="billtest-01", raw_text="~~ smudge ~~",
+                          test_name=None, line_total=Decimal("250.00"), confidence=0.4)],
+    )
+    result = engine.reconcile(prescription(present=False), illegible, processing_ms=0)
+    assert not codes(result, "TEST_NOT_PRESCRIBED")
+    assert [f for f in result.findings if f.rule_code == CHECK_UNAVAILABLE_CODE]
 
 
 def test_an_unresolved_line_records_that_a_check_could_not_run() -> None:

@@ -84,6 +84,19 @@ def _written(test: PrescribedTest | BilledTest) -> str:
     return test.test_name or test.raw_text
 
 
+def _legible(test: PrescribedTest | BilledTest) -> bool:
+    """Whether the PAGE was read, which is not whether the DICTIONARY knew it.
+
+    The distinction this project keeps having to relearn. `resolved` is a
+    lookup in lab_panels; `legible` is whether a test name came off the
+    document at all. "Vitamin D (25-OH)" is perfectly legible and simply not in
+    our reference data — reporting that as a line that could not be read blames
+    the extraction for a gap in our own tables, and worse, treats a known
+    different test as a possible match for the one that is missing.
+    """
+    return bool(test.test_name)
+
+
 def _resolve(test: PrescribedTest | BilledTest) -> lab_panels.LabMatch:
     return lab_panels.resolve(_written(test))
 
@@ -157,9 +170,13 @@ def reconcile_tests(
             offered.setdefault(component, []).append(billed.item_id)
 
     unresolved_orders = [test for test in rx_tests if not rx_matches[test.item_id].resolved]
-    unresolved_bills = [
-        billed for billed in bill_tests if not bill_matches[billed.item_id].resolved
-    ]
+    # Only a line whose TEXT could not be read is a possible counterpart for an
+    # ordered test that is missing. A legible line naming a different test is
+    # not a candidate: "Vitamin D (25-OH)" cannot be the missing KFT, and
+    # counting it softened two genuinely unbilled tests into warnings under the
+    # wording "some billed lab lines could not be read", which was false about
+    # a bill every line of which had been read perfectly.
+    unreadable_bills = [billed for billed in bill_tests if not _legible(billed)]
 
     # Whether an ordered test CAN be checked is a property of the documents, not
     # of which upload slot a file was dropped into.
@@ -248,10 +265,10 @@ def reconcile_tests(
                     "a lab bill was uploaded but no test line on it could be read, "
                     "so there is nothing to check this against"
                 )
-            elif unresolved_bills:
+            elif unreadable_bills:
                 uncertain_code = "unidentified_billed_lines"
                 uncertain = (
-                    f"{len(unresolved_bills)} billed lab line(s) could not be identified, "
+                    f"{len(unreadable_bills)} billed lab line(s) could not be read, "
                     "so one of them may be this test"
                 )
             unmatched_rx.append(test.item_id)
@@ -281,6 +298,7 @@ def reconcile_tests(
             MatchedPair(
                 prescribed_id=test.item_id,
                 billed_id=primary,
+                covers=list(covering),
                 similarity=_FULL if not missing else round(coverage, 4),
             )
         )
@@ -314,21 +332,33 @@ def reconcile_tests(
         unmatched_bill.append(billed.item_id)
         match = bill_matches[billed.item_id]
 
+        # A dictionary miss is still recorded, because a gap in our reference
+        # data is worth knowing about -- but it no longer stops the check.
         if not match.resolved:
             findings.append(
                 finding(
                     "TEST_UNRESOLVED", "info",
-                    f"{_written(billed)!r} on the bill could not be identified as a "
-                    "known test or panel, so it could not be checked against the "
-                    "prescription.",
+                    f"{_written(billed)!r} on the bill is not a test this build "
+                    "recognises, so it could not be matched to an ordered panel.",
                     billed_ref=billed.item_id,
-                    detail={"written": _written(billed), "side": "bill"},
+                    detail={
+                        "written": _written(billed),
+                        "side": "bill",
+                        "legible": _legible(billed),
+                    },
                 )
             )
+
+        # Reported whether or not the dictionary knew it. Resolution is needed to
+        # MATCH a test to an ordered panel; it is not needed to observe that a
+        # line appears on the bill and not on the prescription. Skipping this
+        # meant a legible, unordered test was silently never reported.
+        if not _legible(billed):
+            # Nothing was read off this line, so nothing can be said about it.
             findings.append(
                 unavailable(
                     "test authorisation",
-                    ["a recognised test or panel name"],
+                    ["a readable test name on the billed line"],
                     billed_ref=billed.item_id,
                     note="This line is neither confirmed as ordered nor reported as "
                          "unordered; a reviewer must read it.",
@@ -336,17 +366,19 @@ def reconcile_tests(
             )
             continue
 
+        name = match.name if match.resolved else _written(billed)
         findings.append(
             finding(
                 "TEST_NOT_PRESCRIBED",
                 "warning" if uncertain_orders else "critical",
-                f"{match.name} was billed but does not appear among the ordered "
+                f"{name} was billed but does not appear among the ordered "
                 "investigations"
                 + (f" -- though {uncertain_orders}." if uncertain_orders else "."),
                 billed_ref=billed.item_id,
                 detail={
                     "written": _written(billed),
-                    "resolved_as": match.name,
+                    "resolved_as": name,
+                    "identified": match.resolved,
                     "softened_because": uncertain_orders,
                     "softened_code": orders_code,
                 },

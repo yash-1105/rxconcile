@@ -133,6 +133,17 @@ interface TestRow {
   codes: string[]
   status: SpineState
   partial: boolean
+  /**
+   * The ordered test this billed line was counted against, when it is one of
+   * several lines covering a single ordered panel.
+   *
+   * Read from `MatchedPair.covers`, which the ENGINE states. It was previously
+   * left blank because the response named only the primary line, and guessing
+   * which panel the rest belonged to would have been an invention.
+   */
+  coveredBy?: string | null
+  /** How many billed lines cover this ordered test, when it is a panel. */
+  coversCount?: number
 }
 
 function testRows(result: ReconciliationResult): TestRow[] {
@@ -163,14 +174,15 @@ function testRows(result: ReconciliationResult): TestRow[] {
 
   for (const pair of result.matched_tests ?? []) {
     const findings = findingsForPair(result.findings, pair.prescribed_id, pair.billed_id)
-    rows.push(
-      build(
+    rows.push({
+      ...build(
         `${pair.prescribed_id}-${pair.billed_id}`,
         rx.get(pair.prescribed_id) ?? null,
         bill.get(pair.billed_id) ?? null,
         findings,
       ),
-    )
+      coversCount: (pair.covers ?? []).length,
+    })
   }
   // A panel match consumes every billed line that covered it, but the response
   // names only the primary one in `matched_tests`. Without this, an ordered CBC
@@ -185,6 +197,14 @@ function testRows(result: ReconciliationResult): TestRow[] {
     ...(result.matched_tests ?? []).map((p) => p.billed_id),
     ...(result.unmatched_billed_tests ?? []),
   ])
+  // Which ordered test each covering line belongs to, as the engine reported it.
+  const coveringPanel = new Map<string, string>()
+  for (const pair of result.matched_tests ?? []) {
+    const orderedName = rx.get(pair.prescribed_id)?.test_name
+    for (const billedId of pair.covers ?? []) {
+      if (orderedName) coveringPanel.set(billedId, orderedName)
+    }
+  }
   for (const test of result.bill.tests ?? []) {
     if (accounted.has(test.item_id)) continue
     rows.push({
@@ -196,6 +216,7 @@ function testRows(result: ReconciliationResult): TestRow[] {
       // Covered by a panel that was ordered: a positive result, not an absence.
       status: 'clean',
       partial: false,
+      coveredBy: coveringPanel.get(test.item_id) ?? null,
     })
   }
   for (const id of result.unmatched_prescribed_tests ?? []) {

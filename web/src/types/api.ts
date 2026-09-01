@@ -219,6 +219,12 @@ export interface MatchedPair {
   billed_id: string
   /** Composite pairing score, 0-1. */
   similarity: number
+  /**
+   * Every billed line this pair accounts for, primary first. A lab panel is
+   * ordered once and billed as several analytes. Absent on records written
+   * before the engine reported it.
+   */
+  covers?: string[]
 }
 
 export interface ReviewSummary {

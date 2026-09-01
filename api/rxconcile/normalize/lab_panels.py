@@ -72,6 +72,8 @@ PANELS: Final[dict[str, tuple[str, ...]]] = {
     ),
     # Ordered as a panel name in practice, but reported as a single analyte.
     "HbA1c": ("HbA1c",),
+    # Commonly ordered standalone, and billed under several names.
+    "Vitamin D": ("Vitamin D",),
 }
 
 #: How a panel is written on a real prescription.
@@ -177,6 +179,16 @@ TEST_ALIASES: Final[dict[str, str]] = {
     "pus cells": "Urine Pus Cells",
     "urine epithelial cells": "Urine Epithelial Cells",
     "epithelial cells": "Urine Epithelial Cells",
+    "vitamin d": "Vitamin D",
+    "vit d": "Vitamin D",
+    "vitamin d3": "Vitamin D",
+    "vit d3": "Vitamin D",
+    "25 oh vitamin d": "Vitamin D",
+    "25-oh vitamin d": "Vitamin D",
+    "25 hydroxy vitamin d": "Vitamin D",
+    "vitamin d (25-oh)": "Vitamin D",
+    "vitamin d 25 oh": "Vitamin D",
+    "25 oh vit d": "Vitamin D",
 }
 
 #: A parenthetical component list: "Thyroid Profile (T3, T4, TSH)".

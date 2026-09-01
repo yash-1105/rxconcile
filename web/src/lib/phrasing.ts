@@ -511,14 +511,14 @@ export function testRemark(codes: string[], findings: Finding[]): string {
     if (reason) {
       return SOFTENED_TEST_NOT_PRESCRIBED[reason] ?? 'Billed — this could not be fully checked'
     }
-    return 'Not found in prescription'
+    return 'Billed but not ordered'
   }
   if (has('TEST_NOT_BILLED')) {
     const reason = softenedCode('TEST_NOT_BILLED')
     if (reason) {
       return SOFTENED_TEST_NOT_BILLED[reason] ?? 'Ordered — this could not be fully checked'
     }
-    return 'Ordered but not on the bill'
+    return 'Ordered but not billed'
   }
   if (has('PANEL_PARTIAL')) {
     const found = findings.find((f) => f.rule_code === 'PANEL_PARTIAL')
@@ -529,7 +529,7 @@ export function testRemark(codes: string[], findings: Finding[]): string {
       : `Panel billed incompletely — missing ${missing.join(', ')}`
   }
   if (has('TEST_DUPLICATE')) return 'Billed more than once'
-  if (has('TEST_UNRESOLVED')) return 'Not a test this build recognises — not verifiable'
+  if (has('TEST_UNRESOLVED')) return 'Not a test this build recognises'
   return ''
 }
 

@@ -702,11 +702,26 @@ export function LabTestsTable({
   const { ref, alignment } = useRowAlignment()
   const all = testRowsOf(result)
   const rows = applyFilter(all, filter)
-  const coveredCount =
-    (result.matched_tests ?? []).length === 1
-      ? all.filter((r) => r.prescribed === null && r.billed !== null && r.findings.length === 0)
-          .length
-      : 0
+  /**
+   * What a lab row says when nothing is wrong with it.
+   *
+   * A blank cell reads as missing data, so a row that matched says so. The
+   * panel wording is per-row now that the engine states which ordered test
+   * each billed line was counted against.
+   */
+  const labRemark = (row: TestRow): string => {
+    if (row.findings.length > 0) return testRemark(row.codes, row.findings)
+    if (row.prescribed === null && row.billed !== null) {
+      return row.coveredBy
+        ? `Billed as part of ${row.coveredBy}`
+        : 'Billed as part of an ordered panel'
+    }
+    if (row.prescribed !== null && (row.coversCount ?? 0) > 1) {
+      return `Ordered as a panel — billed as ${row.coversCount} itemised lines`
+    }
+    if (row.prescribed !== null && row.billed !== null) return 'Ordered and billed'
+    return testRemark(row.codes, row.findings)
+  }
 
   if (all.length > 0 && rows.length === 0) {
     return <p className="t-small text-muted">No lines match this filter.</p>
@@ -813,17 +828,20 @@ export function LabTestsTable({
               >
                 <RowNumber index={index} />
                 <StatusCell status={row.status} partial={row.partial} />
-                <RemarkCell
-                  text={
-                    row.findings.length === 0 && row.prescribed === null && row.billed !== null
-                      ? 'Billed as part of an ordered panel'
-                      : row.findings.length === 0 && row.prescribed !== null && coveredCount > 0
-                        ? `Ordered as a panel — billed as ${coveredCount + 1} itemised lines`
-                        : testRemark(row.codes, row.findings)
-                  }
-                />
+                <RemarkCell text={labRemark(row)} />
                 <td className="border-l border-ink-200 px-4 py-5">
-                  <Val muted={quiet}>{row.prescribed?.test_name}</Val>
+                  {row.coveredBy ? (
+                    // Indented and repeated, so four billed analytes read as one
+                    // ordered panel rather than as three unmatched lines.
+                    <span className="inline-flex items-baseline gap-1.5 pl-4">
+                      <span className="t-small text-ink-400" aria-hidden="true">
+                        &#8627;
+                      </span>
+                      <span className="t-data text-muted">{row.coveredBy}</span>
+                    </span>
+                  ) : (
+                    <Val muted={quiet}>{row.prescribed?.test_name}</Val>
+                  )}
                 </td>
                 <td className="px-4 py-5">
                   <Val muted={quiet}>{row.billed?.test_name}</Val>
