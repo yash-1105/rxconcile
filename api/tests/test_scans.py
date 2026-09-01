@@ -329,7 +329,7 @@ def test_an_employee_cannot_read_another_accounts_pages(client: TestClient) -> N
 )
 def test_every_export_format_downloads(client: TestClient, fmt: str, prefix: bytes) -> None:
     saved = save(client, EMPLOYEE)
-    response = client.get(f"/api/scans/{saved['id']}/export.{fmt}", headers=auth(EMPLOYEE))
+    response = client.get(f"/api/scans/{saved['id']}/export.{fmt}", headers=auth(ADMIN))
     assert response.status_code == 200, response.text
     assert response.content.startswith(prefix)
     assert "attachment" in response.headers["content-disposition"]
@@ -357,7 +357,7 @@ def test_an_export_of_a_legacy_record_still_builds(client: TestClient) -> None:
         legacy.pop(later_addition, None)
     saved = save(client, EMPLOYEE, result=legacy)
     for fmt in ("pdf", "xlsx", "json"):
-        response = client.get(f"/api/scans/{saved['id']}/export.{fmt}", headers=auth(EMPLOYEE))
+        response = client.get(f"/api/scans/{saved['id']}/export.{fmt}", headers=auth(ADMIN))
         assert response.status_code == 200, f"{fmt}: {response.text}"
 
 
@@ -375,7 +375,7 @@ class TestDecisionsSurviveTheRecord:
         revised = client.patch(
             f"/api/scans/{scan['id']}/decisions",
             json={"decisions": decisions, "claimed_amount": "410.50"},
-            headers=auth(EMPLOYEE),
+            headers=auth(ADMIN),
         )
         assert revised.status_code == 200
 
@@ -413,7 +413,7 @@ class TestDecisionsSurviveTheRecord:
         client.patch(
             f"/api/scans/{record_id}/decisions",
             json={"decisions": {}, "claimed_amount": "900.00"},
-            headers=auth(EMPLOYEE),
+            headers=auth(ADMIN),
         )
         with Session(get_engine()) as session:
             stored = session.get(ScanRecord, record_id)
@@ -434,7 +434,7 @@ class TestDecisionsSurviveTheRecord:
         client.patch(
             f"/api/scans/{record_id}/decisions",
             json={"decisions": {}, "claimed_amount": "50.00"},
-            headers=auth(EMPLOYEE),
+            headers=auth(ADMIN),
         )
         with Session(get_engine()) as session:
             stored = session.get(ScanRecord, record_id)
@@ -548,6 +548,57 @@ class TestTheEmployeeShapeIsAnAllowList:
         detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).text
         for word in ("mismatch", "STRENGTH_MISMATCH", "FORM_MISMATCH", "discrepancy"):
             assert word not in detail
+
+    def test_a_completed_review_does_not_widen_the_shape(
+        self, client: TestClient
+    ) -> None:
+        """The review is where the forbidden figures come into existence.
+
+        Completing one writes a claimed amount, a reviewer and a timestamp onto
+        the record. None of that may reach the submitter: they are told their
+        claim is reviewed, not what it was reduced to and by whom. Checked
+        after a real review rather than on a fresh submission, because a
+        submission has no amount to leak yet -- which is exactly how a widened
+        shape would slip past the tests above.
+        """
+        saved = save(client, EMPLOYEE)
+        assert client.post(
+            f"/api/scans/{saved['id']}/open-review", headers=auth(ADMIN)
+        ).status_code == 200
+        assert client.patch(
+            f"/api/scans/{saved['id']}/decisions",
+            json={
+                "decisions": {"rx-01-bill-01": {"decision": "accept"}},
+                "claimed_amount": "700.00",
+            },
+            headers=auth(ADMIN),
+        ).status_code == 200
+        assert client.post(
+            f"/api/scans/{saved['id']}/complete-review", headers=auth(ADMIN)
+        ).status_code == 200
+
+        # The reviewer's own view carries all three, which is what makes the
+        # assertions below meaningful: there is something real to leak here,
+        # so an empty response could not pass this test by accident.
+        seen = client.get(f"/api/scans/{saved['id']}", headers=auth(ADMIN)).json()
+        assert seen["claimed_amount"] == "700.00"
+        assert seen["reviewed_by"] == ADMIN
+        assert seen["reviewed_at"]
+
+        rows = client.get("/api/scans", headers=auth(EMPLOYEE)).json()
+        body = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE))
+        detail = body.json()
+
+        # The shape is the same one a pending claim has, to the key.
+        assert set(rows[0]) == self.LIST_KEYS
+        assert set(detail) == self.DETAIL_KEYS
+        for key in (*self.FORBIDDEN, "reviewed_by", "reviewed_at"):
+            assert key not in rows[0]
+            assert key not in detail
+        # The amount itself, not only the key it would arrive under.
+        assert "700.00" not in body.text
+        # What they ARE told: where their claim has got to.
+        assert detail["review_status"] == "reviewed"
 
     def test_the_content_is_a_transcription_and_never_a_comparison(
         self, client: TestClient

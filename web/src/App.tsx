@@ -10,6 +10,7 @@ import {
   setToken,
   fetchScanImage,
   getSubmission,
+  openReview,
 } from './api/client'
 import {
   clearSession,
@@ -22,7 +23,7 @@ import { Processing } from './components/Processing'
 import { Result } from './components/Result'
 import { Submitted } from './components/Submitted'
 import { EmptyState, PageHeader, Shell } from './components/Shell'
-import type { View } from './lib/nav'
+import { landingFor, type View } from './lib/nav'
 import {
   ConditionField,
   DescriptionField,
@@ -36,8 +37,10 @@ import { Dictionary } from './pages/Dictionary'
 import { History, SubmissionHistory } from './pages/History'
 import { HowItWorks } from './pages/HowItWorks'
 import { EmployeeOverview, Overview } from './pages/Overview'
+import { Queue } from './pages/Queue'
 import type {
   EmployeeScanDetail,
+  ScanSummary,
   ReconciliationResult,
   SampleSummary,
   ScanDetail,
@@ -61,7 +64,7 @@ if (restored?.token) setToken(restored.token)
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(restored)
-  const [view, setView] = useState<View>('overview')
+  const [view, setView] = useState<View>(restored ? landingFor(restored.role) : 'overview')
 
   const [stage, setStage] = useState<Stage>('upload')
   const [docs, setDocs] = useState<Record<DocumentSlot['key'], File | null>>({
@@ -113,6 +116,13 @@ export default function App() {
   /** A reopened history record is read-only: it is a record of what was reported. */
   const [readOnly, setReadOnly] = useState(false)
   const [storedDecisions, setStoredDecisions] = useState<Decisions>({})
+  /**
+   * The stored record behind the open result: certification, review status,
+   * who reviewed it. Held here rather than inside `Result` so that opening a
+   * claim, moving it to `under_review` and completing it all update the screen
+   * that is already on it, with no refetch in between.
+   */
+  const [reviewScan, setReviewScan] = useState<ScanSummary | null>(null)
   const [historyKey, setHistoryKey] = useState(0)
 
   useEffect(() => {
@@ -130,7 +140,7 @@ export default function App() {
           setSession(next)
           setFirstName(next.name)
           setEmployeeNumber(next.employeeNumber)
-          setView('overview')
+          setView(landingFor(next.role))
         }}
       />
     )
@@ -176,6 +186,16 @@ export default function App() {
     setResult(detail.result)
     setScanId(detail.id)
     setStoredDecisions(detail.decisions ?? {})
+    setReviewScan(detail)
+    // Opening a submission is what starts its review. The server moves only
+    // `submitted` claims, so reopening a finished one leaves it finished.
+    void openReview(detail.id)
+      .then((summary) => setReviewScan(summary))
+      .catch(() => {
+        // The result is already on screen and is still readable. A status that
+        // did not move is worth saying, but not worth hiding the claim over.
+        setError(new Error('This claim could not be moved into review.'))
+      })
     // Source pages are stored with the scan now, so a reopened result can show
     // its audit panel instead of an empty one. Fetched with the token rather
     // than linked, because an <img src> cannot carry one.
@@ -204,6 +224,7 @@ export default function App() {
     setReadOnly(false)
     setScanId(null)
     setStoredDecisions({})
+    setReviewScan(null)
     setStage('processing')
     try {
       const outcome = await task()
@@ -419,8 +440,21 @@ export default function App() {
           billImage={images.bill}
           readOnly={readOnly}
           scanId={scanId}
-          employeeNumber={employeeNumber}
+          /* The CLAIMANT's number, not the signed-in reviewer's. The upload
+             form prefills `employeeNumber` from the account, which was
+             harmless while a reviewer only ever opened their own runs. Opening
+             someone else's claim from the queue made it wrong: the allowance
+             panel would show the reviewer's own balance beside a decision
+             about somebody else's money. */
+          employeeNumber={reviewScan?.employee_number ?? employeeNumber}
           storedDecisions={storedDecisions}
+          scan={reviewScan}
+          onReviewed={(summary) => {
+            setReviewScan(summary)
+            // History and the queue both read `review_status`, so they are
+            // stale the moment a review completes.
+            setHistoryKey((key) => key + 1)
+          }}
           onReset={() => {
             setStage('upload')
             setResult(null)
@@ -447,6 +481,7 @@ export default function App() {
         onOpen={openSubmission}
       />
     ),
+    queue: <Queue key={historyKey} onOpen={openScan} />,
     new: newReconciliation,
     history: reviewer ? (
       <History key={historyKey} session={session} onStart={goToNew} onOpen={openScan} />

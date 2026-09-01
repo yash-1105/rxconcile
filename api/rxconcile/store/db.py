@@ -55,6 +55,8 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
     ("review_status", "VARCHAR DEFAULT 'submitted'"),
     ("lab_report_filename", "VARCHAR DEFAULT ''"),
     ("lab_bill_filename", "VARCHAR DEFAULT ''"),
+    ("reviewed_by", "VARCHAR DEFAULT ''"),
+    ("reviewed_at", "DATETIME"),
 )
 
 

@@ -458,12 +458,22 @@ export interface ScanSummary {
   review_status: ReviewStatus
   certified_by_employee: boolean
   certified_at: string | null
+  /** Who completed the review, and when. Empty until one is completed. */
+  reviewed_by: string
+  reviewed_at: string | null
   user_email: string
   role: string
   prescription_filename: string
   bill_filename: string
   condition: string | null
   description: string | null
+  /**
+   * What the reviewer accepted. Zero until decisions are recorded, which is
+   * why the queue renders it against `review_status` rather than printing a
+   * bare 0 next to a claim nobody has looked at yet.
+   */
+  claimed_amount: string
+  allowance_year: string
   verdict: Verdict
   discrepancy_count: number
   critical_count: number

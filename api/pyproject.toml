@@ -53,6 +53,12 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+# Module names are derived from these roots and nothing else. Without it, a
+# test importing `scripts.seed_demo` gives mypy a second root and every test
+# file resolves under two names at once, which it refuses to check. Relative to
+# the working directory `make typecheck` runs from, which is the repo root.
+mypy_path = "api"
+explicit_package_bases = true
 
 # pypdfium2 is a native binding and ships no type information.
 [[tool.mypy.overrides]]

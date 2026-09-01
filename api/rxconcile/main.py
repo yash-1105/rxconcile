@@ -66,6 +66,7 @@ from rxconcile.reconcile.readability import (
 )
 from rxconcile.store import EmployeeAllowance, ScanRecord, get_session, summarise
 from rxconcile.store.allowance import AllowanceView, view_for, year_label
+from rxconcile.store.review import complete_review, open_review, record_decisions
 
 logger: Final = logging.getLogger(__name__)
 
@@ -518,6 +519,8 @@ class ScanSummary(BaseModel):
     review_status: str = "submitted"
     certified_by_employee: bool = False
     certified_at: str | None = None
+    reviewed_by: str = ""
+    reviewed_at: str | None = None
     user_email: str
     role: str
     prescription_filename: str
@@ -664,6 +667,10 @@ def _summary(record: ScanRecord) -> ScanSummary:
         certified_by_employee=record.certified_by_employee,
         certified_at=(
             record.certified_at.isoformat() if record.certified_at is not None else None
+        ),
+        reviewed_by=record.reviewed_by,
+        reviewed_at=(
+            record.reviewed_at.isoformat() if record.reviewed_at is not None else None
         ),
         user_email=record.user_email,
         role=record.role,
@@ -974,21 +981,43 @@ async def update_decisions(
     user: DemoUser = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> ScanSummary:
-    """Revise the accept/reject decisions on a stored scan."""
-    record = _owned_scan(scan_id, user, session)
-    record.decisions_json = json.dumps(payload.decisions)
-    record.claimed_amount = Decimal(payload.claimed_amount or "0")
-    # Stamped from the scan's OWN date, not today's. A record written before
-    # allowance years existed carries a blank one, and an amount in a blank year
-    # counts against nothing -- the claim would be recorded and then silently
-    # ignored by every balance on the system. Backfilled the first time anybody
-    # decides on it, into the year the scan actually belongs to.
-    if not record.allowance_year:
-        record.allowance_year = year_label(record.created_at.date())
-    session.add(record)
-    session.commit()
-    session.refresh(record)
+    """Revise the accept/reject decisions on a stored scan. Reviewers only.
+
+    An employee does not rule on their own claim, so they cannot record a
+    decision on it either.
+    """
+    record = _reviewer_scan(scan_id, user, session)
+    record = record_decisions(
+        session, record,
+        decisions=payload.decisions,
+        claimed_amount=Decimal(payload.claimed_amount or "0"),
+    )
     return _summary(record)
+
+
+@app.post("/api/scans/{scan_id}/open-review")
+async def open_scan_review(
+    scan_id: int,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> ScanSummary:
+    """Mark a submission as being looked at. Reviewers only."""
+    return _summary(open_review(session, _reviewer_scan(scan_id, user, session)))
+
+
+@app.post("/api/scans/{scan_id}/complete-review")
+async def complete_scan_review(
+    scan_id: int,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> ScanSummary:
+    """Finish a review. THIS is the moment the claim touches the allowance.
+
+    Everything before it is provisional, which is why a submission sitting in
+    the queue moves no balance for anybody.
+    """
+    record = _reviewer_scan(scan_id, user, session)
+    return _summary(complete_review(session, record, reviewer=user.email))
 
 
 EXPORTS: Final[dict[str, tuple[str, str]]] = {
@@ -1041,6 +1070,26 @@ def _export_context(record: ScanRecord, session: Session) -> ExportContext:
         used_amount=allowance.used,
         allowance_year=allowance.year,
     )
+
+
+def _reviewer_scan(scan_id: int, user: DemoUser, session: Session) -> ScanRecord:
+    """A scan a REVIEWER may act on, which is any scan — and nobody else's.
+
+    404 rather than 403, and the same 404 a missing id gets, so an employee
+    probing endpoints learns nothing about what exists. This is the gate for
+    the review actions, the decisions and the exports: an export carries the
+    full analysis as a file, so leaving it on the owner rule would have handed
+    an employee the comparison the API is careful not to send them.
+    """
+    record = session.get(ScanRecord, scan_id)
+    if record is None or user.role != "admin":
+        raise ApiError(
+            status_code=404,
+            error_code="SCAN_NOT_FOUND",
+            message=f"No scan with id {scan_id}.",
+            hint="Only a reviewer account can open a scan for review.",
+        )
+    return record
 
 
 def _owned_scan(scan_id: int, user: DemoUser, session: Session) -> ScanRecord:
@@ -1098,7 +1147,7 @@ async def export_scan(
             message=f"{fmt!r} is not an export format.",
             hint=f"Use one of: {', '.join(sorted(EXPORTS))}.",
         )
-    record = _owned_scan(scan_id, user, session)
+    record = _reviewer_scan(scan_id, user, session)
     context = _export_context(record, session)
     builder = {"pdf": build_pdf, "xlsx": build_xlsx, "json": build_json}[fmt]
     media_type, suffix = EXPORTS[fmt]

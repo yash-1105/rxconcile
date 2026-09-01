@@ -161,7 +161,8 @@ class TestTheLabDocuments:
         rx, bill = clean_pair()
         stated = Submission(lab_report_supplied=True)
         result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
-        assert all(d.slot != "lab_report" for d in readability_of(result))
+        slots: list[str] = [d.slot for d in readability_of(result)]
+        assert "lab_report" not in slots
 
 
 def test_a_record_that_no_longer_validates_says_nothing_rather_than_ok() -> None:

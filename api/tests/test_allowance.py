@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from collections.abc import Iterator
 from decimal import Decimal
 
 import pytest
@@ -26,7 +27,7 @@ TODAY = dt.date(2026, 8, 31)
 
 
 @pytest.fixture
-def session() -> Session:
+def session() -> Iterator[Session]:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as opened:

@@ -18,13 +18,17 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-from typing import Any
+from decimal import Decimal
+from typing import Any, Final
 
 from sqlmodel import Session, col, delete, select
 
+from rxconcile.export.rows import claimable_amount, medicine_rows, test_rows
+from rxconcile.models import ReconciliationResult
 from rxconcile.store import ScanRecord, summarise
 from rxconcile.store.allowance import year_label
 from rxconcile.store.db import engine
+from rxconcile.store.review import complete_review, open_review, record_decisions
 
 #: Written into every seeded record so they can be found and removed again.
 SEED_MARKER: str = "[seeded]"
@@ -38,15 +42,14 @@ SRI_BALAJI_LICENCE = "TN/2019/337821"
 PATIENT = "Anil Deshmukh"
 
 
-def item(item_id: str, name: str, total: str, *, salt: str | None = None,
-         days: int | None = None) -> dict[str, Any]:
+def item(item_id: str, name: str, total: str, *, salt: str | None = None) -> dict[str, Any]:
     return {
         "item_id": item_id, "raw_text": name, "drug_name": name, "salt": salt,
         "strength_value": None, "strength_unit": None, "form": "tablet",
         "quantity": 30.0, "pack_size": None, "units_basis": None,
         "unit_price": None, "discount": None, "line_total": total,
         "batch_no": None, "hsn_code": None, "bbox": None, "agreement": None,
-        "confidence": 0.9, "duration_days": days,
+        "confidence": 0.9,
     }
 
 
@@ -87,11 +90,18 @@ def result(
          "salt": line["salt"], "match_score": 100.0, "method": "exact"}
         for line in prescribed
     ]
+    # Paired by position: these fixtures are built one billed line to one
+    # prescribed line. Without the pairs nothing is claimable, and a seeded
+    # review would have to invent an amount instead of deriving one.
+    pairs = [
+        {"prescribed_id": rx["item_id"], "billed_id": bill["item_id"], "similarity": 1.0}
+        for rx, bill in zip(prescribed, billed, strict=False)
+    ]
     return {
         "verdict": verdict,
         "score": 84.0,
         "findings": [],
-        "matched_pairs": [],
+        "matched_pairs": pairs,
         "unmatched_prescribed": [],
         "unmatched_billed": [],
         "canonical": canonical,
@@ -201,22 +211,68 @@ def build() -> list[tuple[tuple[str, str, str, str], int, str, dict[str, Any]]]:
     ]
 
 
+#: Which seeded submissions a reviewer has already been through, by position.
+#: The rest stay in the queue so the review flow can be demonstrated live.
+_REVIEWED: Final[frozenset[int]] = frozenset({0, 1, 2})
+
+#: One of them had a line rejected, so the demo shows a rejection costing the
+#: employee nothing rather than only ever showing acceptances. It has to be the
+#: multi-line submission: rejecting the only line on a one-line claim leaves a
+#: reviewed claim worth zero, which demonstrates nothing about partial payment.
+_REJECTED_ON: Final[int] = 0
+
+
+def _decisions_for(payload: dict[str, Any], *, reject_one: bool) -> tuple[dict[str, Any], Decimal]:
+    """What a reviewer decided, and what it comes to.
+
+    The amount is derived with the SAME helper the reports use, not computed a
+    second way here. The only thing the seed invents is the decision itself —
+    accept everything, or accept everything but one — which is a reviewer's
+    judgement and is exactly what a seed is entitled to make up.
+    """
+    result = ReconciliationResult.model_validate(payload)
+    rows: list[Any] = [*medicine_rows(result), *test_rows(result)]
+    decisions: dict[str, Any] = {}
+    total = Decimal("0")
+    rejected = False
+    for row in rows:
+        claimable = claimable_amount(row)
+        if reject_one and not rejected and claimable > 0:
+            decisions[row.key] = {
+                "decision": "reject",
+                "remark": "Not supported by the prescription on file.",
+            }
+            rejected = True
+            continue
+        decisions[row.key] = {"decision": "accept"}
+        total += claimable
+    return decisions, total
+
+
 def seed(session: Session, *, today: dt.date) -> int:
+    """Write the submissions, then review some of them the way a reviewer would.
+
+    The reviews go through `store.review`, which is what the endpoints call. A
+    seed that wrote `review_status="reviewed"` straight into the row could
+    encode a shape the real flow never produces — a reviewed claim with no
+    reviewer, or an amount no decision adds up to — and the demo would then
+    work while the feature did not.
+    """
     written = 0
+    records: list[tuple[ScanRecord, dict[str, Any]]] = []
     for (email, name, number, role), days_ago, why, payload in build():
         when = dt.datetime.combine(today - dt.timedelta(days=days_ago), dt.time(10, 30))
         record = ScanRecord(
             created_at=when,
             # The allowance window the scan falls in. Stamped from its own date,
             # so a seeded record dated last March counts against last year.
-            # Nothing is claimed on these: they carry no matched pairs, and a
-            # claim figure invented for a demo is still an invented figure.
             allowance_year=year_label(when.date()),
             employee_name=name,
             first_name=name,
             employee_number=number,
-            # Seeded records are historical: somebody has been through them.
-            review_status="reviewed",
+            # The employee's own part: submitted and attested. Whether a
+            # reviewer has been through it is decided below, by reviewing it.
+            review_status="submitted",
             certified_by_employee=True,
             certified_at=when,
             user_email=email,
@@ -229,9 +285,24 @@ def seed(session: Session, *, today: dt.date) -> int:
             extraction_runs=3,
             **summarise(payload),
         )
+        # Parsed before it is stored, so a seed can never write a blob the app
+        # cannot read back. Six seeded rows shipped unopenable because one
+        # forbidden key went unchecked here.
+        ReconciliationResult.model_validate(payload)
         session.add(record)
+        records.append((record, payload))
         written += 1
     session.commit()
+
+    reviewer = "admin@gmail.com"
+    for index, (record, payload) in enumerate(records):
+        if index not in _REVIEWED:
+            continue
+        session.refresh(record)
+        decisions, total = _decisions_for(payload, reject_one=index == _REJECTED_ON)
+        open_review(session, record)
+        record_decisions(session, record, decisions=decisions, claimed_amount=total)
+        complete_review(session, record, reviewer=reviewer)
     return written
 
 

@@ -273,6 +273,31 @@ export async function certifyScan(id: number): Promise<EmployeeScanDetail> {
   )
 }
 
+/**
+ * Move a submission into review.
+ *
+ * Called when a reviewer opens one. The server ignores it for anything already
+ * reviewed, so reading a finished claim does not reopen it.
+ */
+export async function openReview(id: number): Promise<ScanSummary> {
+  return unwrap<ScanSummary>(
+    await fetch(`${BASE_URL}/api/scans/${id}/open-review`, {
+      method: 'POST',
+      headers: authHeaders(),
+    }),
+  )
+}
+
+/** Finish the review. This is the moment the claim consumes allowance. */
+export async function completeReview(id: number): Promise<ScanSummary> {
+  return unwrap<ScanSummary>(
+    await fetch(`${BASE_URL}/api/scans/${id}/complete-review`, {
+      method: 'POST',
+      headers: authHeaders(),
+    }),
+  )
+}
+
 /** One submission, as its submitter sees it: no result, only readability. */
 export async function getSubmission(id: number): Promise<EmployeeScanDetail> {
   return unwrap<EmployeeScanDetail>(

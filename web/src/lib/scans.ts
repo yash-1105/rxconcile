@@ -1,4 +1,10 @@
-import type { ScanSummary, Verdict } from '../types/api'
+import type { ReviewStatus, ScanSummary, Verdict } from '../types/api'
+
+export const REVIEW_LABEL: Record<ReviewStatus, string> = {
+  submitted: 'Awaiting review',
+  under_review: 'Under review',
+  reviewed: 'Reviewed',
+}
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
   match: 'Matches',
@@ -15,6 +21,33 @@ export function verdictState(verdict: Verdict): 'clean' | 'warning' | 'problem' 
   return 'unchecked'
 }
 
+/**
+ * An amount, or nothing.
+ *
+ * `null` is not zero: a claim nobody has decided yet has no amount, and
+ * printing 0.00 against it would say a reviewer looked and allowed nothing.
+ */
+export function formatMoney(amount: string | null, currency = 'INR'): string | null {
+  if (amount === null) return null
+  const value = Number(amount)
+  if (!Number.isFinite(value)) return null
+  return `${currency} ${value.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+/**
+ * The amount to show for a claim, which exists only once someone has decided.
+ *
+ * Until then the stored figure is a default the machine proposed and nobody
+ * agreed to, so the queue shows nothing rather than presenting it as a claim.
+ */
+export function claimAmountOf(scan: ScanSummary): string | null {
+  if (scan.review_status === 'submitted') return null
+  return formatMoney(scan.claimed_amount, scan.currency)
+}
+
 export function formatDate(iso: string): string {
   const date = new Date(iso)
   return date.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
@@ -26,6 +59,10 @@ export function formatTime(iso: string): string {
 
 export interface ScanFilters {
   verdict: Verdict | 'all'
+  /** Where the claim has got to. The queue defaults this to `submitted`. */
+  review: ReviewStatus | 'all'
+  /** Free-text match on the condition typed on the scan. */
+  condition: string
   employee: string
   /** Free-text match on the NAME typed on the scan, not the account. */
   name: string
@@ -37,6 +74,8 @@ export interface ScanFilters {
 
 export const NO_FILTERS: ScanFilters = {
   verdict: 'all',
+  review: 'all',
+  condition: '',
   employee: 'all',
   name: '',
   number: '',
@@ -44,9 +83,21 @@ export const NO_FILTERS: ScanFilters = {
   to: '',
 }
 
+/**
+ * What the review queue opens on: work that is waiting.
+ *
+ * A queue showing everything ever submitted is a history screen. The point of
+ * the default is that the first thing a reviewer sees is the thing they have
+ * to do, and the filter is visible and clearable so nothing is hidden by it.
+ */
+export const QUEUE_FILTERS: ScanFilters = { ...NO_FILTERS, review: 'submitted' }
+
 export function applyFilters(scans: ScanSummary[], filters: ScanFilters): ScanSummary[] {
   return scans.filter((scan) => {
     if (filters.verdict !== 'all' && scan.verdict !== filters.verdict) return false
+    if (filters.review !== 'all' && scan.review_status !== filters.review) return false
+    const condition = filters.condition.trim().toLowerCase()
+    if (condition && !(scan.condition ?? '').toLowerCase().includes(condition)) return false
     if (filters.employee !== 'all' && scan.user_email !== filters.employee) return false
     const name = filters.name.trim().toLowerCase()
     if (name && !scan.employee_name.toLowerCase().includes(name)) return false

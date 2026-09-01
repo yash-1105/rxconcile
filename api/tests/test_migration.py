@@ -61,7 +61,7 @@ def _row(session: Session, **overrides: object) -> ScanRecord:
         user_email="employee@gmail.com", role="employee",
         prescription_filename="rx.png", bill_filename="bill.png",
         verdict="match", result_json=json.dumps({"verdict": "match"}),
-        **overrides,  # type: ignore[arg-type]
+        **overrides,
     )
     session.add(record)
     session.commit()

@@ -59,11 +59,14 @@ class TestDecisionWords:
         assert decision_word({}, "rx-01-bill-01") == "Not decided"
 
     def test_unset_is_not_decided(self) -> None:
-        decisions = {"rx-01-bill-01": {"decision": "unset"}}
+        decisions: dict[str, object] = {"rx-01-bill-01": {"decision": "unset"}}
         assert decision_word(decisions, "rx-01-bill-01") == "Not decided"
 
     def test_accept_and_reject_read_as_words(self) -> None:
-        decisions = {"a": {"decision": "accept"}, "b": {"decision": "reject"}}
+        decisions: dict[str, object] = {
+            "a": {"decision": "accept"},
+            "b": {"decision": "reject"},
+        }
         assert decision_word(decisions, "a") == "Accepted"
         assert decision_word(decisions, "b") == "Rejected"
 
@@ -73,9 +76,12 @@ class TestDecisionWords:
         assert decision_word({"a": "accept"}, "a") == "Not decided"
 
     def test_a_reason_survives_and_a_blank_one_does_not_become_a_reason(self) -> None:
-        decisions = {"a": {"decision": "reject", "remark": " strength differs "}}
+        decisions: dict[str, object] = {
+            "a": {"decision": "reject", "remark": " strength differs "},
+        }
         assert decision_remark(decisions, "a") == "strength differs"
-        assert decision_remark({"a": {"decision": "reject", "remark": "  "}}, "a") == ""
+        blank: dict[str, object] = {"a": {"decision": "reject", "remark": "  "}}
+        assert decision_remark(blank, "a") == ""
         assert decision_remark({}, "a") == ""
 
 

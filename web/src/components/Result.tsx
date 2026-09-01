@@ -39,8 +39,9 @@ import {
   type Decisions,
   type RowFilter,
 } from '../lib/rows'
-import { fetchAllowance, saveDecisions } from '../api/client'
-import type { AllowanceView } from '../types/api'
+import { completeReview, fetchAllowance, saveDecisions } from '../api/client'
+import type { AllowanceView, ScanSummary } from '../types/api'
+import { formatDate, formatTime, REVIEW_LABEL } from '../lib/scans'
 
 /** Whether a finding's source line could be pointed at on the image. */
 export type LocateResult = 'located' | 'not-located' | 'no-ref'
@@ -185,6 +186,102 @@ function FindingRow({
 }
 
 
+
+const REVIEW_TONE: Record<string, string> = {
+  submitted: 'border-amber-300 bg-amber-50 text-amber-900',
+  under_review: 'border-sky-300 bg-sky-50 text-sky-900',
+  reviewed: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+}
+
+/**
+ * Who filed this claim, whether they stood behind it, and where the review has
+ * got to.
+ *
+ * The certification leads because it is the one thing on this screen that is
+ * not the machine's opinion: it is the employee saying the documents are
+ * theirs and are genuine. A claim without it is not a claim with a missing
+ * field, it is a claim nobody has signed, so it is flagged in the open rather
+ * than shown as an empty value a reviewer might read past.
+ */
+function ReviewHeader({
+  scan,
+  busy,
+  error,
+  onComplete,
+}: {
+  scan: ScanSummary
+  busy: boolean
+  error: string | null
+  onComplete: () => void
+}) {
+  const done = scan.review_status === 'reviewed'
+  return (
+    <section className="rounded border border-ink-200 bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
+        <div>
+          <p className="t-micro text-muted">Claim under review</p>
+          <p className="mt-0.5 text-lg font-semibold text-ink">
+            {scan.employee_name}
+            <span className="t-data ml-2 font-normal text-muted">{scan.employee_number}</span>
+          </p>
+          <p className="t-small mt-0.5 text-muted">
+            {scan.condition ?? 'No condition given'} · submitted{' '}
+            {formatDate(scan.created_at)} at {formatTime(scan.created_at)}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className={`inline-block rounded border px-2.5 py-1 text-xs font-medium ${
+              REVIEW_TONE[scan.review_status] ?? 'border-ink-300 bg-ink-100 text-ink-600'
+            }`}
+          >
+            {REVIEW_LABEL[scan.review_status] ?? scan.review_status}
+          </span>
+          {done ? (
+            <p className="t-small text-muted">
+              Reviewed by {scan.reviewed_by || 'a reviewer'}
+              {scan.reviewed_at ? ` on ${formatDate(scan.reviewed_at)}` : ''}
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={onComplete}
+              disabled={busy}
+              className="rounded bg-seal px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-ink-300"
+            >
+              {busy ? 'Completing…' : 'Complete review'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {scan.certified_by_employee ? (
+        <p className="t-small border-t border-ink-200 px-5 py-2.5 text-muted">
+          Certified by the employee
+          {scan.certified_at ? ` on ${formatDate(scan.certified_at)}` : ''}.
+        </p>
+      ) : (
+        <p className="t-small border-t border-red-300 bg-red-50 px-5 py-2.5 font-medium text-red-800">
+          Not certified. The employee has not confirmed these documents are theirs and are
+          genuine. Ask them to certify it before completing this review.
+        </p>
+      )}
+
+      {done ? (
+        <p className="t-small border-t border-ink-200 px-5 py-2.5 text-muted">
+          The review is finished and the accepted amount has been drawn against this
+          employee's allowance.
+        </p>
+      ) : null}
+
+      {error ? (
+        <p className="t-small border-t border-ink-200 px-5 py-2.5 text-flag">{error}</p>
+      ) : null}
+    </section>
+  )
+}
+
 export function Result({
   result,
   prescriptionImage,
@@ -194,6 +291,8 @@ export function Result({
   scanId = null,
   employeeNumber = '',
   storedDecisions,
+  scan = null,
+  onReviewed,
 }: {
   result: ReconciliationResult
   prescriptionImage: string | null
@@ -207,6 +306,10 @@ export function Result({
   employeeNumber?: string
   /** Decisions as they were last saved. Empty for a scan being run now. */
   storedDecisions?: Decisions
+  /** The stored record behind this result. Null for a run happening now. */
+  scan?: ScanSummary | null
+  /** Told when the review completes, with the record as it now stands. */
+  onReviewed?: (summary: ScanSummary) => void
 }) {
   const [technical, setTechnical] = useState(false)
   const [filters, setFilters] = useState<{ medicines: RowFilter; tests: RowFilter }>({
@@ -260,6 +363,28 @@ export function Result({
     }, 600)
     return () => clearTimeout(timer)
   }, [scanId, decisions, claim])
+  const [completing, setCompleting] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+
+  const finishReview = async () => {
+    if (scanId === null || scanId === undefined) return
+    setCompleting(true)
+    setReviewError(null)
+    try {
+      // The pending save is flushed first, on purpose. Decisions are written
+      // on a debounce, and completing the review is the moment the accepted
+      // amount is drawn against the allowance -- finishing while the last
+      // change is still in flight would finalise the previous figure.
+      await saveDecisions(scanId, decisions, claim)
+      const summary = await completeReview(scanId)
+      onReviewed?.(summary)
+    } catch {
+      setReviewError('Could not complete the review. Nothing has been finalised.')
+    } finally {
+      setCompleting(false)
+    }
+  }
+
   const [highlight, setHighlight] = useState<{ side: DocSide; itemId: string } | null>(null)
   const grouped = groupFindings(result.findings)
   const say = (f: Finding) => phrase(f, result.prescription, result.bill)
@@ -338,7 +463,21 @@ export function Result({
 
   return (
     <div className="space-y-10">
-      {readOnly ? (
+      {/* Who filed it and whether they signed for it, before any analysis. */}
+      {scan ? (
+        <ReviewHeader
+          scan={scan}
+          busy={completing}
+          error={reviewError}
+          onComplete={() => void finishReview()}
+        />
+      ) : null}
+
+      {/* Only without the review header above. A claim opened from the queue
+          is being worked on, not read back, and "exactly as it was reported at
+          the time" would tell a reviewer their decisions are a record rather
+          than something they are still making. */}
+      {readOnly && !scan ? (
         <p className="t-small rounded bg-ink-100 px-4 py-2.5 text-muted">
           Reopened from history. This is the result exactly as it was reported at the time.
         </p>

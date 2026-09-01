@@ -102,6 +102,10 @@ class ScanRecord(SQLModel, table=True):
     #: and a Literal at the API boundary, the same shape `verdict` and `role`
     #: already use.
     review_status: str = Field(default="submitted", index=True)
+    #: Who finished the review and when. The account, not the typed name: a
+    #: reviewer's identity comes from the token, never from a form.
+    reviewed_by: str = Field(default="")
+    reviewed_at: datetime | None = Field(default=None)
 
     processing_ms: int = 0
     extraction_runs: int = 0

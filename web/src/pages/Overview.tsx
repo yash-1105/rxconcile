@@ -214,6 +214,33 @@ export function Overview({
   const stats = useMemo(() => totals(scans ?? []), [scans])
   const recent = useMemo(() => (scans ?? []).slice(0, 5), [scans])
 
+  // The allowance window every employee is currently in. Read off the
+  // allowance views rather than computed from today's date, so the period
+  // these figures describe is the same one the balances below are drawn on.
+  const year = allowances[0]?.year ?? null
+
+  /**
+   * Where the work stands, counted from stored records.
+   *
+   * Two rules hold this together. Pending is a COUNT and never an amount: a
+   * claim nobody has decided has no agreed figure, and adding one to a total
+   * would present the machine's provisional arithmetic as money owed. And
+   * total claimed sums REVIEWED claims only -- the same definition `used`
+   * carries everywhere else, so this panel and the balances beneath it can
+   * never disagree.
+   */
+  const review = useMemo(() => {
+    const rows = scans ?? []
+    const inPeriod = year ? rows.filter((s) => s.allowance_year === year) : rows
+    const reviewed = inPeriod.filter((s) => s.review_status === 'reviewed')
+    return {
+      pending: rows.filter((s) => s.review_status === 'submitted').length,
+      inProgress: rows.filter((s) => s.review_status === 'under_review').length,
+      reviewed: reviewed.length,
+      claimed: reviewed.reduce((sum, s) => sum + (Number(s.claimed_amount) || 0), 0),
+    }
+  }, [scans, year])
+
   // Rule-level detail is not in the summary columns, so the admin breakdown is
   // built from the stored results of the most recent scans rather than claimed
   // across all of history. The heading says so.
@@ -300,6 +327,31 @@ export function Overview({
       />
 
       <div className="grid gap-4 sm:grid-cols-4">
+        {admin ? (
+          <>
+            <Stat
+              label="Awaiting review"
+              value={String(review.pending)}
+              hint={
+                review.inProgress > 0
+                  ? `${review.inProgress} more under review`
+                  : 'Claims nobody has opened yet'
+              }
+            />
+            <Stat
+              label="Reviewed"
+              value={String(review.reviewed)}
+              hint={year ? `In allowance year ${year}` : 'Across all records'}
+            />
+            {/* Reviewed claims only. A pending claim contributes nothing here
+                and nothing to any balance. */}
+            <Stat
+              label="Total claimed"
+              value={money(String(review.claimed))}
+              hint="Accepted lines on completed reviews"
+            />
+          </>
+        ) : null}
         <Stat
           label={admin ? 'Reconciliations' : 'Your reconciliations'}
           value={String(stats.scans)}
