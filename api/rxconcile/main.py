@@ -52,6 +52,7 @@ from rxconcile.models import (
 from rxconcile.normalize import lab_panels
 from rxconcile.normalize.drug_dictionary import load_entries
 from rxconcile.reconcile import reconcile
+from rxconcile.reconcile.extracted import ExtractedContent, extracted_content
 from rxconcile.reconcile.history import (
     HistoryScope,
     PriorCourse,
@@ -570,6 +571,10 @@ class EmployeeScanDetail(EmployeeScanSummary):
     #: perfectly legible bill with a real discrepancy on it is not something to
     #: re-photograph, and the discrepancy is not theirs to see.
     readability: list[DocumentReadability] = Field(default_factory=list)
+    #: What was read off their own documents, transcribed. Built field by field
+    #: from the extracted pages, so there is nowhere for a verdict, a rule code
+    #: or a prescribed-versus-billed pairing to sit. See reconcile/extracted.py.
+    content: ExtractedContent | None = None
 
 
 class ScanDetail(ScanSummary):
@@ -823,8 +828,17 @@ async def get_scan(
             # still exists and must still open; we simply cannot say what was
             # legible about it.
             readability = unavailable()
+        content: ExtractedContent | None = None
+        try:
+            content = extracted_content(_stored_result(record))
+        except ValueError:
+            # Same older-record case as the readability above. Showing nothing
+            # is correct; inventing a transcription would not be.
+            content = None
         return EmployeeScanDetail(
-            **_employee_summary(record).model_dump(), readability=readability,
+            **_employee_summary(record).model_dump(),
+            readability=readability,
+            content=content,
         )
     summary = _summary(record)
     try:
@@ -1158,8 +1172,11 @@ async def _reconcile_bytes(
         lab_bill = extracted[2]
         _guard_disagreement(lab_bill, "bill")
         merged = list(bill.tests)
+        merged_ids: list[str] = []
         for offset, test in enumerate(lab_bill.tests, start=len(merged) + 1):
-            merged.append(test.model_copy(update={"item_id": f"billtest-{offset:02d}"}))
+            new_id = f"billtest-{offset:02d}"
+            merged_ids.append(new_id)
+            merged.append(test.model_copy(update={"item_id": new_id}))
         bill = bill.model_copy(update={"tests": merged})
         # Kept before it is lost. Only `.tests` survives the merge, so the lab
         # bill's own read state has to be carried out separately or nothing can
@@ -1169,6 +1186,8 @@ async def _reconcile_bytes(
             "lab_bill_tests_read": len(lab_bill.tests),
             "lab_bill_unstable": len(set(lab_bill.run_item_counts)) > 1,
             "lab_bill_warnings": list(lab_bill.warnings),
+            "lab_bill": lab_bill,
+            "lab_bill_merged_ids": merged_ids,
         })
     elapsed_ms = int((time.monotonic() - started) * 1000)
     priors, scope = history if history is not None else (None, None)

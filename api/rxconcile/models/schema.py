@@ -708,6 +708,20 @@ class Submission(_Base):
         default_factory=list,
         description="The lab bill's own extraction warnings, in its own words.",
     )
+    lab_bill: PharmacyBill | None = Field(
+        default=None,
+        description="The lab bill exactly as it was read, BEFORE its tests were merged "
+        "into the pharmacy bill. Kept whole so a submitter can be shown their own "
+        "document -- its lab name, bill number, tests and totals -- rather than lines "
+        "that have been renumbered into somebody else's bill. Null on records written "
+        "before this was kept, which is not the same as a lab bill with nothing on it.",
+    )
+    lab_bill_merged_ids: list[str] = Field(
+        default_factory=list,
+        description="The ids those tests were re-issued as inside the merged pharmacy "
+        "bill. Recorded rather than inferred from ordering: it is what stops a lab test "
+        "being shown twice, once under each document.",
+    )
 
 
 class ReconciliationResult(_Base):

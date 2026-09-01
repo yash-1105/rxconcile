@@ -492,7 +492,7 @@ class TestTheEmployeeShapeIsAnAllowList:
         "prescription_filename", "bill_filename",
         "review_status", "certified_by_employee", "certified_at",
     }
-    DETAIL_KEYS = LIST_KEYS | {"readability"}
+    DETAIL_KEYS = LIST_KEYS | {"readability", "content"}
 
     #: Everything the employee submits but does not review. Named individually
     #: so a failure says which figure came back.
@@ -502,6 +502,16 @@ class TestTheEmployeeShapeIsAnAllowList:
         "checks_unavailable_count", "eligible_total", "currency",
         "claimed_amount", "allowance_year", "processing_ms", "extraction_runs",
         "user_email", "role",
+    )
+
+    #: Keys that would mean the COMPARISON had reached the submitter. The
+    #: transcription is what was read off each document; the relationship
+    #: between the documents is never theirs to see.
+    COMPARISON_KEYS = (
+        "findings", "matched_pairs", "matched_tests", "unmatched_prescribed",
+        "unmatched_billed", "unmatched_prescribed_tests", "unmatched_billed_tests",
+        "reimbursement", "canonical", "review_summary", "rule_code", "severity",
+        "eligible", "not_eligible", "non_medicine", "claimable", "supported",
     )
 
     def test_the_list_carries_exactly_these_keys(self, client: TestClient) -> None:
@@ -537,6 +547,59 @@ class TestTheEmployeeShapeIsAnAllowList:
         detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).text
         for word in ("mismatch", "STRENGTH_MISMATCH", "FORM_MISMATCH", "discrepancy"):
             assert word not in detail
+
+    def test_the_content_is_a_transcription_and_never_a_comparison(
+        self, client: TestClient
+    ) -> None:
+        """The hard boundary, checked against the whole serialised body.
+
+        A key check alone is not enough — a nested object carrying findings
+        would satisfy one and still put the comparison on the wire.
+        """
+        saved = save(client, EMPLOYEE)
+        body = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).text
+        for key in self.COMPARISON_KEYS:
+            assert f'"{key}"' not in body, f"{key!r} reached the submitter"
+        detail = json.loads(body)
+        assert set(detail["content"]) == {
+            "prescription", "pharmacy_bill", "lab_bill", "billed_total", "currency",
+        }
+        assert set(detail["content"]["prescription"]) == {
+            "prescriber", "clinic", "date", "patient_name", "patient_age",
+            "patient_sex", "medicines", "investigations",
+        }
+        assert set(detail["content"]["pharmacy_bill"]) == {
+            "name", "bill_no", "bill_date", "lines", "subtotal", "tax",
+            "grand_total", "currency",
+        }
+
+    def test_a_billed_line_nobody_prescribed_looks_like_any_other(
+        self, client: TestClient
+    ) -> None:
+        """The point of the boundary, stated as a test.
+
+        Nothing on a transcribed line says whether it was matched, so an
+        unprescribed medicine and a prescribed one are indistinguishable here.
+        """
+        saved = save(client, EMPLOYEE)
+        detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        shapes = {tuple(sorted(line)) for line in detail["content"]["pharmacy_bill"]["lines"]}
+        assert len(shapes) <= 1, "every billed line has the same fields"
+        for line in detail["content"]["pharmacy_bill"]["lines"]:
+            assert set(line) == {
+                "item", "batch", "expiry", "pack", "quantity", "rate", "amount",
+                "raw_text",
+            }
+
+    def test_the_total_is_the_documents_own_and_is_not_a_claim(
+        self, client: TestClient
+    ) -> None:
+        """`billed_total` must never be an eligible or claimable figure."""
+        saved = save(client, EMPLOYEE)
+        detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        assert "billed_total" in detail["content"]
+        for name in ("eligible_total", "claimed_amount", "supported_total"):
+            assert name not in detail["content"]
 
     def test_the_admin_still_gets_the_whole_thing(self, client: TestClient) -> None:
         """The narrowing is by role, not a deletion."""

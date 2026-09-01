@@ -16,7 +16,11 @@
 import { useState } from 'react'
 import { certifyScan } from '../api/client'
 import { DOCUMENT_SLOTS } from '../lib/documents'
-import type { DocumentReadability, EmployeeScanDetail } from '../types/api'
+import type {
+  DocumentReadability,
+  EmployeeScanDetail,
+  ExtractedContent,
+} from '../types/api'
 
 const STATUS_LABEL: Record<string, string> = {
   submitted: 'Submitted',
@@ -52,6 +56,224 @@ function ReadabilityRow({ doc }: { doc: DocumentReadability }) {
       </div>
       {doc.message ? <p className="t-small mt-1 text-muted">{doc.message}</p> : null}
     </li>
+  )
+}
+
+
+/**
+ * What was read off the documents.
+ *
+ * Every row here looks like every other row. There is no tint, no mark and no
+ * status, because there is no comparison in this data — a medicine on the bill
+ * that was never prescribed is drawn exactly like one that was, and the
+ * response carries nothing that could tell them apart.
+ */
+function money(amount: string | null, currency: string): string {
+  if (amount === null) return '—'
+  const value = Number(amount)
+  return `${currency} ${
+    Number.isFinite(value)
+      ? value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : amount
+  }`
+}
+
+function Header({ pairs }: { pairs: Array<[string, string | null]> }) {
+  const shown = pairs.filter(([, value]) => value)
+  if (shown.length === 0) return null
+  return (
+    <dl className="flex flex-wrap gap-x-8 gap-y-3">
+      {shown.map(([label, value]) => (
+        <div key={label}>
+          <dt className="t-colhead text-muted">{label}</dt>
+          <dd className="t-small mt-0.5 text-ink">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function Totals({
+  rows,
+  currency,
+}: {
+  rows: Array<[string, string | null]>
+  currency: string
+}) {
+  const shown = rows.filter(([, value]) => value !== null)
+  if (shown.length === 0) return null
+  return (
+    <dl className="mt-3 flex flex-wrap justify-end gap-x-8 gap-y-2 border-t border-ink-100 pt-3">
+      {shown.map(([label, value]) => (
+        <div key={label} className="text-right">
+          <dt className="t-colhead text-muted">{label}</dt>
+          <dd className="t-data mt-0.5 text-ink">{money(value, currency)}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** A plain table. No row tint anywhere in this file, deliberately. */
+function Rows({ heads, children }: { heads: string[]; children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-b border-ink-200 text-left">
+            {heads.map((head) => (
+              <th key={head} className="t-colhead px-3 pb-2">
+                {head}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  )
+}
+
+function Cell({ value, mono = false }: { value: string | null; mono?: boolean }) {
+  return (
+    <td className={`${mono ? 't-data' : 't-small'} px-3 py-3 align-top text-ink`}>
+      {value ?? <span className="text-unknown">—</span>}
+    </td>
+  )
+}
+
+function DocumentPanel({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-xl bg-surface px-5 py-5 sm:px-6">
+      <h3 className="t-title text-ink">{title}</h3>
+      <div className="mt-4 space-y-4">{children}</div>
+    </section>
+  )
+}
+
+function ExtractedSections({ content }: { content: ExtractedContent }) {
+  const { prescription, pharmacy_bill: bill, lab_bill: lab } = content
+  return (
+    <div className="space-y-4">
+      <DocumentPanel title="From your prescription">
+        <Header
+          pairs={[
+            ['Prescriber', prescription.prescriber],
+            ['Clinic', prescription.clinic],
+            ['Date', prescription.date],
+            ['Patient', prescription.patient_name],
+            ['Age', prescription.patient_age],
+            ['Sex', prescription.patient_sex],
+          ]}
+        />
+        {prescription.medicines.length > 0 ? (
+          <Rows heads={['Medicine', 'Strength', 'Form', 'Frequency', 'Duration']}>
+            {prescription.medicines.map((line, index) => (
+              <tr key={`${line.raw_text}-${index}`} className="border-b border-ink-100">
+                <Cell value={line.name} mono />
+                <Cell value={line.strength} mono />
+                <Cell value={line.form} />
+                <Cell value={line.frequency} mono />
+                <Cell value={line.duration} />
+              </tr>
+            ))}
+          </Rows>
+        ) : (
+          <p className="t-small text-muted">No medicine line was read off this page.</p>
+        )}
+        <div>
+          <p className="t-colhead text-muted">Investigations ordered</p>
+          {prescription.investigations.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {prescription.investigations.map((name, index) => (
+                <li key={`${name}-${index}`} className="t-small text-ink">
+                  {name}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="t-small mt-1 text-muted">None was read off this page.</p>
+          )}
+        </div>
+      </DocumentPanel>
+
+      <DocumentPanel title="From your pharmacy bill">
+        <Header
+          pairs={[
+            ['Pharmacy', bill.name],
+            ['Bill number', bill.bill_no],
+            ['Date', bill.bill_date],
+          ]}
+        />
+        {bill.lines.length > 0 ? (
+          <>
+            <Rows heads={['Item', 'Batch', 'Expiry', 'Pack', 'Qty', 'Rate', 'Amount']}>
+              {bill.lines.map((line, index) => (
+                <tr key={`${line.raw_text}-${index}`} className="border-b border-ink-100">
+                  <Cell value={line.item} mono />
+                  <Cell value={line.batch} mono />
+                  <Cell value={line.expiry} mono />
+                  <Cell value={line.pack} mono />
+                  <Cell value={line.quantity} mono />
+                  <Cell value={line.rate ? money(line.rate, bill.currency) : null} mono />
+                  <Cell value={line.amount ? money(line.amount, bill.currency) : null} mono />
+                </tr>
+              ))}
+            </Rows>
+            <Totals
+              rows={[
+                ['Subtotal', bill.subtotal],
+                ['Tax', bill.tax],
+                ['Total', bill.grand_total],
+              ]}
+              currency={bill.currency}
+            />
+          </>
+        ) : (
+          <p className="t-small text-muted">No line was read off this page.</p>
+        )}
+      </DocumentPanel>
+
+      {lab ? (
+        <DocumentPanel title="From your lab bill">
+          <Header
+            pairs={[
+              ['Laboratory', lab.name],
+              ['Bill number', lab.bill_no],
+              ['Date', lab.bill_date],
+            ]}
+          />
+          {lab.tests.length > 0 ? (
+            <>
+              <Rows heads={['Test', 'Amount']}>
+                {lab.tests.map((line, index) => (
+                  <tr key={`${line.raw_text}-${index}`} className="border-b border-ink-100">
+                    <Cell value={line.test} mono />
+                    <Cell value={line.amount ? money(line.amount, lab.currency) : null} mono />
+                  </tr>
+                ))}
+              </Rows>
+              <Totals
+                rows={[
+                  ['Subtotal', lab.subtotal],
+                  ['Tax', lab.tax],
+                  ['Total', lab.grand_total],
+                ]}
+                currency={lab.currency}
+              />
+            </>
+          ) : (
+            <p className="t-small text-muted">No test line was read off this page.</p>
+          )}
+        </DocumentPanel>
+      ) : null}
+    </div>
   )
 }
 
@@ -141,6 +363,31 @@ export function Submitted({
         </div>
       </section>
 
+      {submission.content?.billed_total ? (
+        <section className="rounded-xl bg-ink-50 px-6 py-5">
+          <p className="t-colhead text-muted">Total on your bills</p>
+          <p className="t-hero mt-1 text-ink">
+            {money(submission.content.billed_total, submission.content.currency)}
+          </p>
+          {/* Deliberately not a claimable, eligible or supported figure. Those
+              come from a comparison the submitter does not see, they move when
+              a reviewer rejects a line, and printing one would promise an
+              amount nobody has agreed to. */}
+          <p className="t-small mt-2 max-w-2xl text-muted">
+            This is the amount on the documents you uploaded. What is reimbursable is
+            decided at review.
+          </p>
+        </section>
+      ) : submission.content ? (
+        <section className="rounded-xl bg-ink-50 px-6 py-5">
+          <p className="t-colhead text-muted">Total on your bills</p>
+          <p className="t-body mt-1 text-ink">
+            Your documents do not print a total we can add up without leaving a line out,
+            so none is shown. The amounts we did read are listed below.
+          </p>
+        </section>
+      ) : null}
+
       <section>
         <h2 className="t-title text-ink">What we could read</h2>
         <p className="t-small mt-1 max-w-2xl text-muted">
@@ -155,6 +402,20 @@ export function Submitted({
           ))}
         </ul>
       </section>
+
+      {submission.content ? (
+        <section>
+          <h2 className="t-title text-ink">What we read off your documents</h2>
+          <p className="t-small mt-1 max-w-2xl text-muted">
+            Everything below came off the pages you uploaded. Check it against the paper —
+            if something was misread, a clearer photo will fix it. Nothing here compares
+            one document to another; that is done at review.
+          </p>
+          <div className="mt-3">
+            <ExtractedSections content={submission.content} />
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-xl bg-ink-50 px-6 py-5">
         {certified ? (

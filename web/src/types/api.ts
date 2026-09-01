@@ -364,8 +364,84 @@ export interface EmployeeScanSummary {
   certified_at: string | null
 }
 
+/**
+ * What was read off the submitter's own documents.
+ *
+ * A transcription, never a comparison. There is no matched status, no pairing
+ * and no verdict anywhere in these shapes, and a billed line nobody prescribed
+ * has exactly the same fields as one that was.
+ */
+export interface PrescribedLine {
+  name: string | null
+  strength: string | null
+  form: string | null
+  frequency: string | null
+  duration: string | null
+  raw_text: string
+}
+
+export interface PrescriptionContent {
+  prescriber: string | null
+  clinic: string | null
+  date: string | null
+  patient_name: string | null
+  patient_age: string | null
+  patient_sex: string | null
+  medicines: PrescribedLine[]
+  investigations: string[]
+}
+
+export interface BilledLine {
+  item: string | null
+  batch: string | null
+  expiry: string | null
+  pack: string | null
+  quantity: string | null
+  rate: string | null
+  amount: string | null
+  raw_text: string
+}
+
+export interface BillContent {
+  name: string | null
+  bill_no: string | null
+  bill_date: string | null
+  lines: BilledLine[]
+  subtotal: string | null
+  tax: string | null
+  grand_total: string | null
+  currency: string
+}
+
+export interface LabLine {
+  test: string | null
+  amount: string | null
+  raw_text: string
+}
+
+export interface LabBillContent {
+  name: string | null
+  bill_no: string | null
+  bill_date: string | null
+  tests: LabLine[]
+  subtotal: string | null
+  tax: string | null
+  grand_total: string | null
+  currency: string
+}
+
+export interface ExtractedContent {
+  prescription: PrescriptionContent
+  pharmacy_bill: BillContent
+  lab_bill: LabBillContent | null
+  /** The total on their documents. Never a reimbursable figure. */
+  billed_total: string | null
+  currency: string
+}
+
 export interface EmployeeScanDetail extends EmployeeScanSummary {
   readability: DocumentReadability[]
+  content: ExtractedContent | null
 }
 
 export interface ScanSummary {
