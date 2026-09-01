@@ -8,7 +8,13 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict
 
-from rxconcile.models import CanonicalMatch, Finding, ReconciliationResult
+from rxconcile.export.rows import STATUS_LABEL, status_of
+from rxconcile.models import (
+    CanonicalMatch,
+    Finding,
+    ReconciliationResult,
+    ReimbursementLine,
+)
 
 REIMBURSEMENT_NOTE: Final[str] = (
     "An assessment of which billed items are supported by the prescription. Coverage "
@@ -28,9 +34,45 @@ STATUS_WORD: Final[dict[str, str]] = {
 CATEGORY_LABEL: Final[dict[str, str]] = {
     "eligible": "Covered by prescription",
     "not_eligible": "Not on prescription",
-    "needs_review": "Needs a manual check",
     "non_medicine": "Not a medicine",
 }
+
+
+def effective_category(line: ReimbursementLine, matched_billed: set[str]) -> str:
+    """The bucket a line is reported in.
+
+    `needs_review` is not a category a reader can act on. Those lines are not
+    pending work: the reviewer rules on them with Accept or Reject, and the
+    Decision column already says what they decided. So each is reported as what
+    it actually IS -- covered by the prescription, or not on it -- by the same
+    test the engine used to decide the other buckets.
+    """
+    if line.category != "needs_review":
+        return str(line.category)
+    return "eligible" if line.item_id in matched_billed else "not_eligible"
+
+
+def matched_billed_ids(result: ReconciliationResult) -> set[str]:
+    """Every billed line paired to something on the prescription."""
+    ids = {pair.billed_id for pair in result.matched_pairs}
+    for pair in result.matched_tests:
+        ids.add(pair.billed_id)
+        ids.update(pair.covers)
+    return ids
+
+
+def category_totals(result: ReconciliationResult) -> list[tuple[str, Decimal, int]]:
+    """The breakdown, rebucketed. Order is the order a reader wants it."""
+    matched = matched_billed_ids(result)
+    buckets: dict[str, list[Decimal]] = {key: [] for key in CATEGORY_LABEL}
+    for line in result.reimbursement.lines:
+        if line.amount is None:
+            continue
+        buckets[effective_category(line, matched)].append(line.amount)
+    return [
+        (key, sum(amounts, Decimal("0")), len(amounts))
+        for key, amounts in buckets.items()
+    ]
 
 
 def money(currency: str, amount: Decimal | None) -> str:
@@ -114,6 +156,12 @@ class ExportContext(BaseModel):
     #: The amount the reviewer accepted, as they accepted it. Not recomputed
     #: here: the screen and the report must not be able to disagree.
     claimed_amount: Decimal | None = None
+    #: The allowance block, as the dashboard shows it. None when the employee's
+    #: allowance could not be loaded, which the report says rather than
+    #: printing a zero.
+    annual_amount: Decimal | None = None
+    used_amount: Decimal | None = None
+    allowance_year: str = ""
 
     @property
     def when(self) -> str:
@@ -173,6 +221,7 @@ def document_gaps(result: ReconciliationResult) -> list[tuple[str, str]]:
 #: Mirrors web/src/lib/phrasing.ts so the screen and a printed report never say
 #: two different things about the same row.
 _REMARKS: Final[tuple[tuple[str, str], ...]] = (
+    ("NON_MEDICINE_ITEM", "Not a medicine — outside reimbursement scope"),
     ("DUPLICATE_BILL", "Already submitted"),
     ("POSSIBLE_RESUBMISSION", "Possible corrected re-issue"),
     ("EARLY_REPEAT", "Claimed again before the course ran out"),
@@ -194,22 +243,20 @@ _REMARKS: Final[tuple[tuple[str, str], ...]] = (
     ("BRAND_SUBSTITUTION", "Brand substitution"),
     ("LINE_TOTAL_MISMATCH", "Line total does not match quantity x rate"),
     ("QUANTITY_AMBIGUOUS", "Quantity could not be confirmed"),
-    ("NON_MEDICINE_ITEM", "Not a medicine"),
     ("STRENGTH_UNIT_UNSTATED", "Strength not printed on one document"),
     ("TEST_UNRESOLVED", "Not a test name the system recognises"),
 )
 
 
-def status_word(found: list[Finding]) -> str:
+def status_word(found: list[Finding], *, paired: bool = False) -> str:
     """A row's status as a WORD, never a colour.
 
-    One definition for the screen, the PDF and the workbook. The Excel sheet
-    used to derive its own and printed NOTED where the other two said MATCHES.
+    One definition for the screen, the PDF and the workbook. It used to fall
+    through to MATCHES for anything with no critical or warning, which printed
+    MATCHES against a body lotion that is not a medicine at all.
     """
-    for severity in ("critical", "warning"):
-        if any(f.severity == severity for f in found):
-            return STATUS_WORD[severity]
-    return "MATCHES"
+    state, _ = status_of(found, paired=paired)
+    return STATUS_LABEL[state]
 
 
 def short_remark(found: list[Finding]) -> str:
@@ -239,27 +286,13 @@ def short_remark(found: list[Finding]) -> str:
             wording = f"Brand substitution — {billed_brand} for {prescribed}, same salt"
     elif code == "RX_NOT_BILLED" and detail.get("lab_only_bill") is True:
         wording = "Not assessed — no pharmacy bill supplied"
-    elif code in {"BILL_NOT_PRESCRIBED", "RX_NOT_BILLED"} and detail.get("identified") is False:
+    elif code in {"BILL_NOT_PRESCRIBED", "RX_NOT_BILLED"} and detail.get("legible") is False:
+        # `legible` is whether the page was read. `identified` is whether the
+        # dictionary knew it, and reading that here printed "could not be read"
+        # against a line whose name is on the same row of the report.
         wording = "This line could not be read"
 
     return f"{wording} (+{len(sayable) - 1} more)" if len(sayable) > 1 else wording
-
-
-def unchecked_line(result: ReconciliationResult) -> str | None:
-    """One sentence replacing the internal check-name table.
-
-    The number in the reimbursement total needs an explanation that survives
-    the app: an unexplained money figure on a report is worse than a technical
-    one. Naming the internal checks was not that explanation.
-    """
-    count = result.reimbursement.needs_review_line_count
-    if not count:
-        return None
-    return (
-        f"{count} billed line{'s' if count != 1 else ''} could not be fully checked and "
-        f"need{'' if count != 1 else 's'} a manual review. The reason for each is shown "
-        "in the table above."
-    )
 
 
 #: Never allowed to become the hidden half of a "+N more".

@@ -17,7 +17,7 @@ from typing import Final
 import pytest
 
 from rxconcile.export import ExportContext, build_json, build_pdf, build_xlsx
-from rxconcile.export.common import document_gaps
+from rxconcile.export.common import category_totals, document_gaps
 from rxconcile.models import (
     BilledItem,
     BilledTest,
@@ -47,6 +47,28 @@ def result_with_discrepancy() -> ReconciliationResult:
                        quantity=10.0, line_total=Decimal("310.00"), confidence=0.9),
             BilledItem(item_id="bill-02", raw_text="ZINCOVIT", drug_name="Zincovit",
                        quantity=1.0, line_total=Decimal("180.00"), confidence=0.9),
+        ],
+    )
+    return engine.reconcile(prescription, bill, processing_ms=12)
+
+
+def non_medicine_result() -> ReconciliationResult:
+    """A billed cosmetic: read perfectly, absent from the drug dictionary."""
+    prescription = Prescription(
+        overall_legibility=0.95,
+        items=[PrescribedItem(item_id="rx-01", raw_text="Dolo 650", drug_name="Dolo",
+                              strength_value=650.0, strength_unit="mg", form="tablet",
+                              confidence=0.9)],
+    )
+    bill = PharmacyBill(
+        currency="INR", pharmacy_licence_no="TN/2019/337821",
+        items=[
+            BilledItem(item_id="bill-01", raw_text="DOLO 650", drug_name="Dolo",
+                       strength_value=650.0, strength_unit="mg", form="tablet",
+                       quantity=10.0, line_total=Decimal("30.00"), confidence=0.9),
+            BilledItem(item_id="bill-02", raw_text="NIVEA BODY LOTION",
+                       drug_name="NIVEA BODY LOTION", form="other",
+                       quantity=1.0, line_total=Decimal("345.00"), confidence=0.9),
         ],
     )
     return engine.reconcile(prescription, bill, processing_ms=12)
@@ -114,14 +136,20 @@ def test_xlsx_has_a_summary_sheet_and_one_per_table() -> None:
     assert book.sheetnames == ["Summary", "Reimbursement", "Medicines", "Lab tests", "Findings"]
 
 
-def test_xlsx_summary_states_the_reimbursement_totals() -> None:
+def test_xlsx_summary_states_the_counts_and_the_reimbursement_totals() -> None:
     openpyxl = pytest.importorskip("openpyxl")
     result = result_with_discrepancy()
     book = openpyxl.load_workbook(BytesIO(build_xlsx(context(result))))
-    text = " ".join(
-        str(cell.value) for row in book["Summary"].iter_rows() for cell in row if cell.value
+    cells = [cell.value for row in book["Summary"].iter_rows() for cell in row]
+    text = " ".join(str(v) for v in cells if v)
+    assert "Medicines with problems" in text
+    assert "Lab tests matched" in text
+    # Amounts are numbers with a currency format, not strings: a money column
+    # formatted as text cannot be summed by whoever opens this.
+    totals = {key: float(total) for key, total, _ in category_totals(result)}
+    assert any(
+        isinstance(v, (int, float)) and abs(v - totals["not_eligible"]) < 0.005 for v in cells
     )
-    assert str(result.reimbursement.not_eligible_total) in text
 
 
 def test_xlsx_is_a_real_workbook() -> None:
@@ -294,60 +322,133 @@ def test_a_row_with_nothing_against_it_has_no_remark() -> None:
     assert short_remark([]) == "—"
 
 
-def test_the_unchecked_line_explains_the_needs_review_total() -> None:
-    """An unexplained money figure on a report is worse than a technical one."""
-    from rxconcile.export.common import unchecked_line
+def test_no_export_carries_the_manual_check_bucket() -> None:
+    """It was never a category a reader could act on.
 
-    result = result_with_discrepancy()
-    line = unchecked_line(result)
-    assert line is not None
-    assert str(result.reimbursement.needs_review_line_count) in line
-    assert "manual review" in line
-    assert "shown in the table above" in line
-
-
-def test_no_unchecked_line_when_nothing_needs_review() -> None:
-    from rxconcile.export.common import unchecked_line
-
-    clean = engine.reconcile(
-        Prescription(overall_legibility=0.9), PharmacyBill(currency="INR"), processing_ms=1
-    )
-    assert unchecked_line(clean) is None
-
-
-def test_the_pdf_no_longer_lists_internal_check_names() -> None:
-    """The check-name table meant nothing to a client and is gone."""
+    Those lines are not pending work: the reviewer rules on them with Accept or
+    Reject and the Decision column says what they decided. Each is reported as
+    what it actually is instead.
+    """
     import pypdfium2 as pdfium
 
-    data = build_pdf(context(result_with_discrepancy()))
-    pdf = pdfium.PdfDocument(BytesIO(data))
+    ctx = context(result_with_discrepancy())
+
+    pdf = pdfium.PdfDocument(BytesIO(build_pdf(ctx)))
     text = " ".join(page.get_textpage().get_text_range() for page in pdf)
-    assert "Checks that could not run" not in text
-    assert "manual review" in text, "the total still has to be explained"
+    assert "Needs a manual check" not in text
+    assert "manual review" not in text
+    assert "could not be fully checked" not in text
+
+    book = zipfile.ZipFile(BytesIO(build_xlsx(ctx)))
+    sheet_text = " ".join(
+        book.read(name).decode("utf-8", "replace")
+        for name in book.namelist()
+        if name.endswith(".xml")
+    )
+    assert "Needs a manual check" not in sheet_text
+    assert "manual review" not in sheet_text
+
+    payload = json.loads(build_json(ctx))
+    assert "needs_review" not in payload["summary"]["reimbursement"]
+    # The engine's own buckets survive untouched in the verbatim result.
+    assert "needs_review_total" in payload["result"]["reimbursement"]
 
 
-def test_the_status_word_is_the_same_everywhere() -> None:
-    """The workbook printed NOTED where the report and screen said MATCHES."""
+def test_a_manual_check_line_is_reported_as_what_it_actually_is() -> None:
+    """Rebucketed by the same test the engine used for the other categories."""
+    from rxconcile.export.common import category_totals, matched_billed_ids
+
+    result = result_with_discrepancy()
+    assert result.reimbursement.needs_review_line_count > 0, "fixture must exercise this"
+    buckets = {key: (total, count) for key, total, count in category_totals(result)}
+    assert set(buckets) == {"eligible", "not_eligible", "non_medicine"}
+    matched = matched_billed_ids(result)
+    for line in result.reimbursement.lines:
+        if line.category == "needs_review" and line.amount is not None:
+            expected = "eligible" if line.item_id in matched else "not_eligible"
+            assert buckets[expected][1] >= 1
+
+
+def test_the_status_word_matches_the_screen_including_out_of_scope() -> None:
+    """The reports printed MATCHES against a body lotion.
+
+    `status_word` fell through to MATCHES for anything with no critical and no
+    warning, and a confirmed non-medicine has neither.
+    """
     from rxconcile.export.common import status_word
 
-    assert status_word([]) == "MATCHES"
-    assert status_word([_finding("BRAND_SUBSTITUTION", "info")]) == "MATCHES"  # type: ignore[list-item]
+    assert status_word([], paired=True) == "MATCHES"
+    assert status_word([]) == "NOT CHECKED", "an unpaired line matched nothing"
+    assert status_word(
+        [_finding("BRAND_SUBSTITUTION", "info")], paired=True  # type: ignore[list-item]
+    ) == "SUBSTITUTED"
     assert status_word([_finding("FORM_MISMATCH", "warning")]) == "CHECK"  # type: ignore[list-item]
     assert status_word([_finding("STRENGTH_MISMATCH", "critical")]) == "PROBLEM"  # type: ignore[list-item]
+    assert status_word([_finding("NON_MEDICINE_ITEM", "info")]) == "OUT OF SCOPE"  # type: ignore[list-item]
     # A critical leads even when a warning sits beside it.
     mixed = [_finding("FORM_MISMATCH", "warning"), _finding("STRENGTH_MISMATCH", "critical")]
     assert status_word(mixed) == "PROBLEM"  # type: ignore[arg-type]
+    # And a non-medicine never hides a real finding.
+    both = [_finding("NON_MEDICINE_ITEM", "info"), _finding("EXPIRED_ITEM", "critical")]
+    assert status_word(both) == "PROBLEM"  # type: ignore[arg-type]
+
+
+def test_a_non_medicine_reads_as_out_of_scope_in_every_export() -> None:
+    """NIVEA BODY LOTION printed MATCHES / "could not be read", both wrong."""
+    import pypdfium2 as pdfium
+
+    result = non_medicine_result()
+    ctx = context(result)
+
+    pdf = pdfium.PdfDocument(BytesIO(build_pdf(ctx)))
+    # Whitespace-normalised: a narrow status column wraps the words.
+    text = " ".join(
+        " ".join(page.get_textpage().get_text_range().split()) for page in pdf
+    )
+    assert "OUT OF SCOPE" in text
+    assert "could not be read" not in text, "it was read; the dictionary just missed it"
+
+    book = zipfile.ZipFile(BytesIO(build_xlsx(ctx)))
+    sheet_text = " ".join(
+        book.read(name).decode("utf-8", "replace")
+        for name in book.namelist()
+        if name.endswith(".xml")
+    )
+    assert "OUT OF SCOPE" in sheet_text
+    assert "could not be read" not in sheet_text
 
 
 def test_the_workbook_and_the_report_agree_on_every_status() -> None:
     openpyxl = pytest.importorskip("openpyxl")
     ctx = context(result_with_discrepancy())
     book = openpyxl.load_workbook(BytesIO(build_xlsx(ctx)))
+    # Column 2 now: the sheet leads with a row number, as the screen does.
+    # The trailing * is the "one check could not be concluded" marker, which
+    # sits beside a status rather than replacing it.
     statuses = {
-        row[0] for row in book["Medicines"].iter_rows(min_row=2, values_only=True) if row[0]
+        str(row[1]).rstrip("*")
+        for row in book["Medicines"].iter_rows(min_row=2, values_only=True)
+        if row[1]
     }
-    assert statuses <= {"MATCHES", "CHECK", "PROBLEM"}
+    assert statuses <= {"MATCHES", "SUBSTITUTED", "CHECK", "PROBLEM", "NOT CHECKED",
+                        "OUT OF SCOPE"}
     assert "NOTED" not in statuses
+
+
+def test_the_workbook_keeps_every_column_the_screen_shows() -> None:
+    """The export is a record of the screen, not a reduced version of it."""
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.load_workbook(BytesIO(build_xlsx(context(result_with_discrepancy()))))
+    headers = [c.value for c in next(book["Medicines"].iter_rows(min_row=1, max_row=1))]
+    assert headers == [
+        "#", "Status", "Remark",
+        "Drug (prescribed)", "Drug (billed)", "Salt",
+        "Strength (prescribed)", "Strength (billed)",
+        "Form (prescribed)", "Form (billed)",
+        "Qty (prescribed)", "Qty (billed)",
+        "Decision", "Reviewer's reason",
+    ]
+    assert book["Medicines"].freeze_panes == "A2"
 
 
 # ---------------------------------------------------------------------------

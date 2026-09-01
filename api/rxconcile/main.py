@@ -817,7 +817,7 @@ EXPORTS: Final[dict[str, tuple[str, str]]] = {
 }
 
 
-def _export_context(record: ScanRecord) -> ExportContext:
+def _export_context(record: ScanRecord, session: Session) -> ExportContext:
     """Rebuild a report's inputs from a stored scan.
 
     The stored blob is validated here rather than trusted: a record written
@@ -837,6 +837,12 @@ def _export_context(record: ScanRecord) -> ExportContext:
         decisions = json.loads(record.decisions_json)
     except ValueError:
         decisions = {}
+    # Used-so-far EXCLUDES this scan, so the report reads the way the screen
+    # did: what was drawn before this claim, then this claim beside it.
+    allowance = view_for(
+        session, record.employee_number, employee_name=record.employee_name,
+        exclude_scan_id=record.id,
+    )
     return ExportContext(
         result=result,
         employee_name=record.employee_name,
@@ -850,6 +856,9 @@ def _export_context(record: ScanRecord) -> ExportContext:
         bill_image=record.bill_image,
         decisions=decisions if isinstance(decisions, dict) else {},
         claimed_amount=record.claimed_amount,
+        annual_amount=allowance.annual_amount,
+        used_amount=allowance.used,
+        allowance_year=allowance.year,
     )
 
 
@@ -909,7 +918,7 @@ async def export_scan(
             hint=f"Use one of: {', '.join(sorted(EXPORTS))}.",
         )
     record = _owned_scan(scan_id, user, session)
-    context = _export_context(record)
+    context = _export_context(record, session)
     builder = {"pdf": build_pdf, "xlsx": build_xlsx, "json": build_json}[fmt]
     media_type, suffix = EXPORTS[fmt]
     stamp = record.created_at.strftime("%Y%m%d-%H%M")

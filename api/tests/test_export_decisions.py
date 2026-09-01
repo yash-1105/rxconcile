@@ -92,6 +92,9 @@ def reviewed() -> ExportContext:
             "bill-only-bill-02": {"decision": "unset"},
         },
         claimed_amount=Decimal("0.00"),
+        annual_amount=Decimal("12000.00"),
+        used_amount=Decimal("3500.00"),
+        allowance_year="2026-27",
     )
 
 
@@ -118,7 +121,9 @@ class TestReportsCarryTheReview:
         )
         assert "Rejected" in text
         assert "80mg billed against 40mg" in text
-        assert "Accepted for this claim" in text
+        # The claim figure now sits in the allowance block on the Summary sheet,
+        # under the same label the dashboard uses.
+        assert "This claim" in text
         # The unreviewed line is stated as unreviewed, not left blank.
         assert "Not decided" in text
 
@@ -140,4 +145,3 @@ class TestReportsCarryTheReview:
             if name.endswith(".xml")
         )
         assert "Not decided" in text
-        assert "Accepted for this claim" not in text
