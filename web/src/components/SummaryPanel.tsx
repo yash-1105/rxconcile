@@ -123,7 +123,13 @@ function GapStrip({ gaps }: { gaps: DocumentGap[] }) {
   )
 }
 
-/** One clickable count. Filters the table below, as the old tile did. */
+/**
+ * One count, as a cell.
+ *
+ * The whole cell is the target, not just the number: these are the four figures
+ * a reviewer scans first and they were previously a line of small text at the
+ * bottom of the panel. Still a real button, so focus and Enter come for free.
+ */
 function Count({
   value,
   label,
@@ -146,12 +152,14 @@ function Count({
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={`t-small rounded px-2 py-0.5 transition-colors hover:bg-ink-100 ${
-        selected ? 'bg-ink-100 font-semibold' : ''
+      className={`flex cursor-pointer flex-col justify-center rounded-lg px-4 py-4 text-left transition-colors ${
+        selected
+          ? 'bg-surface ring-2 ring-seal ring-inset'
+          : 'bg-ink-50 hover:bg-ink-100'
       }`}
     >
-      <span className={`font-semibold ${colour}`}>{value}</span>{' '}
-      <span className="text-muted">{label}</span>
+      <span className="t-colhead">{label}</span>
+      <span className={`t-count mt-1 ${colour}`}>{value}</span>
     </button>
   )
 }
@@ -306,38 +314,29 @@ export function SummaryPanel({
             </div>
           </div>
 
-          <dl className="mt-6 space-y-1.5 border-t border-ink-100 pt-5">
-            {rows.map((row) => (
-              <div key={row.table} className="flex items-baseline gap-3">
-                <dt className="t-small w-24 shrink-0 text-muted">{row.label}</dt>
-                <dd className="-ml-2 flex flex-wrap items-baseline">
-                  <Count
-                    value={row.counts.matched}
-                    label="matched"
-                    tone="matched"
-                    selected={filters[row.table] === 'matched'}
-                    onClick={() =>
-                      onPick(row.table, filters[row.table] === 'matched' ? 'all' : 'matched')
-                    }
-                  />
-                  <span className="t-small hidden px-0.5 text-ink-300 sm:inline">·</span>
-                  <Count
-                    value={row.counts.problems}
-                    label="problems"
-                    tone="problems"
-                    selected={filters[row.table] === 'problems'}
-                    onClick={() =>
-                      onPick(row.table, filters[row.table] === 'problems' ? 'all' : 'problems')
-                    }
-                  />
-                </dd>
-              </div>
-            ))}
-          </dl>
+          {/* Two by two, filling the space under the verdict. Row order is
+              medicines then lab tests, matched then problems, so the grid reads
+              the same way the tables below it are ordered. */}
+          <div className="mt-6 grid grid-cols-1 gap-3 border-t border-ink-100 pt-6 sm:grid-cols-2">
+            {rows.flatMap((row) =>
+              (['matched', 'problems'] as const).map((which) => (
+                <Count
+                  key={`${row.table}-${which}`}
+                  value={row.counts[which]}
+                  label={which === 'matched' ? `${row.label} matched` : `${row.label} with problems`}
+                  tone={which}
+                  selected={filters[row.table] === which}
+                  onClick={() =>
+                    onPick(row.table, filters[row.table] === which ? 'all' : which)
+                  }
+                />
+              )),
+            )}
+          </div>
         </div>
 
         {/* RIGHT — the money */}
-        <div className="min-w-0 border-t border-ink-100 bg-ink-50/60 px-5 py-6 sm:px-7 sm:py-7 lg:border-l lg:border-t-0">
+        <div className="flex min-w-0 flex-col border-t border-ink-100 bg-ink-50/60 px-5 py-6 sm:px-7 sm:py-7 lg:border-l lg:border-t-0">
           {allowance === null ? (
             <>
               <p className="t-micro text-muted">Balance remaining</p>
@@ -357,9 +356,11 @@ export function SummaryPanel({
                 <Money value={remaining} currency={currency} animate={animate} />
               </p>
 
-              <AllowanceBar annual={annual} used={used} claim={claim} animate={animate} />
+              <div className="mt-6">
+                <AllowanceBar annual={annual} used={used} claim={claim} animate={animate} />
+              </div>
 
-              <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
+              <dl className="mt-auto flex flex-wrap gap-x-6 gap-y-3 pt-8">
                 {[
                   { label: 'Allowance', value: annual, tone: 'text-ink' },
                   { label: 'Used', value: used, tone: 'text-muted' },

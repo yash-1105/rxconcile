@@ -85,6 +85,9 @@ body {
 .t-hero    { font-size: clamp(32px, 8vw, 40px); line-height: 1.15; letter-spacing: -0.02em; font-weight: 600; font-variant-numeric: tabular-nums; }
 /* Steps down on a narrow screen: "discrepancies" at 30px is wider than a
    phone's content column, and a single long word cannot wrap. */
+/* The four counts. Close to the balance figure without competing with it, and
+   stepping down on a phone the same way. */
+.t-count   { font-size: clamp(26px, 6vw, 34px); line-height: 1.1; letter-spacing: -0.02em; font-weight: 600; font-variant-numeric: tabular-nums; }
 .t-display { font-size: clamp(24px, 6.4vw, 30px); line-height: 1.25; letter-spacing: -0.01em; font-weight: 600; overflow-wrap: break-word; }
 .t-title   { font-size: 19px; line-height: 1.4; font-weight: 600; }
 .t-body    { font-size: 16px; line-height: 1.6; }
