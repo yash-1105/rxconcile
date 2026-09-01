@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, delete, select
 from starlette.responses import Response
 
-from rxconcile.config import settings
+from rxconcile.config import samples_dir, settings
 from rxconcile.demo_auth import DemoUser, issue_token, user_from_token, verify_credentials
 from rxconcile.export import ExportContext, build_json, build_pdf, build_xlsx
 from rxconcile.extract import extract_bill_async, extract_prescription_async
@@ -82,7 +82,9 @@ PDF_MIME_TYPE: Final[str] = "application/pdf"
 #: deployment sets its own web origin. Nothing else may call this from a browser.
 ALLOWED_ORIGINS: Final[tuple[str, ...]] = settings.origins
 
-SAMPLES_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "samples"
+#: Resolved through config so a deployment can move it, and so the default
+#: follows the package rather than the repo. See `config.samples_dir`.
+SAMPLES_DIR: Final[Path] = samples_dir()
 
 
 # --------------------------------------------------------------------------

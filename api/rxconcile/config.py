@@ -23,6 +23,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 _ENV_FILE: Final[Path] = _REPO_ROOT / ".env"
 
+#: The directory the installed package sits in -- ``api/`` in a checkout, and
+#: the container root in a deployment, because Railway's root directory is
+#: ``api/`` and its contents become the image root. Anything the app must be
+#: able to READ at runtime has to live under here or it is simply not shipped.
+_PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
+
 #: Vertex resolves Gemini 3.x publisher models only on the ``global`` endpoint.
 #: ``us-central1`` returns 404 for ``gemini-3.7-flash`` in this project, so a
 #: regional value is a configuration error, not a fallback.
@@ -136,6 +142,14 @@ class Settings(BaseSettings):
             "installs the package somewhere else entirely."
         ),
     )
+    samples_path: Path | None = Field(
+        default=None,
+        description=(
+            "Where the bundled demo documents live. None means the copy shipped "
+            "beside the package, which is the right answer both in a checkout "
+            "and in a container."
+        ),
+    )
     allowed_origins: str = Field(
         default="http://localhost:5173",
         description=(
@@ -197,6 +211,16 @@ class Settings(BaseSettings):
         for model in ordered:
             seen.setdefault(model, None)
         return tuple(seen)
+
+
+def samples_dir() -> Path:
+    """The bundled demo documents: `SAMPLES_PATH` if set, else beside the package.
+
+    These moved under ``api/`` to be here at all. They used to sit at the repo
+    root, which is outside the deployed build context, so every sample route
+    would have 404'd in the container while working perfectly on a laptop.
+    """
+    return settings.samples_path or _PACKAGE_ROOT / "samples"
 
 
 def _origins_of(raw: str) -> tuple[str, ...]:

@@ -1,0 +1,17 @@
+# What railway up uploads. The whole repository is uploaded regardless of the
+# service's Root Directory -- that setting scopes the BUILD, not the upload --
+# so anything large or local has to be excluded here or it is shipped every
+# deploy. The virtualenv alone is 360M and the local demo database is 9M; the
+# deployed database lives on the volume at DATABASE_PATH, never in the image.
+api/.venv/
+api/data/
+.venv/
+node_modules/
+web/node_modules/
+web/dist/
+.hypothesis/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.cache/

@@ -21,7 +21,9 @@ from typing import Final
 
 from PIL import Image, ImageDraw, ImageFont
 
-SAMPLES_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "samples"
+from rxconcile.config import samples_dir
+
+SAMPLES_DIR: Final[Path] = samples_dir()
 
 #: Preferred script-like faces, most handwriting-like first.
 _HAND_FONTS: Final[tuple[str, ...]] = (

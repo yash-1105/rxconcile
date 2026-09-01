@@ -176,7 +176,7 @@ api/rxconcile/
   models/          pydantic contracts shared across the stack
   main.py          FastAPI app
 web/               React 19 + TypeScript strict + Vite + Tailwind
-samples/           real photographs and synthetic regression pairs
+api/samples/       real photographs and synthetic regression pairs
 docs/              baseline, design decisions, engine spec, evaluation
 ```
 

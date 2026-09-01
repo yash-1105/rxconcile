@@ -21,13 +21,12 @@ from __future__ import annotations
 
 import asyncio
 import time
-from pathlib import Path
 
-from rxconcile.config import settings
+from rxconcile.config import samples_dir, settings
 from rxconcile.extract.bill import extract_bill_async
 from rxconcile.extract.prescription import extract_prescription_async
 
-SAMPLES_DIR = Path(__file__).resolve().parents[2] / "samples"
+SAMPLES_DIR = samples_dir()
 
 #: Mirrors the SAMPLES table in main.py. Kept as plain data so warming needs no
 #: running server.
