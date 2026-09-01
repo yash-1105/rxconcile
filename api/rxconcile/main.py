@@ -490,6 +490,8 @@ class ScanCreate(BaseModel):
     employee_number: str = Field(min_length=1)
     prescription_filename: str = ""
     bill_filename: str = ""
+    lab_report_filename: str = ""
+    lab_bill_filename: str = ""
     condition: str | None = None
     description: str | None = None
     extraction_runs: int = 0
@@ -561,6 +563,8 @@ class EmployeeScanSummary(BaseModel):
     description: str | None = None
     prescription_filename: str = ""
     bill_filename: str = ""
+    lab_report_filename: str = ""
+    lab_bill_filename: str = ""
     review_status: str = "submitted"
     certified_by_employee: bool = False
     certified_at: str | None = None
@@ -600,11 +604,34 @@ def _employee_summary(record: ScanRecord) -> EmployeeScanSummary:
         description=record.description,
         prescription_filename=record.prescription_filename,
         bill_filename=record.bill_filename,
+        lab_report_filename=record.lab_report_filename,
+        lab_bill_filename=record.lab_bill_filename,
         review_status=record.review_status,
         certified_by_employee=record.certified_by_employee,
         certified_at=(
             record.certified_at.isoformat() if record.certified_at is not None else None
         ),
+    )
+
+
+def _employee_detail(record: ScanRecord) -> EmployeeScanDetail:
+    """A submission as its submitter sees it, readability and transcription
+    included. Used by every endpoint that answers one, so two of them cannot
+    drift into different shapes."""
+    readability: list[DocumentReadability]
+    content: ExtractedContent | None
+    try:
+        stored = _stored_result(record)
+    except ValueError:
+        # An older record whose blob no longer validates. The submission still
+        # exists and must still open; we simply cannot say what was on it.
+        readability, content = unavailable(), None
+    else:
+        readability, content = readability_of(stored), extracted_content(stored)
+    return EmployeeScanDetail(
+        **_employee_summary(record).model_dump(),
+        readability=readability,
+        content=content,
     )
 
 
@@ -723,6 +750,8 @@ async def create_scan(
         role=user.role,
         prescription_filename=payload.prescription_filename,
         bill_filename=payload.bill_filename,
+        lab_report_filename=payload.lab_report_filename,
+        lab_bill_filename=payload.lab_bill_filename,
         condition=payload.condition,
         description=payload.description,
         decisions_json=json.dumps(payload.decisions),
@@ -769,8 +798,13 @@ async def certify_scan(
     scan_id: int,
     user: DemoUser = Depends(current_user),
     session: Session = Depends(get_session),
-) -> EmployeeScanSummary:
+) -> EmployeeScanDetail:
     """The employee's attestation that the documents are genuine and theirs.
+
+    Answers with the SAME shape as `GET /api/scans/{id}`, so a caller can
+    replace what it is holding. Returning the summary instead dropped the
+    readability and the transcription out of the client's state and took the
+    screen down with it.
 
     Recorded after the run rather than before it. The reconciliation is
     expensive, and losing it because somebody closed the tab before ticking a
@@ -794,7 +828,7 @@ async def certify_scan(
         session.add(record)
         session.commit()
         session.refresh(record)
-    return _employee_summary(record)
+    return _employee_detail(record)
 
 
 @app.get("/api/scans/{scan_id}")
@@ -821,25 +855,7 @@ async def get_scan(
             hint="Open it from the History screen, which lists the scans you can see.",
         )
     if user.role != "admin":
-        try:
-            readability = readability_of(_stored_result(record))
-        except ValueError:
-            # An older record whose blob no longer validates. The submission
-            # still exists and must still open; we simply cannot say what was
-            # legible about it.
-            readability = unavailable()
-        content: ExtractedContent | None = None
-        try:
-            content = extracted_content(_stored_result(record))
-        except ValueError:
-            # Same older-record case as the readability above. Showing nothing
-            # is correct; inventing a transcription would not be.
-            content = None
-        return EmployeeScanDetail(
-            **_employee_summary(record).model_dump(),
-            readability=readability,
-            content=content,
-        )
+        return _employee_detail(record)
     summary = _summary(record)
     try:
         stored = json.loads(record.decisions_json)

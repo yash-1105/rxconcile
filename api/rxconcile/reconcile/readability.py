@@ -30,21 +30,20 @@ from pydantic import BaseModel, Field
 
 from rxconcile.models import ReconciliationResult
 
-DocumentSlot = Literal["prescription", "pharmacy_bill", "lab_bill", "lab_report"]
+DocumentSlot = Literal["prescription", "pharmacy_bill", "lab_bill"]
 
 #: What we are able to say about one uploaded document.
 #:
-#: `not_assessed` is its own answer and not a euphemism for "fine": a lab
-#: report is filed with the claim and never read, and saying so is the only
-#: honest thing. A check that could not run must never render as one that
-#: passed.
+#: `not_assessed` is its own answer and not a euphemism for "fine": a record
+#: written before we kept a document's read state has nothing to report, and
+#: saying so is the only honest thing. A check that could not run must never
+#: render as one that passed.
 ReadState = Literal["read", "partly_unreadable", "unreadable", "not_assessed", "not_supplied"]
 
 SLOT_LABEL: Final[dict[DocumentSlot, str]] = {
     "prescription": "Prescription",
     "pharmacy_bill": "Pharmacy bill",
     "lab_bill": "Lab bill",
-    "lab_report": "Lab report",
 }
 
 #: The one code that names a document rather than a line.
@@ -201,32 +200,19 @@ def _lab_bill(result: ReconciliationResult) -> DocumentReadability:
     )
 
 
-def _lab_report(result: ReconciliationResult) -> DocumentReadability:
-    """Filed, never read.
-
-    A lab report carries results, not charges, so nothing on it is compared to
-    anything. Reporting it as "read" would claim a check that never happened.
-    """
-    if not result.submission.lab_report_supplied:
-        return DocumentReadability(
-            slot="lab_report", label=SLOT_LABEL["lab_report"], supplied=False,
-            state="not_supplied",
-        )
-    return DocumentReadability(
-        slot="lab_report", label=SLOT_LABEL["lab_report"], supplied=True,
-        state="not_assessed",
-        message="Filed with your claim. Lab reports are not read by this system, so nothing "
-                "here says whether it is legible.",
-    )
-
-
 def readability_of(result: ReconciliationResult) -> list[DocumentReadability]:
-    """Every uploaded slot, in the order the upload form shows them."""
+    """The documents that were READ, in the order the upload form shows them.
+
+    A lab report is not here, and that is not an omission. Nothing is extracted
+    from it — no rule consumes a report — so it was never assessed for
+    legibility, and listing it in a section about photo quality would invite a
+    submitter to re-take a photograph that has nothing wrong with it. It is
+    acknowledged where it belongs instead: among the documents received.
+    """
     return [
         _prescription(result),
         _pharmacy_bill(result),
         _lab_bill(result),
-        _lab_report(result),
     ]
 
 

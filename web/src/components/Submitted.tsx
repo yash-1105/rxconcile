@@ -288,6 +288,9 @@ export function Submitted({
 }) {
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
+  // Ticking the box is not the submit. It arms it — the button is the action,
+  // so there is no question about whether the claim went anywhere.
+  const [confirmed, setConfirmed] = useState(false)
 
   const certified = submission.certified_by_employee
   // Only the documents that were actually uploaded. A slot nobody filled is
@@ -309,26 +312,38 @@ export function Submitted({
     }
   }
 
+  // Every slot, including the ones left empty. An omitted row cannot be told
+  // apart from a document that did not attach, and the submitter is the only
+  // person who can fix the second.
+  const filenames: Record<string, string> = {
+    prescription: submission.prescription_filename,
+    bill: submission.bill_filename,
+    labReport: submission.lab_report_filename,
+    labBill: submission.lab_bill_filename,
+  }
   const uploaded = DOCUMENT_SLOTS.map((slot) => ({
+    key: slot.key,
     label: slot.label,
-    filename:
-      slot.key === 'prescription'
-        ? submission.prescription_filename
-        : slot.key === 'bill'
-          ? submission.bill_filename
-          : '',
-  })).filter((row) => row.filename)
+    filename: filenames[slot.key] ?? '',
+  }))
 
   return (
     <div className="space-y-8">
       <section className="overflow-hidden rounded-xl bg-surface shadow-[0_1px_2px_rgba(13,18,17,0.04),0_8px_24px_-12px_rgba(13,18,17,0.18)]">
         <div className="px-6 py-7 sm:px-8">
-          <p className="t-colhead text-muted">{STATUS_LABEL[submission.review_status]}</p>
-          <h1 className="t-display mt-1 text-ink">Submitted for review</h1>
+          <p className="t-colhead text-muted">
+            {certified ? STATUS_LABEL[submission.review_status] : 'Not submitted yet'}
+          </p>
+          <h1 className="t-display mt-1 text-ink">
+            {certified ? 'Submitted for review' : 'Check and submit'}
+          </h1>
           <p className="t-body mt-2 max-w-2xl text-muted">
-            Your claim is with the reviewer. You will not see the comparison —
-            that is their job — but anything we could not read off your
-            documents is below, while you can still do something about it.
+            {certified
+              ? 'Your claim is with the reviewer. You will not see the comparison — ' +
+                'that is their job — but anything we could not read off your documents ' +
+                'is below, while you can still do something about it.'
+              : 'Your documents have been read. Check what we made of them below, then ' +
+                'confirm and submit at the foot of the page.'}
           </p>
 
           <dl className="mt-6 grid gap-5 border-t border-ink-100 pt-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -347,19 +362,29 @@ export function Submitted({
             </div>
           </dl>
 
-          {uploaded.length > 0 ? (
-            <div className="mt-6 border-t border-ink-100 pt-6">
-              <p className="t-colhead text-muted">Documents received</p>
-              <ul className="mt-2 space-y-1">
-                {uploaded.map((row) => (
-                  <li key={row.label} className="t-small text-ink">
-                    <span className="text-muted">{row.label} — </span>
-                    {row.filename}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <div className="mt-6 border-t border-ink-100 pt-6">
+            <p className="t-colhead text-muted">Documents received</p>
+            <ul className="mt-2 space-y-1.5">
+              {uploaded.map((row) => (
+                <li key={row.key} className="t-small">
+                  <span className="text-muted">{row.label} — </span>
+                  {row.filename ? (
+                    <span className="text-ink">{row.filename}</span>
+                  ) : (
+                    <span className="text-muted">Not supplied</span>
+                  )}
+                  {/* A lab report is kept with the claim and never read: no
+                      rule consumes one. Said plainly so it does not read as a
+                      failure, and neutral so it does not read as a warning. */}
+                  {row.key === 'labReport' && row.filename ? (
+                    <span className="t-small ml-2 text-muted">
+                      Received and filed with your claim.
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -419,48 +444,61 @@ export function Submitted({
 
       <section className="rounded-xl bg-ink-50 px-6 py-5">
         {certified ? (
-          <p className="t-body text-ink">
-            <span className="font-semibold">Certified.</span> You confirmed these
-            documents are genuine and relate to expenses you have incurred
-            {submission.certified_at
-              ? ` on ${new Date(submission.certified_at).toLocaleString()}`
-              : ''}
-            .
-          </p>
+          <>
+            <p className="t-body text-ink">
+              <span className="font-semibold">Submitted for review.</span> You confirmed
+              these documents are genuine and relate to expenses you have incurred
+              {submission.certified_at
+                ? ` on ${new Date(submission.certified_at).toLocaleString()}`
+                : ''}
+              . Nothing further is needed from you.
+            </p>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={onStartAnother}
+                className="t-small rounded border border-ink-300 px-4 py-2 text-ink hover:bg-paper"
+              >
+                Submit another claim
+              </button>
+            </div>
+          </>
         ) : (
           <>
             <label className="t-body flex cursor-pointer items-start gap-3 text-ink">
               <input
                 type="checkbox"
-                checked={false}
+                checked={confirmed}
                 disabled={saving}
-                onChange={certify}
+                onChange={(event) => setConfirmed(event.target.checked)}
                 className="mt-1 h-4 w-4 accent-[color:var(--color-seal)]"
               />
               I confirm the documents I have uploaded are genuine and relate to
               expenses I have incurred.
             </label>
-            <p className="t-small mt-2 text-muted">
-              Your submission is not complete until this is ticked.
-            </p>
+            {/* The button is the action. Ticking the box only arms it, so there
+                is no question about whether the claim went anywhere. */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={certify}
+                disabled={!confirmed || saving}
+                className="rounded bg-seal px-6 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-ink-300"
+              >
+                {saving ? 'Submitting…' : 'Submit claim'}
+              </button>
+              {!confirmed ? (
+                <span className="t-small text-muted">Tick the box above to submit.</span>
+              ) : null}
+            </div>
             {failed ? (
-              <p className="t-small mt-2 text-flag">
-                That could not be saved. Please try again.
+              <p className="t-small mt-3 text-flag">
+                That could not be submitted. Please try again.
               </p>
             ) : null}
           </>
         )}
       </section>
-
-      <div className="border-t border-ink-200 pt-6">
-        <button
-          type="button"
-          onClick={onStartAnother}
-          className="t-small rounded border border-ink-300 px-4 py-2 text-ink hover:bg-paper"
-        >
-          Submit another claim
-        </button>
-      </div>
     </div>
   )
 }

@@ -192,7 +192,12 @@ export default function App() {
   const run = async (
     task: () => Promise<ReconciliationResult>,
     next: Images,
-    filenames: { prescription: string; bill: string },
+    filenames: {
+      prescription: string
+      bill: string
+      labReport: string
+      labBill: string
+    },
     pages: { prescription?: File | null; bill?: File | null; sampleId?: string | null },
   ) => {
     setError(null)
@@ -218,6 +223,8 @@ export default function App() {
             employee_number: employeeNumber,
             prescription_filename: filenames.prescription,
             bill_filename: filenames.bill,
+            lab_report_filename: filenames.labReport,
+            lab_bill_filename: filenames.labBill,
             condition: resolvedCondition || null,
             description: description.trim() || null,
             extraction_runs: runs,
@@ -263,7 +270,12 @@ export default function App() {
         prescription: URL.createObjectURL(prescriptionFile),
         bill: URL.createObjectURL(billFile),
       },
-      { prescription: prescriptionFile.name, bill: billFile.name },
+      {
+        prescription: prescriptionFile.name,
+        bill: billFile.name,
+        labReport: docs.labReport?.name ?? '',
+        labBill: docs.labBill?.name ?? '',
+      },
       { prescription: prescriptionFile, bill: billFile },
     )
   }
@@ -276,7 +288,9 @@ export default function App() {
         prescription: sampleImageUrl(sample.sample_id, 'prescription'),
         bill: sampleImageUrl(sample.sample_id, 'bill'),
       },
-      { prescription: sample.prescription, bill: sample.bill },
+      // A bundled sample is a prescription and a bill; it carries no lab
+      // documents, which is not the same as one being left out of the record.
+      { prescription: sample.prescription, bill: sample.bill, labReport: '', labBill: '' },
       // The server reads the sample pages off disk rather than the client
       // re-uploading files it never held.
       { sampleId: sample.sample_id },

@@ -149,15 +149,19 @@ class TestTheLabDocuments:
         result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
         assert _states(result)["lab_bill"] == "read"
 
-    def test_a_lab_report_is_never_claimed_to_have_been_checked(self) -> None:
-        """It is filed, not read. Saying "read" would report a check that
-        never ran."""
+    def test_a_lab_report_is_not_in_the_readability_list_at_all(self) -> None:
+        """It was never assessed for legibility, so it is not reported as if it
+        had been.
+
+        Nothing is extracted from a lab report — no rule consumes one — so
+        listing it in a section about photo quality would invite a submitter to
+        re-take a photograph that has nothing wrong with it. It is acknowledged
+        among the documents received instead.
+        """
         rx, bill = clean_pair()
         stated = Submission(lab_report_supplied=True)
         result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
-        doc = next(d for d in readability_of(result) if d.slot == "lab_report")
-        assert doc.state == "not_assessed"
-        assert doc.message is not None and "not read by this system" in doc.message
+        assert all(d.slot != "lab_report" for d in readability_of(result))
 
 
 def test_a_record_that_no_longer_validates_says_nothing_rather_than_ok() -> None:
@@ -167,9 +171,10 @@ def test_a_record_that_no_longer_validates_says_nothing_rather_than_ok() -> None
     assert all(d.message and "older format" in d.message for d in docs)
 
 
-def test_every_slot_the_upload_form_offers_is_answered() -> None:
+def test_every_document_that_is_read_is_answered_for() -> None:
+    """The three the system actually reads. The lab report is not one."""
     rx, bill = clean_pair()
     result = engine.reconcile(rx, bill, processing_ms=0)
     assert [d.slot for d in readability_of(result)] == [
-        "prescription", "pharmacy_bill", "lab_bill", "lab_report",
+        "prescription", "pharmacy_bill", "lab_bill",
     ]

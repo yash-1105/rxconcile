@@ -180,6 +180,8 @@ export interface ScanCreate {
   employee_number: string
   prescription_filename: string
   bill_filename: string
+  lab_report_filename: string
+  lab_bill_filename: string
   condition?: string | null
   description?: string | null
   extraction_runs: number

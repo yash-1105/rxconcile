@@ -49,8 +49,13 @@ class ScanRecord(SQLModel, table=True):
     user_email: str = Field(index=True)
     role: str
 
+    # All four upload slots, so a submitter can be shown what they did and did
+    # not attach. The optional two default to empty, which reads as "not
+    # supplied" rather than as a missing record.
     prescription_filename: str
     bill_filename: str
+    lab_report_filename: str = Field(default="")
+    lab_bill_filename: str = Field(default="")
 
     # What the operator said this scan was about. Stored rather than derived:
     # neither is visible anywhere in the documents.

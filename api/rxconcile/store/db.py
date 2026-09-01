@@ -53,6 +53,8 @@ _ADDED_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
     ("certified_by_employee", "BOOLEAN DEFAULT 0"),
     ("certified_at", "DATETIME"),
     ("review_status", "VARCHAR DEFAULT 'submitted'"),
+    ("lab_report_filename", "VARCHAR DEFAULT ''"),
+    ("lab_bill_filename", "VARCHAR DEFAULT ''"),
 )
 
 

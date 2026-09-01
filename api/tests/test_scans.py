@@ -490,6 +490,7 @@ class TestTheEmployeeShapeIsAnAllowList:
         "id", "created_at", "employee_name", "first_name", "middle_name", "last_name",
         "employee_number", "condition", "description",
         "prescription_filename", "bill_filename",
+        "lab_report_filename", "lab_bill_filename",
         "review_status", "certified_by_employee", "certified_at",
     }
     DETAIL_KEYS = LIST_KEYS | {"readability", "content"}
@@ -637,6 +638,21 @@ class TestCertification:
         refused = client.post(f"/api/scans/{saved['id']}/certify", headers=auth(ADMIN))
         assert refused.status_code == 404
 
+    def test_certify_answers_with_the_same_shape_as_opening_the_claim(
+        self, client: TestClient
+    ) -> None:
+        """It returned the summary, so the client replaced its state with an
+        object that had no readability and no transcription, and the screen
+        went blank. The two endpoints answer identically now."""
+        saved = save(client, EMPLOYEE)
+        opened = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        done = client.post(
+            f"/api/scans/{saved['id']}/certify", headers=auth(EMPLOYEE)
+        ).json()
+        assert set(done) == set(opened)
+        assert done["readability"] == opened["readability"]
+        assert done["content"] == opened["content"]
+
     def test_the_first_attestation_is_the_one_that_stands(
         self, client: TestClient
     ) -> None:
@@ -648,3 +664,34 @@ class TestCertification:
             f"/api/scans/{saved['id']}/certify", headers=auth(EMPLOYEE)
         ).json()
         assert again["certified_at"] == first["certified_at"]
+
+
+class TestAllFourDocumentsAreRecorded:
+    """A submitter is shown what they did and did not attach.
+
+    Only the two required filenames were stored, so a lab bill that was
+    uploaded — and transcribed further down the same screen — was missing from
+    the list of documents received.
+    """
+
+    def test_every_slot_comes_back(self, client: TestClient) -> None:
+        saved = save(
+            client, EMPLOYEE,
+            prescription_filename="rx.png", bill_filename="bill.png",
+            lab_report_filename="report.png", lab_bill_filename="lab.png",
+        )
+        row = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        assert row["prescription_filename"] == "rx.png"
+        assert row["bill_filename"] == "bill.png"
+        assert row["lab_report_filename"] == "report.png"
+        assert row["lab_bill_filename"] == "lab.png"
+
+    def test_an_optional_slot_left_empty_stays_empty_not_absent(
+        self, client: TestClient
+    ) -> None:
+        """Empty is what the screen renders as "Not supplied". A missing key
+        would render as nothing at all, which is a different statement."""
+        saved = save(client, EMPLOYEE)
+        row = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        assert row["lab_report_filename"] == ""
+        assert row["lab_bill_filename"] == ""

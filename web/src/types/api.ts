@@ -330,7 +330,8 @@ export interface DemoSession {
 /** A history row. The full result is fetched only when a row is opened. */
 /** Whether one uploaded document could be READ. Never a finding. */
 export interface DocumentReadability {
-  slot: 'prescription' | 'pharmacy_bill' | 'lab_bill' | 'lab_report'
+  /** The lab report is absent by design — nothing is extracted from it. */
+  slot: 'prescription' | 'pharmacy_bill' | 'lab_bill'
   label: string
   supplied: boolean
   state: 'read' | 'partly_unreadable' | 'unreadable' | 'not_assessed' | 'not_supplied'
@@ -359,6 +360,8 @@ export interface EmployeeScanSummary {
   description: string | null
   prescription_filename: string
   bill_filename: string
+  lab_report_filename: string
+  lab_bill_filename: string
   review_status: ReviewStatus
   certified_by_employee: boolean
   certified_at: string | null
