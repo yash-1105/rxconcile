@@ -1,0 +1,9 @@
+# Railpack's Python provider installs from requirements.txt; it does not treat
+# a bare hatchling pyproject.toml as a dependency manifest, so without this file
+# the build installs the interpreter and nothing else -- which fails at runtime
+# with "uvicorn: command not found".
+#
+# The single "." installs THIS package and, through it, the pinned dependency
+# set in pyproject.toml. Versions are deliberately not repeated here: two lists
+# of pins drift, and pyproject.toml stays the only place a version is stated.
+.

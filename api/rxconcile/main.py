@@ -45,6 +45,7 @@ from rxconcile.extract.preprocess import prepare_image
 from rxconcile.gcp import health_snapshot
 from rxconcile.gcp.client import resolve_credentials
 from rxconcile.gcp.errors import ModelResolutionError, VertexUnavailableError
+from rxconcile.gcp.models import assert_models_resolve
 from rxconcile.models import (
     PharmacyBill,
     Prescription,
@@ -168,6 +169,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """
     engine()
     resolve_credentials()
+    # Preview model IDs are withdrawn without notice. Its own docstring says
+    # "call this once at startup", and until now nothing did -- so a withdrawn
+    # ID would have surfaced as a failed reconciliation mid-demo, and
+    # `models_verified_at_startup` reported false forever because the check it
+    # describes never ran. A check that cannot run must not read as one that
+    # passed, and here the honest fix is to actually run it.
+    assert_models_resolve()
     yield
 
 
