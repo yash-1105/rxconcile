@@ -12,9 +12,10 @@ IDs are withdrawn without notice.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,9 +28,22 @@ _ENV_FILE: Final[Path] = _REPO_ROOT / ".env"
 #: regional value is a configuration error, not a fallback.
 SUPPORTED_LOCATIONS: Final[frozenset[str]] = frozenset({"global"})
 
-#: Setting this points google-auth at a service account key file. rxconcile is
-#: ADC-only by policy, so its presence is rejected rather than honoured.
+#: Setting this points google-auth at a service account key file ON DISK, which
+#: hard rule 9 forbids outright. Rejected rather than honoured -- see
+#: ``_CREDENTIALS_ENV_VAR`` for the supported way to supply a service account.
 _KEYFILE_ENV_VAR: Final[str] = "GOOGLE_APPLICATION_CREDENTIALS"
+
+#: The service account key itself, as JSON, in the environment. This is the
+#: deployed path: the material never touches the filesystem, so there is no
+#: file to commit and none to leak. Absent locally, where ADC is used instead.
+_CREDENTIALS_ENV_VAR: Final[str] = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
+
+#: Fields without which a key is unusable. Checked so a truncated or
+#: shell-mangled value is reported as such, rather than as an auth failure
+#: hours later.
+_REQUIRED_KEY_FIELDS: Final[tuple[str, ...]] = (
+    "type", "project_id", "private_key", "client_email",
+)
 
 
 class ConfigError(RuntimeError):
@@ -113,6 +127,27 @@ class Settings(BaseSettings):
         le=100,
         description="Largest accepted upload, in megabytes.",
     )
+    database_path: Path | None = Field(
+        default=None,
+        description=(
+            "Where the SQLite file lives. None means the local default beside "
+            "the repo. Deployments set this to a mounted volume, because the "
+            "default is derived from the package location and a container "
+            "installs the package somewhere else entirely."
+        ),
+    )
+    allowed_origins: str = Field(
+        default="http://localhost:5173",
+        description=(
+            "Comma-separated browser origins allowed to call this API. The "
+            "default is the Vite dev server; a deployment sets its web origin."
+        ),
+    )
+
+    @property
+    def origins(self) -> tuple[str, ...]:
+        """`allowed_origins`, parsed. See :func:`_origins_of`."""
+        return _origins_of(self.allowed_origins)
 
     @field_validator("gcp_location")
     @classmethod
@@ -162,6 +197,55 @@ class Settings(BaseSettings):
         for model in ordered:
             seen.setdefault(model, None)
         return tuple(seen)
+
+
+def _origins_of(raw: str) -> tuple[str, ...]:
+    """Browser origins from a comma-separated string.
+
+    Blanks are dropped so a trailing comma, or the empty string, yields no
+    origin rather than an empty one -- an empty origin would be sent to the
+    CORS middleware as a literal "" and match nothing, which looks like a
+    server bug rather than a configuration typo.
+    """
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
+def service_account_info() -> dict[str, Any] | None:
+    """The service account key carried in an environment variable, or None.
+
+    None means the variable is unset, which is the LOCAL path: authenticate
+    with Application Default Credentials as this project always has.
+
+    Parsed here and never written anywhere. Hard rule 9 forbids a key FILE, and
+    a temp file created to satisfy a library that wants a path is exactly the
+    file it forbids -- so this returns the parsed material and the caller hands
+    it to an API that accepts credentials directly.
+    """
+    raw = os.environ.get(_CREDENTIALS_ENV_VAR, "").strip()
+    if not raw:
+        return None
+    try:
+        info = json.loads(raw)
+    except ValueError as exc:
+        raise ConfigError(
+            f"{_CREDENTIALS_ENV_VAR} is set but is not valid JSON. It must hold the "
+            f"whole service account key, including its braces. ({exc})"
+        ) from exc
+    if not isinstance(info, dict):
+        raise ConfigError(
+            f"{_CREDENTIALS_ENV_VAR} parsed to {type(info).__name__}, not an object. "
+            "It must hold the whole service account key."
+        )
+    missing = [key for key in _REQUIRED_KEY_FIELDS if not info.get(key)]
+    if missing:
+        # Named individually: "invalid credentials" sends someone to the IAM
+        # console when the real problem is a shell that ate the newlines in
+        # private_key.
+        raise ConfigError(
+            f"{_CREDENTIALS_ENV_VAR} is missing required field(s): "
+            f"{', '.join(missing)}. Supply the key file's full JSON, unmodified."
+        )
+    return info
 
 
 def _load() -> Settings:

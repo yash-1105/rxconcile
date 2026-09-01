@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+
+# Written by the Vercel CLI and holding a live OIDC token: never committed.
+.env*
+# The template is not a secret and is the only record of what must be set.
+!.env.example

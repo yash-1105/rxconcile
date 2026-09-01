@@ -69,8 +69,12 @@ lint: ## ruff + oxlint
 	$(PY) -m ruff check api
 	cd web && npm run lint
 
-build: ## Build the frontend
-	cd web && npm run build
+build: ## Build the frontend (VITE_API_URL=... to point it at a deployed API)
+	# A production build refuses to run without VITE_API_URL, on purpose -- see
+	# web/vite.config.ts. A local build talks to the local API, so that is what
+	# it is given here. The guard is not weakened: the value is stated rather
+	# than defaulted silently, and a real deploy sets its own.
+	cd web && VITE_API_URL="$${VITE_API_URL:-http://localhost:$(API_PORT)}" npm run build
 
 check: test typecheck lint build ## Everything CI would run
 

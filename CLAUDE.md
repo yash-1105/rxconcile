@@ -95,6 +95,19 @@ What has not changed: it must never be described as secure, anywhere. Write "dem
 client into thinking their data is protected here, it is wrong — a marker being optional is not
 a licence to claim the opposite.
 
+### 9. Service account keys live in the environment, never in a file
+Local development uses Application Default Credentials and **must continue to**. Deployed
+environments may authenticate via a service account key supplied as an environment variable,
+parsed in memory and handed straight to the client.
+
+**STILL FORBIDDEN:** any service account key file committed to the repository, written to disk in
+the repo, or present in git history.
+
+This is why `GOOGLE_APPLICATION_CREDENTIALS` is still rejected on sight: that variable names a
+**file on disk**, which is the thing this rule forbids. `GOOGLE_APPLICATION_CREDENTIALS_JSON`
+carries the material itself, so there is no file to leak. **Never write the parsed key to disk to
+satisfy a library that wants a path** — find the API that takes credentials directly.
+
 ---
 
 ## DEFAULT: commit and push at the end of every prompt
@@ -116,12 +129,21 @@ ask.
 demonstration only**. Specifically permitted: SQLite via SQLModel for scan history, a hardcoded
 two-account demo login, and role-based view filtering.
 
-**STILL FORBIDDEN:** real user registration, password hashing presented as security,
-network-exposed deployment config, Docker, and any claim in the UI or docs that this
-authentication is secure.
+**STILL FORBIDDEN:** real user registration, password hashing presented as security, and any
+claim in the UI or docs that this authentication is secure.
 
-This amendment adds a shell around the product; it changes nothing about the product. Hard rules
-1–7 stand in full — the LLM still extracts and never judges, nothing is guessed, and a check that
+**AMENDED (deploy).** Deployment configuration for **Railway (API) and Vercel (web)** is now in
+scope, and so is making hardcoded local assumptions configurable — credentials, database path,
+bound port, CORS origins, API base URL. Every one of them keeps its current local default, so
+`make dev` is unchanged.
+
+**STILL FORBIDDEN under this amendment:** Docker, deployment config for any other platform, and
+presenting the demo login as secure merely because it is now reachable over a network. Being
+deployed changes nothing about rule 8 — a hardcoded two-account login on a public URL is *less*
+defensible as security, not more.
+
+These amendments add a shell around the product; they change nothing about the product. Hard rules
+1–9 stand in full — the LLM still extracts and never judges, nothing is guessed, and a check that
 could not run must never render as a check that passed.
 
 ---

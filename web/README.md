@@ -39,10 +39,10 @@ cd web && npm run dev    # UI on :5173
 ```
 
 The UI calls `http://localhost:8000` by default. Point it elsewhere with
-`VITE_API_BASE`:
+`VITE_API_URL`:
 
 ```bash
-VITE_API_BASE=http://localhost:8010 npm run dev
+VITE_API_URL=http://localhost:8010 npm run dev
 ```
 
 CORS on the API allows `http://localhost:5173` only.

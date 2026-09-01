@@ -1,7 +1,7 @@
 """Local demo persistence for completed reconciliations."""
 
-from rxconcile.store.db import DB_PATH, engine, get_session, set_engine
+from rxconcile.store.db import DB_PATH, db_path, engine, get_session, set_engine
 from rxconcile.store.models import EmployeeAllowance, ScanRecord, summarise
 
-__all__ = ["DB_PATH", "EmployeeAllowance",
+__all__ = ["DB_PATH", "db_path", "EmployeeAllowance",
     "ScanRecord", "engine", "get_session", "set_engine", "summarise"]

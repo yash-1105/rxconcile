@@ -12,9 +12,12 @@ import type {
 } from '../types/api'
 
 // Empty means same-origin: requests go to the Vite dev server, which proxies
-// them to the API (see vite.config.ts). Set VITE_API_BASE only to point at an
-// API somewhere else entirely.
-const BASE_URL = import.meta.env['VITE_API_BASE'] ?? ''
+// them to the API (see vite.config.ts), so local work needs no configuration.
+//
+// A deployed build has no proxy and MUST set this -- which is why the build
+// refuses to produce one in production mode without it, rather than leaving the
+// fallback to be discovered by a user whose every request 404s.
+const BASE_URL = import.meta.env['VITE_API_URL'] ?? ''
 
 export class ApiError extends Error {
   readonly code: string

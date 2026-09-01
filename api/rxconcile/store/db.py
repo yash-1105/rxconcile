@@ -2,6 +2,12 @@
 
 The database file is local demo storage. It is gitignored and holds nothing that
 should outlive a demonstration.
+
+``DB_PATH`` is the LOCAL default and is derived from this file's location, which
+only lands correctly for an editable install at the repo root. A deployment
+installs the package somewhere else entirely, so the default would resolve to a
+directory that means nothing there -- which is what ``DATABASE_PATH`` exists to
+override, pointing at a mounted volume.
 """
 
 from __future__ import annotations
@@ -14,23 +20,33 @@ from typing import Final
 from sqlalchemy import Engine, text
 from sqlmodel import Session, SQLModel, create_engine
 
+from rxconcile.config import settings
+
 logger: Final = logging.getLogger(__name__)
 
+#: Where the database lives when nothing says otherwise. See the module
+#: docstring for why a deployment must say otherwise.
 DB_PATH: Final[Path] = Path(__file__).resolve().parents[3] / "api" / "data" / "rxconcile.db"
 
 _engine: Engine | None = None
+
+
+def db_path() -> Path:
+    """The database file in use: `DATABASE_PATH` if set, else the local default."""
+    return settings.database_path or DB_PATH
 
 
 def engine() -> Engine:
     """Process-wide engine, created on first use."""
     global _engine
     if _engine is None:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+        path = db_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _engine = create_engine(f"sqlite:///{path}", echo=False)
         SQLModel.metadata.create_all(_engine)
         _add_missing_columns(_engine)
         backfill(_engine)
-        logger.info("scan store ready at %s", DB_PATH)
+        logger.info("scan store ready at %s", path)
     return _engine
 
 

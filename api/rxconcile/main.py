@@ -19,7 +19,8 @@ import io
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final
@@ -42,6 +43,7 @@ from rxconcile.extract.errors import (
 )
 from rxconcile.extract.preprocess import prepare_image
 from rxconcile.gcp import health_snapshot
+from rxconcile.gcp.client import resolve_credentials
 from rxconcile.gcp.errors import ModelResolutionError, VertexUnavailableError
 from rxconcile.models import (
     PharmacyBill,
@@ -64,7 +66,7 @@ from rxconcile.reconcile.readability import (
     readability_of,
     unavailable,
 )
-from rxconcile.store import EmployeeAllowance, ScanRecord, get_session, summarise
+from rxconcile.store import EmployeeAllowance, ScanRecord, engine, get_session, summarise
 from rxconcile.store.allowance import AllowanceView, view_for, year_label
 from rxconcile.store.review import complete_review, open_review, record_decisions
 
@@ -75,8 +77,10 @@ ALLOWED_MIME_TYPES: Final[frozenset[str]] = frozenset(
 )
 PDF_MIME_TYPE: Final[str] = "application/pdf"
 
-#: The Vite dev server. Nothing else may call this API from a browser.
-ALLOWED_ORIGINS: Final[tuple[str, ...]] = ("http://localhost:5173",)
+#: Browser origins allowed to call this API, from `ALLOWED_ORIGINS`. Defaults to
+#: the Vite dev server, so local work needs no configuration at all; a
+#: deployment sets its own web origin. Nothing else may call this from a browser.
+ALLOWED_ORIGINS: Final[tuple[str, ...]] = settings.origins
 
 SAMPLES_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "samples"
 
@@ -146,7 +150,27 @@ def _disagreement(document: str, run_item_counts: list[int], unstable: list[str]
 # App
 # --------------------------------------------------------------------------
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Everything that must be true before the first request is served.
+
+    Both steps used to happen later and lazily -- the schema on whichever
+    request first opened a session, credentials on the first extraction. Late is
+    the wrong time for either: a container with an unusable database or no
+    credentials should fail while it is starting, where the platform reports it
+    as a failed deploy, rather than hours afterwards as a broken feature.
+
+    Safe to run on every boot. `engine()` creates missing tables, adds only
+    columns that are absent and backfills only values that are empty, so a
+    second start changes nothing (`tests/test_migration.py`).
+    """
+    engine()
+    resolve_credentials()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="rxconcile",
     version="0.1.0",
     description=(
@@ -160,7 +184,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    # Every method the API actually serves. PUT, PATCH and DELETE were missing:
+    # `PUT /api/allowance`, `PATCH /api/scans/{id}/decisions` and
+    # `DELETE /api/scans/{id}` all exist, and all three worked only because the
+    # dev proxy makes the browser same-origin, where preflight never happens.
+    # Cross-origin they would fail preflight, and a blocked preflight surfaces
+    # as a dead button rather than as a CORS message anyone would recognise.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
