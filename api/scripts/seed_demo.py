@@ -213,7 +213,12 @@ def seed(session: Session, *, today: dt.date) -> int:
             # claim figure invented for a demo is still an invented figure.
             allowance_year=year_label(when.date()),
             employee_name=name,
+            first_name=name,
             employee_number=number,
+            # Seeded records are historical: somebody has been through them.
+            review_status="reviewed",
+            certified_by_employee=True,
+            certified_at=when,
             user_email=email,
             role=role,
             prescription_filename=f"{SEED_MARKER} {why} rx.png",

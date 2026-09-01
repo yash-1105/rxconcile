@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { deleteScan, getScan, listScans } from '../api/client'
+import {
+  deleteScan,
+  getScan,
+  getSubmission,
+  listScans,
+  listSubmissions,
+} from '../api/client'
 import type { Session } from '../auth/session'
 import { EmptyState, PageHeader } from '../components/Shell'
 import { SpineMark } from '../components/Spine'
@@ -12,7 +18,13 @@ import {
   verdictState,
   type ScanFilters,
 } from '../lib/scans'
-import type { ScanDetail, ScanSummary, Verdict } from '../types/api'
+import type {
+  EmployeeScanDetail,
+  EmployeeScanSummary,
+  ScanDetail,
+  ScanSummary,
+  Verdict,
+} from '../types/api'
 
 const VERDICTS: readonly Verdict[] = [
   'match',
@@ -20,6 +32,131 @@ const VERDICTS: readonly Verdict[] = [
   'mismatch',
   'inconclusive',
 ]
+
+const REVIEW_LABEL: Record<string, string> = {
+  submitted: 'Submitted',
+  under_review: 'Under review',
+  reviewed: 'Reviewed',
+}
+
+/**
+ * A submitter's own history.
+ *
+ * Their submissions, not their results: date, condition, what they sent and
+ * where it has got to. There is no verdict column because there is no verdict
+ * in the response — the server sends the narrower shape, so the browser is
+ * never trusted to leave it out.
+ */
+export function SubmissionHistory({
+  onStart,
+  onOpen,
+}: {
+  onStart: () => void
+  onOpen: (detail: EmployeeScanDetail) => void
+}) {
+  const [rows, setRows] = useState<EmployeeScanSummary[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    listSubmissions()
+      .then(setRows)
+      .catch((caught: unknown) => {
+        setRows([])
+        setError(caught instanceof Error ? caught.message : 'Could not load your claims.')
+      })
+  }, [])
+
+  const open = (id: number) => {
+    getSubmission(id)
+      .then(onOpen)
+      .catch(() => setError('Could not open that claim.'))
+  }
+
+  if (rows === null) {
+    return (
+      <>
+        <PageHeader title="My claims" />
+        <p className="t-small text-muted">Loading…</p>
+      </>
+    )
+  }
+  if (rows.length === 0) {
+    return (
+      <>
+        <PageHeader title="My claims" />
+        <EmptyState
+          title="No claims yet"
+          body="Submit a prescription and its bills and they will appear here."
+          action={
+            <button
+              type="button"
+              onClick={onStart}
+              className="rounded bg-seal px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+            >
+              Submit a claim
+            </button>
+          }
+        />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <PageHeader title="My claims" lede="What you have submitted, and where it has got to." />
+      {error ? <p className="t-small mb-3 text-flag">{error}</p> : null}
+      <div className="overflow-x-auto rounded bg-surface">
+        <table className="w-full min-w-[34rem] border-collapse">
+          <thead>
+            <tr className="border-b border-ink-200 text-left">
+              {['Submitted', 'Condition', 'Documents', 'Status'].map((head) => (
+                <th key={head} className="t-colhead px-4 py-3">
+                  {head}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const documents = [row.prescription_filename, row.bill_filename].filter(Boolean)
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => open(row.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      open(row.id)
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open the claim submitted on ${formatDate(row.created_at)}`}
+                  className="cursor-pointer border-b border-ink-200 hover:bg-paper"
+                >
+                  <td className="t-small px-4 py-4 text-ink">
+                    {formatDate(row.created_at)}
+                    <span className="t-small ml-2 text-muted">{formatTime(row.created_at)}</span>
+                  </td>
+                  <td className="t-small px-4 py-4 text-ink">{row.condition ?? '—'}</td>
+                  <td className="t-small px-4 py-4 text-muted">
+                    {documents.length} file{documents.length === 1 ? '' : 's'}
+                  </td>
+                  <td className="t-small px-4 py-4 text-ink">
+                    {REVIEW_LABEL[row.review_status] ?? row.review_status}
+                    {row.certified_by_employee ? null : (
+                      <span className="t-small ml-2 text-flag">Not certified</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )
+}
 
 export function History({
   session,
@@ -30,6 +167,8 @@ export function History({
   onStart: () => void
   onOpen: (detail: ScanDetail) => void
 }) {
+  // Reviewers only. `SubmissionHistory` above is what a submitter gets, chosen
+  // in App so neither component runs the other's hooks.
   const admin = session.role === 'admin'
   const [scans, setScans] = useState<ScanSummary[] | null>(null)
   const [filters, setFilters] = useState<ScanFilters>(NO_FILTERS)

@@ -59,6 +59,9 @@ class AllowanceView(BaseModel):
     year_starts: dt.date
     year_ends: dt.date
     annual_amount: Decimal
+    #: Submissions in this window nobody has finished reviewing. A COUNT, never
+    #: an amount: their figures are provisional and would move under a reader.
+    awaiting_review: int = 0
     used: Decimal = Field(
         description="Sum of the claimed amounts on this employee's scans in this year. "
         "Only accepted, claimable lines are in those amounts."
@@ -85,9 +88,18 @@ def usage(
     show "used so far" as it stood BEFORE this claim rather than double-counting
     the claim it is displaying beside it.
     """
+    # REVIEWED only, and one definition of that for everybody.
+    #
+    # A submitted claim's amount comes from default decisions -- accept what
+    # matched, leave problems undecided -- which no human has agreed to.
+    # Counting it against a balance would present the machine's provisional
+    # arithmetic as a settled figure, and the balance would then move when a
+    # reviewer rejected a line. Pending work is reported as a COUNT instead,
+    # never folded into an amount, on every screen that shows either.
     statement = select(ScanRecord).where(
         ScanRecord.employee_number == employee_number,
         ScanRecord.allowance_year == year,
+        ScanRecord.review_status == "reviewed",
     )
     records = [
         record
@@ -96,6 +108,19 @@ def usage(
     ]
     total = sum((record.claimed_amount for record in records), Decimal("0"))
     return total.quantize(Decimal("0.01")), len(records)
+
+
+def awaiting_review(session: Session, employee_number: str, *, year: str) -> int:
+    """Submissions in this window that nobody has finished reviewing.
+
+    A count, deliberately. See `usage` for why there is no amount here.
+    """
+    statement = select(ScanRecord).where(
+        ScanRecord.employee_number == employee_number,
+        ScanRecord.allowance_year == year,
+        ScanRecord.review_status != "reviewed",
+    )
+    return len(list(session.exec(statement).all()))
 
 
 def view_for(
@@ -118,6 +143,7 @@ def view_for(
         year_starts=starts,
         year_ends=ends,
         annual_amount=annual,
+        awaiting_review=awaiting_review(session, employee_number, year=label),
         used=used,
         scans_counted=counted,
         # Never below zero: an overdrawn allowance is reported as nothing left,

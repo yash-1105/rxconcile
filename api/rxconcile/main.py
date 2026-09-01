@@ -58,6 +58,11 @@ from rxconcile.reconcile.history import (
     PriorLine,
     PriorScan,
 )
+from rxconcile.reconcile.readability import (
+    DocumentReadability,
+    readability_of,
+    unavailable,
+)
 from rxconcile.store import EmployeeAllowance, ScanRecord, get_session, summarise
 from rxconcile.store.allowance import AllowanceView, view_for, year_label
 
@@ -478,7 +483,9 @@ class ScanCreate(BaseModel):
     a caller cannot file a scan under someone else or claim to be an admin.
     """
 
-    employee_name: str = Field(min_length=1)
+    first_name: str = Field(min_length=1)
+    middle_name: str = ""
+    last_name: str = ""
     employee_number: str = Field(min_length=1)
     prescription_filename: str = ""
     bill_filename: str = ""
@@ -501,7 +508,13 @@ class ScanSummary(BaseModel):
     id: int
     created_at: str
     employee_name: str
+    first_name: str = ""
+    middle_name: str = ""
+    last_name: str = ""
     employee_number: str
+    review_status: str = "submitted"
+    certified_by_employee: bool = False
+    certified_at: str | None = None
     user_email: str
     role: str
     prescription_filename: str
@@ -523,12 +536,80 @@ class ScanSummary(BaseModel):
     extraction_runs: int
 
 
+class EmployeeScanSummary(BaseModel):
+    """What an employee is told about their own submission.
+
+    An ALLOW-LIST, deliberately, rather than the reviewer's model with fields
+    blanked. A field added to `ScanSummary` later cannot leak into this one by
+    default -- and a leak here would be silent, which is the failure mode worth
+    designing against. `tests/test_scans.py` asserts the exact key set.
+
+    Absent, not zeroed: verdict, every discrepancy count, the claim amount,
+    every reimbursement figure, the decisions, the technical fields and the
+    result itself. An employee submits; they do not review.
+    """
+
+    id: int
+    created_at: str
+    employee_name: str
+    first_name: str = ""
+    middle_name: str = ""
+    last_name: str = ""
+    employee_number: str
+    condition: str | None = None
+    description: str | None = None
+    prescription_filename: str = ""
+    bill_filename: str = ""
+    review_status: str = "submitted"
+    certified_by_employee: bool = False
+    certified_at: str | None = None
+
+
+class EmployeeScanDetail(EmployeeScanSummary):
+    #: Whether each uploaded document could be READ. Never a finding: a
+    #: perfectly legible bill with a real discrepancy on it is not something to
+    #: re-photograph, and the discrepancy is not theirs to see.
+    readability: list[DocumentReadability] = Field(default_factory=list)
+
+
 class ScanDetail(ScanSummary):
     result: dict[str, Any]
     #: The accept/reject decisions as they were last saved. Returned so that
     #: re-opening a scan shows what was decided rather than silently reverting
     #: to defaults -- a decision that does not survive the page is not a record.
     decisions: dict[str, Any] = Field(default_factory=dict)
+
+
+def _employee_summary(record: ScanRecord) -> EmployeeScanSummary:
+    """The submitter's own view of their submission. Nothing derived from the
+    reconciliation appears here -- see EmployeeScanSummary."""
+    return EmployeeScanSummary(
+        id=record.id or 0,
+        created_at=record.created_at.isoformat(),
+        employee_name=record.employee_name,
+        first_name=record.first_name,
+        middle_name=record.middle_name,
+        last_name=record.last_name,
+        employee_number=record.employee_number,
+        condition=record.condition,
+        description=record.description,
+        prescription_filename=record.prescription_filename,
+        bill_filename=record.bill_filename,
+        review_status=record.review_status,
+        certified_by_employee=record.certified_by_employee,
+        certified_at=(
+            record.certified_at.isoformat() if record.certified_at is not None else None
+        ),
+    )
+
+
+def _stored_result(record: ScanRecord) -> ReconciliationResult:
+    """The stored blob, validated rather than trusted.
+
+    A record written before a schema addition is missing fields, and pydantic
+    fills those with the same defaults a fresh result would carry.
+    """
+    return ReconciliationResult.model_validate(json.loads(record.result_json))
 
 
 def _summary(record: ScanRecord) -> ScanSummary:
@@ -543,7 +624,15 @@ def _summary(record: ScanRecord) -> ScanSummary:
         id=record.id or 0,
         created_at=record.created_at.isoformat(),
         employee_name=record.employee_name,
+        first_name=record.first_name,
+        middle_name=record.middle_name,
+        last_name=record.last_name,
         employee_number=record.employee_number,
+        review_status=record.review_status,
+        certified_by_employee=record.certified_by_employee,
+        certified_at=(
+            record.certified_at.isoformat() if record.certified_at is not None else None
+        ),
         user_email=record.user_email,
         role=record.role,
         prescription_filename=record.prescription_filename,
@@ -617,7 +706,13 @@ async def create_scan(
 
     counts = summarise(payload.result)
     record = ScanRecord(
-        employee_name=payload.employee_name,
+        employee_name=" ".join(
+            part for part in
+            (payload.first_name, payload.middle_name, payload.last_name) if part.strip()
+        ),
+        first_name=payload.first_name,
+        middle_name=payload.middle_name,
+        last_name=payload.last_name,
         employee_number=payload.employee_number,
         user_email=user.email,
         role=user.role,
@@ -646,8 +741,11 @@ async def create_scan(
 async def list_scans(
     user: DemoUser = Depends(current_user),
     session: Session = Depends(get_session),
-) -> list[ScanSummary]:
+) -> list[ScanSummary] | list[EmployeeScanSummary]:
     """List scans. An employee sees only their own; an admin sees every record.
+
+    An employee also gets a NARROWER SHAPE, not the same rows with the analysis
+    blanked: no verdict, no counts, no amounts. They submit; they do not review.
 
     The role comes from the token, never from the request, so narrowing it is
     not something the caller can opt out of.
@@ -655,7 +753,43 @@ async def list_scans(
     statement = select(ScanRecord).order_by(col(ScanRecord.created_at).desc())
     if user.role != "admin":
         statement = statement.where(ScanRecord.user_email == user.email)
-    return [_summary(record) for record in session.exec(statement).all()]
+    records = list(session.exec(statement).all())
+    if user.role != "admin":
+        return [_employee_summary(record) for record in records]
+    return [_summary(record) for record in records]
+
+
+@app.post("/api/scans/{scan_id}/certify")
+async def certify_scan(
+    scan_id: int,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> EmployeeScanSummary:
+    """The employee's attestation that the documents are genuine and theirs.
+
+    Recorded after the run rather than before it. The reconciliation is
+    expensive, and losing it because somebody closed the tab before ticking a
+    box would be a poor trade for a stricter ordering.
+
+    Owner only: an attestation somebody else can make on your behalf is not an
+    attestation.
+    """
+    record = session.get(ScanRecord, scan_id)
+    if record is None or record.user_email != user.email:
+        raise ApiError(
+            status_code=404,
+            error_code="SCAN_NOT_FOUND",
+            message=f"No scan with id {scan_id}.",
+            hint="Only the account that submitted a claim can certify it.",
+        )
+    # Never re-stamped. The first attestation is the one that was made.
+    if not record.certified_by_employee:
+        record.certified_by_employee = True
+        record.certified_at = dt.datetime.now(dt.UTC).replace(tzinfo=None)
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+    return _employee_summary(record)
 
 
 @app.get("/api/scans/{scan_id}")
@@ -663,8 +797,14 @@ async def get_scan(
     scan_id: int,
     user: DemoUser = Depends(current_user),
     session: Session = Depends(get_session),
-) -> ScanDetail:
-    """One scan in full, including the stored result."""
+) -> ScanDetail | EmployeeScanDetail:
+    """One scan. In full for an admin; what they submitted for an employee.
+
+    The employee's shape carries no reconciliation result at all -- not the
+    findings, not the verdict, not a figure derived from either. What it does
+    carry is whether each document could be READ, because that is the one thing
+    they can act on and the one thing that otherwise fails silently.
+    """
     record = session.get(ScanRecord, scan_id)
     if record is None or (user.role != "admin" and record.user_email != user.email):
         # Same response either way: an employee probing ids learns nothing about
@@ -674,6 +814,17 @@ async def get_scan(
             error_code="SCAN_NOT_FOUND",
             message=f"No scan with id {scan_id}.",
             hint="Open it from the History screen, which lists the scans you can see.",
+        )
+    if user.role != "admin":
+        try:
+            readability = readability_of(_stored_result(record))
+        except ValueError:
+            # An older record whose blob no longer validates. The submission
+            # still exists and must still open; we simply cannot say what was
+            # legible about it.
+            readability = unavailable()
+        return EmployeeScanDetail(
+            **_employee_summary(record).model_dump(), readability=readability,
         )
     summary = _summary(record)
     try:
@@ -1010,6 +1161,15 @@ async def _reconcile_bytes(
         for offset, test in enumerate(lab_bill.tests, start=len(merged) + 1):
             merged.append(test.model_copy(update={"item_id": f"billtest-{offset:02d}"}))
         bill = bill.model_copy(update={"tests": merged})
+        # Kept before it is lost. Only `.tests` survives the merge, so the lab
+        # bill's own read state has to be carried out separately or nothing can
+        # ever tell the employee their lab bill was the unreadable one.
+        submission = (submission or Submission()).model_copy(update={
+            "lab_bill_supplied": True,
+            "lab_bill_tests_read": len(lab_bill.tests),
+            "lab_bill_unstable": len(set(lab_bill.run_item_counts)) > 1,
+            "lab_bill_warnings": list(lab_bill.warnings),
+        })
     elapsed_ms = int((time.monotonic() - started) * 1000)
     priors, scope = history if history is not None else (None, None)
     return reconcile(

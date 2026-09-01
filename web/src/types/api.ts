@@ -328,11 +328,57 @@ export interface DemoSession {
 }
 
 /** A history row. The full result is fetched only when a row is opened. */
+/** Whether one uploaded document could be READ. Never a finding. */
+export interface DocumentReadability {
+  slot: 'prescription' | 'pharmacy_bill' | 'lab_bill' | 'lab_report'
+  label: string
+  supplied: boolean
+  state: 'read' | 'partly_unreadable' | 'unreadable' | 'not_assessed' | 'not_supplied'
+  message: string | null
+  detail: string[]
+}
+
+export type ReviewStatus = 'submitted' | 'under_review' | 'reviewed'
+
+/**
+ * What an employee is told about their own submission.
+ *
+ * Deliberately narrower than `ScanSummary`, and not a subset of it: the server
+ * builds this from an allow-list so a field added there cannot appear here.
+ * No verdict, no counts, no amounts, no result.
+ */
+export interface EmployeeScanSummary {
+  id: number
+  created_at: string
+  employee_name: string
+  first_name: string
+  middle_name: string
+  last_name: string
+  employee_number: string
+  condition: string | null
+  description: string | null
+  prescription_filename: string
+  bill_filename: string
+  review_status: ReviewStatus
+  certified_by_employee: boolean
+  certified_at: string | null
+}
+
+export interface EmployeeScanDetail extends EmployeeScanSummary {
+  readability: DocumentReadability[]
+}
+
 export interface ScanSummary {
   id: number
   created_at: string
   employee_name: string
+  first_name: string
+  middle_name: string
+  last_name: string
   employee_number: string
+  review_status: ReviewStatus
+  certified_by_employee: boolean
+  certified_at: string | null
   user_email: string
   role: string
   prescription_filename: string
@@ -397,6 +443,8 @@ export interface DictionaryResponse {
 export interface AllowanceView {
   employee_number: string
   employee_name: string
+  /** Submissions nobody has finished reviewing. A count, never an amount. */
+  awaiting_review: number
   year: string
   year_starts: string
   year_ends: string

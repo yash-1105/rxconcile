@@ -9,6 +9,7 @@ import {
   saveScan,
   setToken,
   fetchScanImage,
+  getSubmission,
 } from './api/client'
 import {
   clearSession,
@@ -19,6 +20,7 @@ import {
 import { Login } from './components/Login'
 import { Processing } from './components/Processing'
 import { Result } from './components/Result'
+import { Submitted } from './components/Submitted'
 import { EmptyState, PageHeader, Shell } from './components/Shell'
 import type { View } from './lib/nav'
 import {
@@ -31,12 +33,21 @@ import {
 import { DOCUMENT_SLOTS, type DocumentSlot } from './lib/documents'
 import { findDuplicateFiles } from './lib/fileIdentity'
 import { Dictionary } from './pages/Dictionary'
-import { History } from './pages/History'
+import { History, SubmissionHistory } from './pages/History'
 import { HowItWorks } from './pages/HowItWorks'
-import { Overview } from './pages/Overview'
-import type { ReconciliationResult, SampleSummary, ScanDetail } from './types/api'
+import { EmployeeOverview, Overview } from './pages/Overview'
+import type {
+  EmployeeScanDetail,
+  ReconciliationResult,
+  SampleSummary,
+  ScanDetail,
+} from './types/api'
 
-type Stage = 'upload' | 'processing' | 'result'
+/**
+ * `submitted` is the employee's terminus. An admin never reaches it and an
+ * employee never reaches `result` — they submit, they do not review.
+ */
+type Stage = 'upload' | 'processing' | 'result' | 'submitted'
 
 interface Images {
   prescription: string | null
@@ -94,7 +105,10 @@ export default function App() {
 
   // Prefilled from the signed-in account and editable, because the person at
   // the desk is not always the person the account belongs to.
-  const [employeeName, setEmployeeName] = useState(restored?.name ?? '')
+  const [firstName, setFirstName] = useState(restored?.name ?? '')
+  const [middleName, setMiddleName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [submission, setSubmission] = useState<EmployeeScanDetail | null>(null)
   const [employeeNumber, setEmployeeNumber] = useState(restored?.employeeNumber ?? '')
   /** A reopened history record is read-only: it is a record of what was reported. */
   const [readOnly, setReadOnly] = useState(false)
@@ -114,7 +128,7 @@ export default function App() {
           saveSession(next)
           setToken(next.token)
           setSession(next)
-          setEmployeeName(next.name)
+          setFirstName(next.name)
           setEmployeeNumber(next.employeeNumber)
           setView('overview')
         }}
@@ -129,9 +143,20 @@ export default function App() {
     setResult(null)
     setStage('upload')
     setDocs({ prescription: null, bill: null, labReport: null, labBill: null })
-    setEmployeeName('')
+    setFirstName('')
+    setMiddleName('')
+    setLastName('')
     setEmployeeNumber('')
   }
+
+  /**
+   * Whether this account reviews claims or files them.
+   *
+   * The browser's copy of the role decides what is RENDERED. What is sent is
+   * decided server-side from the token, so a tampered value here changes the
+   * screen and not the data.
+   */
+  const reviewer = session.role === 'admin'
 
   const goToNew = () => {
     setView('new')
@@ -140,6 +165,13 @@ export default function App() {
   }
 
   /** Reopen a stored scan exactly as it was reported. */
+  /** A submitter reopening their own claim. Never the reconciliation. */
+  const openSubmission = (detail: EmployeeScanDetail) => {
+    setSubmission(detail)
+    setStage('submitted')
+    setView('new')
+  }
+
   const openScan = (detail: ScanDetail) => {
     setResult(detail.result)
     setScanId(detail.id)
@@ -172,13 +204,17 @@ export default function App() {
       const outcome = await task()
       setImages(next)
       setResult(outcome)
-      setStage('result')
+      // An employee never lands on the result. The reconciliation still runs
+      // and is still stored — it is simply not theirs to read.
+      setStage(reviewer ? 'result' : 'processing')
       // Recorded after the fact. A failed save must not lose the result the
       // user is already looking at, so it is reported and otherwise ignored.
       try {
         const saved = await saveScan(
           {
-            employee_name: employeeName,
+            first_name: firstName,
+            middle_name: middleName,
+            last_name: lastName,
             employee_number: employeeNumber,
             prescription_filename: filenames.prescription,
             bill_filename: filenames.bill,
@@ -192,8 +228,20 @@ export default function App() {
         // Exports are built from the stored record, so they need its id.
         setScanId(saved.id)
         setHistoryKey((key) => key + 1)
+        if (!reviewer) {
+          // Fetched back rather than assembled here: the submitter's shape and
+          // its readability come from the server, so the browser never has to
+          // be trusted to leave the analysis out.
+          setSubmission(await getSubmission(saved.id))
+          setStage('submitted')
+        }
       } catch {
-        setError(new Error('The result is shown below but could not be saved to history.'))
+        setError(
+          reviewer
+            ? new Error('The result is shown below but could not be saved to history.')
+            : new Error('Your claim could not be saved. Please try submitting again.'),
+        )
+        if (!reviewer) setStage('upload')
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error(String(caught)))
@@ -239,7 +287,7 @@ export default function App() {
     Boolean(prescriptionFile) &&
     Boolean(billFile) &&
     duplicates.length === 0 &&
-    employeeName.trim().length > 0 &&
+    firstName.trim().length > 0 &&
     employeeNumber.trim().length > 0
 
   const newReconciliation = (
@@ -265,9 +313,13 @@ export default function App() {
 
           <div className="space-y-8">
             <EmployeeFields
-              name={employeeName}
+              first={firstName}
+              middle={middleName}
+              last={lastName}
               employeeNumber={employeeNumber}
-              onNameChange={setEmployeeName}
+              onFirst={setFirstName}
+              onMiddle={setMiddleName}
+              onLast={setLastName}
               onNumberChange={setEmployeeNumber}
             />
 
@@ -330,7 +382,23 @@ export default function App() {
 
       {stage === 'processing' ? <Processing runs={runs} /> : null}
 
-      {stage === 'result' && result ? (
+      {stage === 'submitted' && submission ? (
+        <Submitted
+          submission={submission}
+          onCertified={setSubmission}
+          onStartAnother={() => {
+            setStage('upload')
+            setSubmission(null)
+            setResult(null)
+            setScanId(null)
+            setDocs({ prescription: null, bill: null, labReport: null, labBill: null })
+            setDuplicates([])
+          }}
+        />
+      ) : null}
+
+      {/* Reviewers only. An employee never reaches this stage. */}
+      {reviewer && stage === 'result' && result ? (
         <Result
           result={result}
           prescriptionImage={images.prescription}
@@ -353,9 +421,24 @@ export default function App() {
   )
 
   const pages: Record<View, React.ReactNode> = {
-    overview: <Overview key={historyKey} session={session} onStart={goToNew} onOpen={openScan} />,
+    // Two components, not one with the analysis blanked. A submitter's screens
+    // never mount a reviewer's, so nothing is one prop away from leaking.
+    overview: reviewer ? (
+      <Overview key={historyKey} session={session} onStart={goToNew} onOpen={openScan} />
+    ) : (
+      <EmployeeOverview
+        key={historyKey}
+        session={session}
+        onStart={goToNew}
+        onOpen={openSubmission}
+      />
+    ),
     new: newReconciliation,
-    history: <History key={historyKey} session={session} onStart={goToNew} onOpen={openScan} />,
+    history: reviewer ? (
+      <History key={historyKey} session={session} onStart={goToNew} onOpen={openScan} />
+    ) : (
+      <SubmissionHistory key={historyKey} onStart={goToNew} onOpen={openSubmission} />
+    ),
     dictionary: <Dictionary />,
     how: <HowItWorks />,
   }
@@ -368,9 +451,10 @@ export default function App() {
         setView(next)
         // "Verify" starts a new one. The previous result is not
         // lost by this: every run is saved to history the moment it completes.
-        if (next === 'new' && stage === 'result') {
+        if (next === 'new' && (stage === 'result' || stage === 'submitted')) {
           setStage('upload')
           setResult(null)
+          setSubmission(null)
         }
       }}
       onSignOut={signOut}

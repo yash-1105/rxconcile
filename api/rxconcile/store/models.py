@@ -32,9 +32,19 @@ class ScanRecord(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=_now, index=True)
 
-    # Who ran it. employee_name/number are what the operator typed, which is not
-    # always the account holder; user_email is the account the token was bound to.
+    # Who ran it. The name parts are what the operator typed, which is not
+    # always the account holder; user_email is the account the token was bound
+    # to.
+    #
+    # `employee_name` STAYS, as the computed full name. It is the grouping key
+    # on the overview, the substring the history filter searches, and it is
+    # frozen inside stored result blobs by the duplicate-bill finding, so it
+    # cannot be dropped without rewriting history. The parts are the source of
+    # truth; this is what everything that wants one string reads.
     employee_name: str
+    first_name: str = Field(default="")
+    middle_name: str = Field(default="")
+    last_name: str = Field(default="")
     employee_number: str
     user_email: str = Field(index=True)
     role: str
@@ -75,6 +85,18 @@ class ScanRecord(SQLModel, table=True):
     prescription_image: bytes | None = Field(default=None)
     bill_image: bytes | None = Field(default=None)
     image_media_type: str = Field(default="image/jpeg")
+
+    # The employee's own attestation, and where the submission has got to.
+    #
+    # `certified_at` is null until they tick the box, which they may do after
+    # the run — the reconciliation is expensive and must not be lost because
+    # somebody navigated away before certifying.
+    certified_by_employee: bool = Field(default=False)
+    certified_at: datetime | None = Field(default=None)
+    #: submitted | under_review | reviewed. A plain indexed str on the table
+    #: and a Literal at the API boundary, the same shape `verdict` and `role`
+    #: already use.
+    review_status: str = Field(default="submitted", index=True)
 
     processing_ms: int = 0
     extraction_runs: int = 0

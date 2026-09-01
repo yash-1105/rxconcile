@@ -79,7 +79,7 @@ def save(
     **overrides: Any,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "employee_name": "Yash",
+        "first_name": "Yash",
         "employee_number": "EMP-4417",
         "prescription_filename": "rx.jpg",
         "bill_filename": "bill.png",
@@ -151,8 +151,9 @@ def test_summary_columns_are_derived_from_the_result(client: TestClient) -> None
 
 
 def test_the_full_result_is_stored_verbatim(client: TestClient) -> None:
+    """Read back as an ADMIN: an employee is not shown the result at all."""
     saved = save(client, EMPLOYEE)
-    detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+    detail = client.get(f"/api/scans/{saved['id']}", headers=auth(ADMIN)).json()
     assert detail["result"] == result_payload()
 
 
@@ -162,7 +163,7 @@ def test_identity_comes_from_the_token_not_the_body(client: TestClient) -> None:
         "/api/scans",
         data={
             "payload": json.dumps({
-                "employee_name": "Yash",
+                "first_name": "Yash",
                 "employee_number": "EMP-4417",
                 "extraction_runs": 3,
                 "result": result_payload(),
@@ -174,6 +175,8 @@ def test_identity_comes_from_the_token_not_the_body(client: TestClient) -> None:
         headers=auth(EMPLOYEE),
     )
     assert response.status_code == 200
+    # POST /api/scans answers with the reviewer summary, which carries the
+    # account the token was bound to.
     assert response.json()["user_email"] == EMPLOYEE
     assert response.json()["role"] == "employee"
 
@@ -188,7 +191,11 @@ def test_employee_sees_only_their_own_scans(client: TestClient) -> None:
     save(client, ADMIN)
     rows = client.get("/api/scans", headers=auth(EMPLOYEE)).json()
     assert len(rows) == 1
-    assert all(row["user_email"] == EMPLOYEE for row in rows)
+    # `user_email` is not in the employee's shape; the narrowing is asserted
+    # through the admin's view of the same two records.
+    seen = client.get("/api/scans", headers=auth(ADMIN)).json()
+    mine = [row for row in seen if row["user_email"] == EMPLOYEE]
+    assert [row["id"] for row in rows] == [row["id"] for row in mine]
 
 
 def test_admin_sees_every_scan(client: TestClient) -> None:
@@ -265,7 +272,7 @@ def test_result_json_survives_a_schema_the_columns_do_not_know_about(
     payload = result_payload()
     payload["some_future_field"] = {"lab_tests": [{"name": "CBC", "billed": True}]}
     saved = save(client, EMPLOYEE, result=payload)
-    detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+    detail = client.get(f"/api/scans/{saved['id']}", headers=auth(ADMIN)).json()
     assert detail["result"]["some_future_field"]["lab_tests"][0]["name"] == "CBC"
     assert json.loads(json.dumps(detail["result"])) == payload
 
@@ -372,7 +379,7 @@ class TestDecisionsSurviveTheRecord:
         )
         assert revised.status_code == 200
 
-        reopened = client.get(f"/api/scans/{scan['id']}", headers=auth(EMPLOYEE)).json()
+        reopened = client.get(f"/api/scans/{scan['id']}", headers=auth(ADMIN)).json()
         assert reopened["decisions"] == decisions
         assert reopened["claimed_amount"] == "410.50"
 
@@ -381,7 +388,7 @@ class TestDecisionsSurviveTheRecord:
     ) -> None:
         """Not an empty approval -- an absence, which the screen reads as undecided."""
         scan = save(client, EMPLOYEE)
-        reopened = client.get(f"/api/scans/{scan['id']}", headers=auth(EMPLOYEE)).json()
+        reopened = client.get(f"/api/scans/{scan['id']}", headers=auth(ADMIN)).json()
         assert reopened["decisions"] == {}
 
     def test_deciding_on_an_older_scan_stamps_the_year_it_belongs_to(
@@ -451,7 +458,7 @@ class TestAllowanceIsRoleFiltered:
 
     def test_an_employee_cannot_read_another_number(self, client: TestClient) -> None:
         save(client, EMPLOYEE)
-        save(client, ADMIN, employee_number="ADM-0001", employee_name="Ishan")
+        save(client, ADMIN, employee_number="ADM-0001", first_name="Ishan")
         denied = client.get("/api/allowance/ADM-0001", headers=auth(EMPLOYEE))
         assert denied.status_code == 404
 
@@ -469,3 +476,112 @@ class TestAllowanceIsRoleFiltered:
         save(client, EMPLOYEE)
         got = client.get("/api/allowance/EMP-4417", headers=auth(ADMIN))
         assert got.status_code == 200
+
+
+class TestTheEmployeeShapeIsAnAllowList:
+    """What an employee's own responses are allowed to contain.
+
+    Key-SET equality, not a list of absences. A field added to `ScanSummary`
+    later cannot leak into the employee's view without failing here — and a
+    leak would otherwise be silent, which is what makes it worth pinning.
+    """
+
+    LIST_KEYS = {
+        "id", "created_at", "employee_name", "first_name", "middle_name", "last_name",
+        "employee_number", "condition", "description",
+        "prescription_filename", "bill_filename",
+        "review_status", "certified_by_employee", "certified_at",
+    }
+    DETAIL_KEYS = LIST_KEYS | {"readability"}
+
+    #: Everything the employee submits but does not review. Named individually
+    #: so a failure says which figure came back.
+    FORBIDDEN = (
+        "result", "decisions", "verdict", "score",
+        "discrepancy_count", "critical_count", "warning_count",
+        "checks_unavailable_count", "eligible_total", "currency",
+        "claimed_amount", "allowance_year", "processing_ms", "extraction_runs",
+        "user_email", "role",
+    )
+
+    def test_the_list_carries_exactly_these_keys(self, client: TestClient) -> None:
+        save(client, EMPLOYEE)
+        rows = client.get("/api/scans", headers=auth(EMPLOYEE)).json()
+        assert rows, "fixture must produce a row"
+        assert set(rows[0]) == self.LIST_KEYS
+
+    def test_the_detail_carries_exactly_these_keys(self, client: TestClient) -> None:
+        saved = save(client, EMPLOYEE)
+        detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        assert set(detail) == self.DETAIL_KEYS
+
+    def test_no_forbidden_key_appears_anywhere_in_either(
+        self, client: TestClient
+    ) -> None:
+        saved = save(client, EMPLOYEE)
+        rows = client.get("/api/scans", headers=auth(EMPLOYEE)).json()
+        detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        for key in self.FORBIDDEN:
+            assert key not in rows[0], f"{key!r} leaked into the employee's history"
+            assert key not in detail, f"{key!r} leaked into the employee's submission"
+
+    def test_no_forbidden_value_is_reachable_by_serialising_the_whole_body(
+        self, client: TestClient
+    ) -> None:
+        """Not just absent at the top level: absent, full stop.
+
+        A nested object carrying the verdict would satisfy a key check and
+        still put the analysis on the wire.
+        """
+        saved = save(client, EMPLOYEE)
+        detail = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).text
+        for word in ("mismatch", "STRENGTH_MISMATCH", "FORM_MISMATCH", "discrepancy"):
+            assert word not in detail
+
+    def test_the_admin_still_gets_the_whole_thing(self, client: TestClient) -> None:
+        """The narrowing is by role, not a deletion."""
+        saved = save(client, EMPLOYEE)
+        detail = client.get(f"/api/scans/{saved['id']}", headers=auth(ADMIN)).json()
+        assert detail["result"] == result_payload()
+        assert detail["verdict"] == "mismatch"
+        assert "readability" not in detail
+
+
+class TestCertification:
+    def test_a_submission_starts_uncertified_and_submitted(
+        self, client: TestClient
+    ) -> None:
+        saved = save(client, EMPLOYEE)
+        row = client.get(f"/api/scans/{saved['id']}", headers=auth(EMPLOYEE)).json()
+        assert row["certified_by_employee"] is False
+        assert row["certified_at"] is None
+        assert row["review_status"] == "submitted"
+
+    def test_certifying_records_who_and_when(self, client: TestClient) -> None:
+        saved = save(client, EMPLOYEE)
+        done = client.post(f"/api/scans/{saved['id']}/certify", headers=auth(EMPLOYEE))
+        assert done.status_code == 200
+        assert done.json()["certified_by_employee"] is True
+        assert done.json()["certified_at"] is not None
+
+    def test_only_the_submitter_may_certify(self, client: TestClient) -> None:
+        """An attestation somebody else can make for you is not an attestation.
+
+        Not even the admin — and the 404 is the same one a missing id gets, so
+        probing tells a caller nothing.
+        """
+        saved = save(client, EMPLOYEE)
+        refused = client.post(f"/api/scans/{saved['id']}/certify", headers=auth(ADMIN))
+        assert refused.status_code == 404
+
+    def test_the_first_attestation_is_the_one_that_stands(
+        self, client: TestClient
+    ) -> None:
+        saved = save(client, EMPLOYEE)
+        first = client.post(
+            f"/api/scans/{saved['id']}/certify", headers=auth(EMPLOYEE)
+        ).json()
+        again = client.post(
+            f"/api/scans/{saved['id']}/certify", headers=auth(EMPLOYEE)
+        ).json()
+        assert again["certified_at"] == first["certified_at"]

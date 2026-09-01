@@ -184,26 +184,55 @@ export function SamplePicker({
  * person the account belongs to.
  */
 export function EmployeeFields({
-  name,
+  first,
+  middle,
+  last,
   employeeNumber,
-  onNameChange,
+  onFirst,
+  onMiddle,
+  onLast,
   onNumberChange,
 }: {
-  name: string
+  first: string
+  middle: string
+  last: string
   employeeNumber: string
-  onNameChange: (value: string) => void
+  onFirst: (value: string) => void
+  onMiddle: (value: string) => void
+  onLast: (value: string) => void
   onNumberChange: (value: string) => void
 }) {
+  const field =
+    't-body mt-1.5 w-full rounded bg-surface px-3 py-2 text-ink placeholder:text-ink-400'
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <label className="block">
-        <span className="t-micro text-muted">Employee name</span>
+        <span className="t-micro text-muted">First name</span>
         <input
-          value={name}
-          onChange={(event) => onNameChange(event.target.value)}
+          value={first}
+          onChange={(event) => onFirst(event.target.value)}
           required
-          className="t-body mt-1.5 w-full rounded bg-surface px-3 py-2 text-ink placeholder:text-ink-400"
-          placeholder="Who is running this"
+          className={field}
+          placeholder="Priya"
+        />
+      </label>
+      <label className="block">
+        {/* Optional, and labelled so, because plenty of people have none. */}
+        <span className="t-micro text-muted">Middle name</span>
+        <input
+          value={middle}
+          onChange={(event) => onMiddle(event.target.value)}
+          className={field}
+          placeholder="Optional"
+        />
+      </label>
+      <label className="block">
+        <span className="t-micro text-muted">Last name</span>
+        <input
+          value={last}
+          onChange={(event) => onLast(event.target.value)}
+          className={field}
+          placeholder="Nair"
         />
       </label>
       <label className="block">
@@ -212,7 +241,7 @@ export function EmployeeFields({
           value={employeeNumber}
           onChange={(event) => onNumberChange(event.target.value)}
           required
-          className="t-body mt-1.5 w-full rounded bg-surface px-3 py-2.5 text-ink placeholder:text-ink-400"
+          className={field}
           placeholder="EMP-0000"
         />
       </label>

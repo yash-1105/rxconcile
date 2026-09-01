@@ -25,13 +25,23 @@ Role = Literal["employee", "admin"]
 class DemoUser:
     """One hardcoded demo account."""
 
-    __slots__ = ("email", "password", "name", "employee_number", "role")
+    __slots__ = (
+        "email", "password", "name", "first_name", "middle_name", "last_name",
+        "employee_number", "role",
+    )
 
     def __init__(
-        self, email: str, password: str, name: str, employee_number: str, role: Role
+        self, email: str, password: str, name: str, employee_number: str, role: Role,
+        *, first_name: str = "", middle_name: str = "", last_name: str = "",
     ) -> None:
         self.email = email
         self.password = password
+        # Stated, not split. Deriving three parts from one string is the
+        # fragile thing the split exists to remove, so the account says which
+        # is which.
+        self.first_name = first_name or name
+        self.middle_name = middle_name
+        self.last_name = last_name
         self.name = name
         self.employee_number = employee_number
         self.role = role

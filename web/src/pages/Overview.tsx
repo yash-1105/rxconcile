@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getScan, listScans } from '../api/client'
+import {
+  fetchAllowance,
+  getScan,
+  getSubmission,
+  listScans,
+  listSubmissions,
+} from '../api/client'
 import type { Session } from '../auth/session'
 import { BarList, TrendLine } from '../components/Charts'
 import { EmptyState, PageHeader } from '../components/Shell'
 import { SpineMark } from '../components/Spine'
 import { listAllowances } from '../api/client'
+import type { EmployeeScanDetail, EmployeeScanSummary } from '../types/api'
+
+const REVIEW_LABEL: Record<string, string> = {
+  submitted: 'Submitted',
+  under_review: 'Under review',
+  reviewed: 'Reviewed',
+}
 
 /** One money format for the whole app: "INR 12,000.00", never a bare number. */
 function money(amount: string, currency = 'INR'): string {
@@ -53,6 +66,123 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   )
 }
 
+/**
+ * A submitter's own overview.
+ *
+ * Their allowance, and how many claims are still with a reviewer. No
+ * discrepancy counts and no checks-not-run: those are analysis, which is the
+ * thing an employee does not do. The figures are not merely hidden here — the
+ * server does not send them.
+ */
+export function EmployeeOverview({
+  session,
+  onStart,
+  onOpen,
+}: {
+  session: Session
+  onStart: () => void
+  onOpen: (detail: EmployeeScanDetail) => void
+}) {
+  const [allowance, setAllowance] = useState<AllowanceView | null>(null)
+  const [rows, setRows] = useState<EmployeeScanSummary[]>([])
+
+  useEffect(() => {
+    fetchAllowance(session.employeeNumber)
+      .then(setAllowance)
+      .catch(() => setAllowance(null))
+    listSubmissions()
+      .then(setRows)
+      .catch(() => setRows([]))
+  }, [session.employeeNumber])
+
+  const firstName = session.name.split(' ')[0]
+  const uncertified = rows.filter((row) => !row.certified_by_employee).length
+
+  return (
+    <>
+      <PageHeader
+        title={`Good to see you, ${firstName}`}
+        lede="Your allowance, and the claims you have submitted."
+      />
+
+      {allowance === null ? (
+        <p className="t-small text-muted">Your allowance could not be loaded.</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Stat
+            label="Balance remaining"
+            value={money(allowance.balance)}
+            hint={`Allowance year ${allowance.year}`}
+          />
+          <Stat label="Annual allowance" value={money(allowance.annual_amount)} hint="Per year" />
+          {/* A COUNT, never an amount. A submitted claim's figure comes from
+              defaults nobody has agreed to, and a balance that moved when a
+              reviewer rejected a line would be worse than none. */}
+          <Stat
+            label="Awaiting review"
+            value={String(allowance.awaiting_review)}
+            hint="Not counted against your balance yet"
+          />
+        </div>
+      )}
+
+      {uncertified > 0 ? (
+        <p className="t-small mt-4 text-flag">
+          {uncertified} {uncertified === 1 ? 'claim is' : 'claims are'} not certified yet.
+          Open {uncertified === 1 ? 'it' : 'them'} below to finish.
+        </p>
+      ) : null}
+
+      <div className="mt-6">
+        <Panel title="Your recent claims">
+          {rows.length === 0 ? (
+            <EmptyState
+              title="No claims yet"
+              body="Submit a prescription and its bills and they will appear here."
+              action={
+                <button
+                  type="button"
+                  onClick={onStart}
+                  className="rounded bg-seal px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                >
+                  Submit a claim
+                </button>
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-ink-100">
+              {rows.slice(0, 5).map((row) => (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      getSubmission(row.id).then(onOpen).catch(() => undefined)
+                    }}
+                    className="flex w-full items-baseline justify-between gap-3 py-2.5 text-left hover:bg-paper"
+                  >
+                    <span className="t-small text-ink">
+                      {row.condition ?? 'Claim'}
+                      <span className="t-small ml-2 text-muted">
+                        {REVIEW_LABEL[row.review_status] ?? row.review_status}
+                      </span>
+                    </span>
+                    <span className="t-small text-muted">{formatDate(row.created_at)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
+
+      <p className="t-small mt-6 text-muted">
+        Your balance counts reviewed claims only. Anything still with a reviewer is shown as a
+        count above, because its amount has not been agreed yet.
+      </p>
+    </>
+  )
+}
+
 export function Overview({
   session,
   onStart,
@@ -62,6 +192,8 @@ export function Overview({
   onStart: () => void
   onOpen: (detail: ScanDetail) => void
 }) {
+  // Reviewers only. `EmployeeOverview` above is what a submitter gets, chosen
+  // in App so neither component runs the other's hooks.
   const admin = session.role === 'admin'
   const [scans, setScans] = useState<ScanSummary[] | null>(null)
   const [allowances, setAllowances] = useState<AllowanceView[]>([])

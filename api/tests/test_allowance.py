@@ -40,14 +40,19 @@ def scan(
     claimed: str = "0",
     year: str = "2026-27",
     scan_id: int | None = None,
+    review_status: str = "reviewed",
 ) -> ScanRecord:
     record = ScanRecord(
         id=scan_id,
-        employee_name="Yash", employee_number=number,
+        employee_name="Yash", first_name="Yash", employee_number=number,
         user_email="employee@gmail.com", role="employee",
         prescription_filename="rx.png", bill_filename="bill.png",
         verdict="match", result_json=json.dumps({"verdict": "match", "findings": []}),
         decisions_json="{}", claimed_amount=Decimal(claimed), allowance_year=year,
+        # Reviewed by default: these tests are about the arithmetic of a
+        # settled claim. `test_a_submitted_claim_does_not_touch_the_balance`
+        # covers the other state.
+        review_status=review_status,
     )
     session.add(record)
     session.commit()
@@ -182,3 +187,48 @@ def test_revising_a_claim_downwards_only_moves_that_scans_amount(session: Sessio
 
     assert view_for(session, "EMP-4417", today=TODAY).used == Decimal("1500")
     assert view_for(session, "EMP-4417", today=TODAY).balance == Decimal("10500")
+
+
+def test_a_submitted_claim_does_not_touch_the_balance(session: Session) -> None:
+    """One definition of `used`, and it is reviewed-only.
+
+    A submitted claim's amount comes from default decisions that no human has
+    agreed to. Counting it would show a balance that moves the moment a
+    reviewer rejects a line — worse than showing none.
+    """
+    scan(session, claimed="4000", review_status="reviewed")
+    scan(session, claimed="2500", review_status="submitted")
+    scan(session, claimed="1500", review_status="under_review")
+
+    view = view_for(session, "EMP-4417", today=TODAY)
+    assert view.used == Decimal("4000"), "only the reviewed claim is spent"
+    assert view.balance == Decimal("8000")
+    assert view.scans_counted == 1
+
+
+def test_pending_work_is_reported_as_a_count_never_an_amount(session: Session) -> None:
+    scan(session, claimed="4000", review_status="reviewed")
+    scan(session, claimed="2500", review_status="submitted")
+    scan(session, claimed="1500", review_status="under_review")
+
+    view = view_for(session, "EMP-4417", today=TODAY)
+    assert view.awaiting_review == 2
+    # The pending amounts appear nowhere in the view, under any name.
+    figures = {view.used, view.balance, view.annual_amount}
+    assert Decimal("2500") not in figures
+    assert Decimal("1500") not in figures
+    assert Decimal("4000.00") not in {view.balance}
+
+
+def test_reviewing_a_claim_is_what_spends_it(session: Session) -> None:
+    """The transition, end to end."""
+    record = scan(session, claimed="3000", review_status="submitted")
+    assert view_for(session, "EMP-4417", today=TODAY).used == Decimal("0.00")
+
+    record.review_status = "reviewed"
+    session.add(record)
+    session.commit()
+
+    after = view_for(session, "EMP-4417", today=TODAY)
+    assert after.used == Decimal("3000")
+    assert after.awaiting_review == 0

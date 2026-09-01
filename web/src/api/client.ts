@@ -5,6 +5,8 @@ import type {
   DictionaryResponse,
   ReconciliationResult,
   SampleSummary,
+  EmployeeScanDetail,
+  EmployeeScanSummary,
   ScanDetail,
   ScanSummary,
 } from '../types/api'
@@ -172,7 +174,9 @@ export async function openDemoSession(
 }
 
 export interface ScanCreate {
-  employee_name: string
+  first_name: string
+  middle_name: string
+  last_name: string
   employee_number: string
   prescription_filename: string
   bill_filename: string
@@ -253,6 +257,29 @@ export async function fetchScanImage(
 
 export async function listScans(): Promise<ScanSummary[]> {
   return unwrap<ScanSummary[]>(
+    await fetch(`${BASE_URL}/api/scans`, { headers: authHeaders() }),
+  )
+}
+
+/** The employee's attestation. Owner only, server-side. */
+export async function certifyScan(id: number): Promise<EmployeeScanDetail> {
+  return unwrap<EmployeeScanDetail>(
+    await fetch(`${BASE_URL}/api/scans/${id}/certify`, {
+      method: 'POST',
+      headers: authHeaders(),
+    }),
+  )
+}
+
+/** One submission, as its submitter sees it: no result, only readability. */
+export async function getSubmission(id: number): Promise<EmployeeScanDetail> {
+  return unwrap<EmployeeScanDetail>(
+    await fetch(`${BASE_URL}/api/scans/${id}`, { headers: authHeaders() }),
+  )
+}
+
+export async function listSubmissions(): Promise<EmployeeScanSummary[]> {
+  return unwrap<EmployeeScanSummary[]>(
     await fetch(`${BASE_URL}/api/scans`, { headers: authHeaders() }),
   )
 }

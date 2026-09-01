@@ -689,6 +689,26 @@ class Submission(_Base):
     lab_report_supplied: bool = False
     lab_bill_supplied: bool = False
 
+    # What could be made of the lab bill, kept HERE because its own extraction
+    # state is otherwise lost: its tests are merged into the pharmacy bill and
+    # the rest of it -- warnings, run counts, unstable lines -- is discarded, so
+    # without this nothing downstream can say "we could not read your lab bill".
+    lab_bill_tests_read: int | None = Field(
+        default=None, ge=0,
+        description="Test lines read off a separately uploaded lab bill. **Null is not "
+        "zero**: null means nobody recorded it, which is every record written before "
+        "this field existed, while zero means a document arrived and nothing came off "
+        "it. Reading null as zero would report every older lab bill as unreadable.",
+    )
+    lab_bill_unstable: bool = Field(
+        default=False,
+        description="Extraction runs disagreed on how many lines the lab bill holds.",
+    )
+    lab_bill_warnings: list[str] = Field(
+        default_factory=list,
+        description="The lab bill's own extraction warnings, in its own words.",
+    )
+
 
 class ReconciliationResult(_Base):
     """The complete outcome of reconciling one prescription against one bill."""
