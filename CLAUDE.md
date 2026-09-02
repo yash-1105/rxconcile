@@ -108,6 +108,27 @@ This is why `GOOGLE_APPLICATION_CREDENTIALS` is still rejected on sight: that va
 carries the material itself, so there is no file to leak. **Never write the parsed key to disk to
 satisfy a library that wants a path** — find the API that takes credentials directly.
 
+### 10. Lab results are transcribed, never interpreted
+Transcribe the result, the unit, the reference range, and the lab's own H/L flag **exactly as
+printed**. Reproducing a flag the lab put on the page is transcription. Everything past that is
+clinical judgement and is permanently out of scope.
+
+**The system must never, in its own voice:** call a value high, low, abnormal, normal, borderline,
+deficient or elevated; compare a result against its reference range to reach a conclusion; raise a
+finding *because of* a result; or colour, sort, badge or rank a result by clinical meaning.
+
+A result outside its printed range is **still just a transcribed number.** 33.16 against a range of
+75–250 is rendered as "33.16" and "75.00 - 250.00" side by side, and the reader draws the
+conclusion. If the lab printed no flag, there is no flag — `lab_flag` stays null, and null is not
+"normal".
+
+This is not a display convention that a later screen may relax. Hard rule 1 says the LLM extracts
+and never judges; this is that rule at its sharpest, because a lab result is the one place where a
+plausible-looking judgement would read as medical advice. Hard rule 4 already forbids that outright.
+
+What the engine MAY do with a report is compare it against the **other documents** — ordered,
+billed, reported — because that is document reconciliation and says nothing about the patient.
+
 ---
 
 ## DEFAULT: commit and push at the end of every prompt

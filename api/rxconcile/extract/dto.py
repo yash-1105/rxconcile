@@ -258,3 +258,85 @@ class PharmacyBillDTO(_DTO):
     grand_total: float | None = Field(default=None, description="Net payable.")
     currency: str | None = Field(default=None, description="ISO code, e.g. INR.")
     warnings: list[str] = Field(default_factory=list)
+
+
+class ReportedTestDTO(_DTO):
+    """One result line on a lab report as returned by the model. No item_id."""
+
+    raw_text: str = Field(default="", description="The line transcribed VERBATIM.")
+    test_name: str | None = Field(
+        default=None, description="The analyte name as printed, else null."
+    )
+    panel: str | None = Field(
+        default=None,
+        description="The printed heading this result sits under, e.g. 'SWASTHFIT "
+        "VITAMIN PACKAGE' or 'GLUCOSE FASTING (F) AND POST PRANDIAL (PP)'. A heading "
+        "on one page governs results printed on the NEXT page -- carry it across.",
+    )
+    result_value: str | None = Field(
+        default=None,
+        description="The result EXACTLY as printed, AS TEXT. Copy '294.00' as "
+        "'294.00', '<0.01' as '<0.01', 'Not detected' as 'Not detected'. "
+        "**Never convert to a number and never round.**",
+    )
+    unit: str | None = Field(default=None, description="'pg/mL', 'mg/dL'. As printed.")
+    reference_range: str | None = Field(
+        default=None,
+        description="The biological reference interval EXACTLY as printed, e.g. "
+        "'211.00 - 911.00', '<150', 'Negative'. Text, not numbers.",
+    )
+    lab_flag: str | None = Field(
+        default=None,
+        description="ONLY a flag the laboratory itself printed next to the result -- "
+        "'H', 'L', 'High', '*'. **If the report prints no flag, this is null.** Do "
+        "not derive one by comparing the result to the range: that is a judgement, "
+        "and it is not yours to make.",
+    )
+    page: int | None = Field(
+        default=None, description="1-based page number this line was read from."
+    )
+    bbox: list[float] | None = Field(
+        default=None,
+        description="Bounding box as [x0, y0, x1, y1], normalised 0-1, on the page "
+        "named by `page`. Null if you cannot locate it.",
+    )
+    confidence: float = Field(
+        default=0.5, description="Your own legibility score for this line, 0-1."
+    )
+
+
+class LabReportDTO(_DTO):
+    """A diagnostic report as returned by the model."""
+
+    lab_name: str | None = Field(default=None)
+    report_number: str | None = Field(
+        default=None, description="Lab No. / accession number exactly as printed."
+    )
+    patient_name: str | None = Field(default=None)
+    referred_by: str | None = Field(
+        default=None, description="Referring doctor, or 'Self' if the page says so."
+    )
+    collected_date_raw: str | None = Field(
+        default=None, description="Sample collection date EXACTLY as printed."
+    )
+    reported_date_raw: str | None = Field(
+        default=None, description="Report date EXACTLY as printed."
+    )
+    tests: list[ReportedTestDTO] = Field(
+        default_factory=list,
+        description="EVERY result line across EVERY page, in printed order. A result "
+        "printed on page 5 belongs here just as much as one on page 1.",
+    )
+    page_count: int | None = Field(
+        default=None, description="How many pages you were shown."
+    )
+    unreadable_pages: list[int] = Field(
+        default_factory=list,
+        description="1-based numbers of pages you were shown but could not read. A "
+        "page of notes or disclaimers with no results is READABLE -- it simply has "
+        "no results on it. Only list a page you genuinely could not make out.",
+    )
+    overall_legibility: float = Field(
+        default=0.5, description="Your own whole-document legibility score, 0-1."
+    )
+    warnings: list[str] = Field(default_factory=list)

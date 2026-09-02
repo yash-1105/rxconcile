@@ -20,7 +20,7 @@ from rxconcile.config import settings
 from rxconcile.extract import extract_bill, extract_prescription
 from rxconcile.extract.cache import clear as clear_cache
 from rxconcile.extract.errors import ExtractionError
-from rxconcile.extract.preprocess import prepare_image
+from rxconcile.extract.preprocess import prepare_document
 from rxconcile.models import PharmacyBill, Prescription
 
 
@@ -80,10 +80,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        image = prepare_image(args.image)
+        # A PDF here now contributes every page, not just its first.
+        image = prepare_document(args.image)
+        first = image.first
         print(
-            f"prepared: {image.width}x{image.height}, "
-            f"{image.original_bytes:,} -> {image.encoded_bytes:,} bytes, "
+            f"prepared: {image.page_count} page(s), "
+            f"first {first.width}x{first.height}, "
+            f"{first.original_bytes:,} -> {image.encoded_bytes:,} bytes, "
             f"sha256={image.sha256[:12]}",
             file=sys.stderr,
         )

@@ -19,7 +19,7 @@ from rxconcile.extract._runner import (
 )
 from rxconcile.extract.dto import PrescriptionDTO
 from rxconcile.extract.errors import ExtractionError
-from rxconcile.extract.preprocess import PreparedImage, prepare_image
+from rxconcile.extract.preprocess import PreparedDocument, prepare_document
 from rxconcile.extract.prompts import PRESCRIPTION_INSTRUCTION, PROMPT_VERSION
 from rxconcile.models import PrescribedItem, PrescribedTest, Prescription
 
@@ -239,7 +239,7 @@ def build_prescription(runs: list[PrescriptionDTO]) -> Prescription:
 
 
 def extract_prescription(
-    source: Path | bytes | PreparedImage,
+    source: Path | bytes | PreparedDocument,
     *,
     model: str | None = None,
     use_cache: bool = True,
@@ -248,7 +248,9 @@ def extract_prescription(
     """Extract a prescription, resolving N runs by per-field agreement.
 
     Args:
-        source: image path, raw bytes, or an already-prepared image.
+        source: file path, raw bytes, or an already-prepared document.
+            A PDF becomes one page per PDF page; every page is sent in
+            a single model call.
         model: override the configured extraction model.
         use_cache: read and write the on-disk cache of the resolved document.
         runs: override ``EXTRACTION_RUNS``. N=1 skips consensus and reports
@@ -258,11 +260,11 @@ def extract_prescription(
         ExtractionError: extraction or validation failed. No partial object is
             ever returned.
     """
-    image = source if isinstance(source, PreparedImage) else prepare_image(source)
+    document = source if isinstance(source, PreparedDocument) else prepare_document(source)
     run_count = runs if runs is not None else settings.extraction_runs
     chosen_model = model or settings.gemini_model
     key = cache.cache_key(
-        image_sha256=image.sha256,
+        image_sha256=document.sha256,
         doc_type=f"{DOC_TYPE}:n{run_count}",
         model=chosen_model,
         prompt_version=PROMPT_VERSION,
@@ -279,7 +281,7 @@ def extract_prescription(
     dtos = collect_runs(
         dto_type=PrescriptionDTO,
         instruction=PRESCRIPTION_INSTRUCTION,
-        image=image,
+        document=document,
         doc_type=DOC_TYPE,
         runs=run_count,
         model=model,
@@ -300,9 +302,9 @@ def extract_prescription(
     return prescription
 
 
-def _cache_key(image: PreparedImage, run_count: int, chosen_model: str) -> str:
+def _cache_key(document: PreparedDocument, run_count: int, chosen_model: str) -> str:
     return cache.cache_key(
-        image_sha256=image.sha256,
+        image_sha256=document.sha256,
         doc_type=f"{DOC_TYPE}:n{run_count}",
         model=chosen_model,
         prompt_version=PROMPT_VERSION,
@@ -310,17 +312,17 @@ def _cache_key(image: PreparedImage, run_count: int, chosen_model: str) -> str:
 
 
 async def extract_prescription_async(
-    source: Path | bytes | PreparedImage,
+    source: Path | bytes | PreparedDocument,
     *,
     model: str | None = None,
     use_cache: bool = True,
     runs: int | None = None,
 ) -> Prescription:
     """Async twin of :func:`extract_prescription`, fanning the N runs out concurrently."""
-    image = source if isinstance(source, PreparedImage) else prepare_image(source)
+    document = source if isinstance(source, PreparedDocument) else prepare_document(source)
     run_count = runs if runs is not None else settings.extraction_runs
     chosen_model = model or settings.gemini_model
-    key = _cache_key(image, run_count, chosen_model)
+    key = _cache_key(document, run_count, chosen_model)
 
     if use_cache:
         cached = cache.load(key)
@@ -333,16 +335,16 @@ async def extract_prescription_async(
     dtos = await collect_runs_async(
         dto_type=PrescriptionDTO,
         instruction=PRESCRIPTION_INSTRUCTION,
-        image=image,
+        document=document,
         doc_type=DOC_TYPE,
         runs=run_count,
         model=model,
     )
     try:
-        document = build_prescription(dtos)
+        extracted = build_prescription(dtos)
     except ValueError as exc:
         raise ExtractionError(f"extracted prescription failed domain validation: {exc}") from exc
 
     if use_cache:
-        cache.store(key, document.model_dump(mode="json"))
-    return document
+        cache.store(key, extracted.model_dump(mode="json"))
+    return extracted

@@ -28,7 +28,7 @@ from rxconcile.extract.errors import (
     ImageTooLargeError,
     UnreadableImageError,
 )
-from rxconcile.extract.preprocess import prepare_image
+from rxconcile.extract.preprocess import prepare_document, prepare_image
 from rxconcile.extract.prescription import build_prescription
 
 
@@ -334,12 +334,13 @@ def install_responses(
 
 
 @pytest.fixture
-def image() -> preprocess.PreparedImage:
-    return prepare_image(png_bytes())
+def image() -> preprocess.PreparedDocument:
+    """A one-page document. An image has always been exactly that."""
+    return prepare_document(png_bytes())
 
 
 def test_valid_first_response_is_returned(
-    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedImage
+    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedDocument
 ) -> None:
     prompts_seen = install_responses(
         monkeypatch, [json.dumps({"overall_legibility": 0.8, "items": []})]
@@ -347,7 +348,7 @@ def test_valid_first_response_is_returned(
     dto = _runner.run_extraction(
         dto_type=PrescriptionDTO,
         instruction="INSTRUCTION",
-        image=image,
+        document=image,
         doc_type="prescription",
         use_cache=False,
     )
@@ -356,7 +357,7 @@ def test_valid_first_response_is_returned(
 
 
 def test_schema_failure_retries_once_with_the_error_appended(
-    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedImage
+    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedDocument
 ) -> None:
     prompts_seen = install_responses(
         monkeypatch,
@@ -365,7 +366,7 @@ def test_schema_failure_retries_once_with_the_error_appended(
     dto = _runner.run_extraction(
         dto_type=PrescriptionDTO,
         instruction="INSTRUCTION",
-        image=image,
+        document=image,
         doc_type="prescription",
         use_cache=False,
     )
@@ -376,35 +377,35 @@ def test_schema_failure_retries_once_with_the_error_appended(
 
 
 def test_two_schema_failures_raise_and_return_nothing_partial(
-    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedImage
+    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedDocument
 ) -> None:
     install_responses(monkeypatch, ["{ bad", "{ also bad"])
     with pytest.raises(ExtractionError, match="both attempts"):
         _runner.run_extraction(
             dto_type=PrescriptionDTO,
             instruction="I",
-            image=image,
+            document=image,
             doc_type="prescription",
             use_cache=False,
         )
 
 
 def test_empty_response_is_retried_then_raises(
-    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedImage
+    monkeypatch: pytest.MonkeyPatch, image: preprocess.PreparedDocument
 ) -> None:
     install_responses(monkeypatch, ["", ""])
     with pytest.raises(ExtractionError):
         _runner.run_extraction(
             dto_type=PrescriptionDTO,
             instruction="I",
-            image=image,
+            document=image,
             doc_type="prescription",
             use_cache=False,
         )
 
 
 def test_cache_hit_skips_the_model_call(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, image: preprocess.PreparedImage
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, image: preprocess.PreparedDocument
 ) -> None:
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
     install_responses(monkeypatch, [json.dumps({"overall_legibility": 0.7, "items": []})])
@@ -412,7 +413,7 @@ def test_cache_hit_skips_the_model_call(
     kwargs: dict[str, Any] = {
         "dto_type": PrescriptionDTO,
         "instruction": "I",
-        "image": image,
+        "document": image,
         "doc_type": "prescription",
         "use_cache": True,
     }

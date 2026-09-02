@@ -24,7 +24,7 @@ from pydantic import BaseModel, ValidationError
 from rxconcile.config import settings
 from rxconcile.extract import cache
 from rxconcile.extract.errors import ExtractionError
-from rxconcile.extract.preprocess import PreparedImage
+from rxconcile.extract.preprocess import PreparedDocument
 from rxconcile.extract.prompts import PROMPT_VERSION, schema_retry_suffix
 from rxconcile.gcp import generate_content
 
@@ -151,6 +151,17 @@ def resolve_expiry(raw: str | None) -> tuple[date | None, str | None]:
     )
 
 
+#: A trailing clock time: "8:12:00AM", "19:34", "7:33:13 PM".
+_TIME_OF_DAY: Final[re.Pattern[str]] = re.compile(
+    r"[\s,]+\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AaPp]\.?[Mm]\.?)?\s*$"
+)
+
+
+def _without_time_of_day(text: str) -> str:
+    """Strip a trailing clock time, leaving the date alone."""
+    return _TIME_OF_DAY.sub("", text).strip()
+
+
 class ResolvedDate(NamedTuple):
     """A date, why it could not be read, and whether an order was assumed."""
 
@@ -179,11 +190,17 @@ def resolve_date(raw: str | None, *, order: str | None = None) -> ResolvedDate:
         origin, where a wrong date is worse than a missing one.
 
     An assumed date is still an assumption. It is never reported as read.
+
+    A trailing time of day is removed first. Lab reports print "14/3/2026
+    8:12:00AM", and matching formats against the whole string rejected a date
+    that is entirely legible and entirely unambiguous. Dropping a component this
+    system does not model is not guessing -- nothing about the DATE is being
+    inferred, and a string with no time is untouched.
     """
     chosen = order or settings.date_order
     if raw is None:
         return ResolvedDate(None)
-    text = raw.strip()
+    text = _without_time_of_day(raw.strip())
     if not text:
         return ResolvedDate(None)
 
@@ -267,12 +284,17 @@ def run_extraction(
     *,
     dto_type: type[DTO],
     instruction: str,
-    image: PreparedImage,
+    document: PreparedDocument,
     doc_type: str,
     model: str | None = None,
     use_cache: bool = True,
 ) -> DTO:
-    """Extract ``dto_type`` from ``image``, retrying once on a schema failure.
+    """Extract ``dto_type`` from ``document``, retrying once on a schema failure.
+
+    EVERY page goes into ONE call. A multi-page report is not N independent
+    extractions stitched together: a panel heading on page 4 governs a result on
+    page 5, and a model shown page 5 alone cannot know which panel it belongs
+    to. Sending the pages together is what preserves that.
 
     Raises:
         ExtractionError: both attempts failed validation, or the response was
@@ -280,7 +302,7 @@ def run_extraction(
     """
     chosen_model = model or settings.gemini_model
     key = cache.cache_key(
-        image_sha256=image.sha256,
+        image_sha256=document.sha256,
         doc_type=doc_type,
         model=chosen_model,
         prompt_version=PROMPT_VERSION,
@@ -304,10 +326,12 @@ def run_extraction(
     last_error: str | None = None
 
     for attempt in range(1, MAX_SCHEMA_ATTEMPTS + 1):
+        # One part per page, in document order, then the instruction.
         parts: list[types.PartUnionDict] = [
-            types.Part.from_bytes(data=image.data, mime_type=image.mime_type),
-            types.Part.from_text(text=prompt),
+            types.Part.from_bytes(data=page.data, mime_type=page.mime_type)
+            for page in document.pages
         ]
+        parts.append(types.Part.from_text(text=prompt))
         result = generate_content(parts, model=chosen_model, config=config)
         text = result.text.strip()
         if not text:
@@ -324,8 +348,9 @@ def run_extraction(
                 )
             else:
                 logger.info(
-                    "extracted %s from %s via %s on attempt %d",
-                    doc_type, image.sha256[:12], result.model, attempt,
+                    "extracted %s from %s (%d page(s)) via %s on attempt %d",
+                    doc_type, document.sha256[:12], document.page_count,
+                    result.model, attempt,
                 )
                 if use_cache:
                     payload: dict[str, Any] = dto.model_dump(mode="json")
@@ -347,7 +372,7 @@ def collect_runs(
     *,
     dto_type: type[DTO],
     instruction: str,
-    image: PreparedImage,
+    document: PreparedDocument,
     doc_type: str,
     runs: int,
     model: str | None = None,
@@ -366,7 +391,7 @@ def collect_runs(
         run_extraction(
             dto_type=dto_type,
             instruction=instruction,
-            image=image,
+            document=document,
             doc_type=doc_type,
             model=model,
             use_cache=False,
@@ -379,7 +404,7 @@ async def collect_runs_async(
     *,
     dto_type: type[DTO],
     instruction: str,
-    image: PreparedImage,
+    document: PreparedDocument,
     doc_type: str,
     runs: int,
     model: str | None = None,
@@ -398,7 +423,7 @@ async def collect_runs_async(
             run_extraction,
             dto_type=dto_type,
             instruction=instruction,
-            image=image,
+            document=document,
             doc_type=doc_type,
             model=model,
             use_cache=False,

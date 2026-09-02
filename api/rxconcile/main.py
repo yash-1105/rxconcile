@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
-import io
 import json
 import logging
 import time
@@ -310,30 +309,16 @@ async def vertex_unavailable_handler(
 # --------------------------------------------------------------------------
 
 
-def _render_pdf_first_page(data: bytes) -> bytes:
-    """Render page 1 of a PDF to PNG bytes."""
-    import pypdfium2
-
-    try:
-        document = pypdfium2.PdfDocument(io.BytesIO(data))
-        if len(document) == 0:
-            raise UnreadableImageError("PDF contains no pages")
-        page = document[0]
-        # 200 DPI keeps thin handwriting strokes legible without bloating the upload.
-        image = page.render(scale=200 / 72).to_pil()
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        return buffer.getvalue()
-    except UnreadableImageError:
-        raise
-    except Exception as exc:  # pypdfium2 raises a variety of native errors
-        raise UnreadableImageError(f"PDF could not be rendered: {exc}") from exc
-
-
 async def read_upload(upload: UploadFile) -> bytes:
-    """Validate and read an upload, rendering a PDF's first page to PNG.
+    """Validate and read an upload, returning it EXACTLY as it arrived.
 
     Size is checked **before** any model call, so an oversized file costs nothing.
+
+    A PDF is no longer flattened to its first page here. It used to be, and
+    every page after the first was discarded with nothing anywhere recording
+    the loss -- fine for a one-page bill, silently wrong for a two-page
+    prescription or a six-page report. Rendering is `prepare_document`'s job
+    now, and it renders all of them.
     """
     content_type = (upload.content_type or "").split(";")[0].strip().lower()
     if content_type not in ALLOWED_MIME_TYPES:
@@ -350,8 +335,6 @@ async def read_upload(upload: UploadFile) -> bytes:
     if len(data) > settings.max_upload_bytes:
         raise _too_large(len(data))
 
-    if content_type == PDF_MIME_TYPE:
-        return _render_pdf_first_page(data)
     return data
 
 

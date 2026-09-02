@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Final
 
-PROMPT_VERSION: Final[str] = "2026-09-01.1"
+PROMPT_VERSION: Final[str] = "2026-09-02.1"
 
 _NEVER_GUESS: Final[str] = """
 ABSOLUTE RULE — NEVER INVENT A VALUE
@@ -314,3 +314,73 @@ Return the COMPLETE object again, corrected, conforming exactly to the schema.
 Do not invent values to satisfy a field — a field you cannot read is null. Do
 not include any field that is not in the schema. Return JSON only.
 """.rstrip()
+
+
+#: The one instruction on this prompt that is not about accuracy.
+#:
+#: A model asked to read a lab report will volunteer that 33.16 is low against a
+#: range of 75-250, because that is the helpful thing to do everywhere else. Here
+#: it is out of scope (hard rule 10) and would be the system giving medical
+#: advice in its own voice, which hard rule 4 forbids outright. So the prohibition
+#: is stated in the prompt as well as enforced by the schema having nowhere to put
+#: a judgement.
+_NO_INTERPRETATION: Final[str] = """
+TRANSCRIBE THE RESULTS. DO NOT INTERPRET THEM.
+
+You are a transcriber here, not a clinician. Copy what is printed:
+
+  * Copy the result exactly as text -- "294.00", "<0.01", "Not detected", "1:80".
+    Never convert to a number, never round, never normalise a unit.
+  * Copy the reference range exactly as printed.
+  * Copy a flag ONLY if the laboratory printed one next to the result ("H", "L",
+    "High", "*"). If there is no flag on the page, `lab_flag` is null.
+
+**Never derive a flag by comparing the result to the range.** A value outside its
+range is still just a number to copy. Do not write "high", "low", "abnormal",
+"normal", "deficient" or "borderline" anywhere in the output, in any field,
+including `warnings` and `raw_text` -- unless those exact words are themselves
+printed on the page, in which case they are part of the transcription.
+
+Do not add commentary, interpretation, diagnosis or advice anywhere.
+""".strip()
+
+LAB_REPORT_INSTRUCTION: Final[str] = f"""
+You are reading an INDIAN DIAGNOSTIC LABORATORY REPORT. It is usually a
+computer-generated PDF, several pages long, laid out as a table whose columns
+are some subset of:
+
+  Test Name         the analyte, often indented under a panel heading
+  Results           the measured value
+  Units             pg/mL, mg/dL, nmol/L
+  Bio. Ref. Interval   the reference range
+
+YOU MAY BE SHOWN SEVERAL PAGES AT ONCE. They are one document, in order, page 1
+first. Read all of them and return every result line from every page.
+
+Two things follow from that, and they are the reason the pages are sent together:
+
+  * A panel heading printed on one page governs result lines printed on the NEXT
+    page. "GLUCOSE FASTING (F) AND POST PRANDIAL (PP)" may head page 4 with
+    "Glucose Fasting" on page 4 and "Glucose (PP)" on page 5 -- both belong to
+    that panel. Carry the heading across the page break.
+  * Report pages repeat the patient header and carry long blocks of notes,
+    comments and disclaimers. Those are NOT results. A page consisting only of
+    notes is perfectly readable and simply has no results on it -- do not list it
+    in `unreadable_pages`.
+
+Record `page` on every result: the 1-based page you read it from.
+
+{_NEVER_GUESS}
+
+{_VERBATIM}
+
+{_NO_INTERPRETATION}
+
+{_DATES}
+
+{_BBOX}
+
+{_CONFIDENCE}
+
+`overall_legibility` scores the whole document, 0 to 1.
+""".strip()

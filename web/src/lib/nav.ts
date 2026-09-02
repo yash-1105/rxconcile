@@ -5,6 +5,14 @@ export type View = 'overview' | 'queue' | 'new' | 'history' | 'dictionary' | 'ho
 export interface NavItem {
   view: View
   label: string
+  /**
+   * Per-role wording for the same screen.
+   *
+   * An admin *verifies* a claim; an employee *submits* one. It is the same
+   * route and the same upload form -- what differs is who is doing it and what
+   * happens next, and the label should say so.
+   */
+  labelByRole?: Partial<Record<Role, string>>
   /** Roles that see this entry at all. */
   roles: readonly Role[]
 }
@@ -20,14 +28,22 @@ export interface NavItem {
 export const NAV: readonly NavItem[] = [
   { view: 'overview', label: 'Overview', roles: ['employee', 'admin'] },
   { view: 'queue', label: 'Review queue', roles: ['admin'] },
-  { view: 'new', label: 'Verify', roles: ['employee', 'admin'] },
+  {
+    view: 'new',
+    label: 'Verify',
+    labelByRole: { employee: 'Submit claim' },
+    roles: ['employee', 'admin'],
+  },
   { view: 'history', label: 'History', roles: ['employee', 'admin'] },
   { view: 'dictionary', label: 'Medicine dictionary', roles: ['employee', 'admin'] },
   { view: 'how', label: 'How it works', roles: ['employee', 'admin'] },
 ]
 
 export function navItemsFor(role: Role): readonly NavItem[] {
-  return NAV.filter((item) => item.roles.includes(role))
+  return NAV.filter((item) => item.roles.includes(role)).map((item) => ({
+    ...item,
+    label: item.labelByRole?.[role] ?? item.label,
+  }))
 }
 
 /**

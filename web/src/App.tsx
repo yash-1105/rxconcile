@@ -330,7 +330,7 @@ export default function App() {
       {stage === 'upload' ? (
         <>
           <PageHeader
-            title="Verify"
+            title={reviewer ? 'Verify' : 'Submit claim'}
             lede="Add the documents for this claim. Prescriptions and pharmacy bills are required; lab documents are optional."
           />
 
@@ -399,7 +399,7 @@ export default function App() {
                 disabled={!readyToRun}
                 className="rounded bg-seal px-8 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-ink-300"
               >
-                Verify
+                {reviewer ? 'Verify' : 'Submit'}
               </button>
               {!readyToRun ? (
                 <span className="t-small text-muted">

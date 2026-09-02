@@ -255,6 +255,127 @@ class BilledTest(_Base):
     )
 
 
+class ReportedTest(_Base):
+    """One result line on a lab report.
+
+    **The result is a STRING and stays one.** Real reports print `<0.01`,
+    `Not detected`, `>1000`, `Negative`, `1:80` -- none of which is a float, and
+    coercing them either crashes or silently invents a number. The value is
+    transcribed as printed and never parsed into something arithmetic can be
+    done to, because nothing in this system is entitled to do arithmetic on it.
+
+    Hard rule 10 governs everything here: transcribe, never interpret. There is
+    deliberately no `is_abnormal`, no `severity`, no `direction` -- not because
+    they were forgotten, but because a field like that is where a clinical
+    judgement would first appear, and there must be nowhere to put one.
+    """
+
+    item_id: str = Field(
+        min_length=1,
+        description="Stable ID, e.g. 'reptest-01'. Report order, assigned in Python.",
+    )
+    raw_text: str = Field(description="The line exactly as printed. Display only.")
+    test_name: str | None = Field(default=None)
+    panel: str | None = Field(
+        default=None,
+        description="The heading this result sits under, e.g. 'SWASTHFIT VITAMIN "
+        "PACKAGE'. A panel routinely spans pages, which is why the whole report "
+        "is read in one call rather than page by page.",
+    )
+    result_value: str | None = Field(
+        default=None,
+        description="The result EXACTLY as printed, as text: '294.00', '<0.01', "
+        "'Not detected'. Never converted to a number.",
+    )
+    unit: str | None = Field(default=None, description="'pg/mL', 'mg/dL'. As printed.")
+    reference_range: str | None = Field(
+        default=None,
+        description="The interval as printed, e.g. '211.00 - 911.00'. Text, because "
+        "ranges are written as '<150', '70-100', 'Negative' and are not all intervals.",
+    )
+    lab_flag: str | None = Field(
+        default=None,
+        description="The flag THE LAB PRINTED -- 'H', 'L', 'High', an asterisk. "
+        "**Null when the lab printed none, and null is not 'normal'.** Copying a "
+        "printed flag is transcription; deriving one from the range would be "
+        "clinical judgement, which hard rule 10 forbids outright.",
+    )
+    page: int | None = Field(
+        default=None,
+        ge=1,
+        description="Which page of the report this was read from. Null when the "
+        "model did not say; a report is read whole, so this is provenance for a "
+        "human, never something the engine keys on.",
+    )
+    bbox: tuple[float, float, float, float] | None = Field(default=None)
+    agreement: dict[str, float] | None = Field(default=None)
+    confidence: float = Field(
+        ge=0.0, le=1.0, description="Model's own score. **Nothing may gate on this.**"
+    )
+
+
+class LabReport(_Base):
+    """A diagnostic report and everything transcribed from it.
+
+    The third document in the three-way model: the prescription ORDERS a test,
+    the lab bill CHARGES for it, the report PROVES it was performed. Comparing
+    those three is document reconciliation and says nothing about the patient,
+    which is the only thing this document is used for.
+    """
+
+    lab_name: str | None = Field(default=None)
+    report_number: str | None = Field(
+        default=None, description="Lab/accession number as printed."
+    )
+    patient_name: str | None = Field(default=None)
+    referred_by: str | None = Field(
+        default=None, description="Referring doctor, or 'Self' when the page says so."
+    )
+    collected_date: date | None = Field(
+        default=None,
+        description="ISO date the sample was taken. Null when unreadable, never guessed.",
+    )
+    reported_date: date | None = Field(
+        default=None, description="ISO date the result was issued. Null when unreadable."
+    )
+    tests: list[ReportedTest] = Field(default_factory=list)
+    page_count: int | None = Field(
+        default=None,
+        ge=1,
+        description="Pages rendered and sent to the extractor. Null for a record "
+        "written before this was measured -- which is not the same as one page.",
+    )
+    unreadable_pages: list[int] = Field(
+        default_factory=list,
+        description="Pages that rendered but yielded nothing. Reported per page so a "
+        "submitter is told WHICH page to re-photograph, not merely that the document "
+        "failed.",
+    )
+    overall_legibility: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="The MODEL'S OWN score. **Nothing may gate on this.**",
+    )
+    run_item_counts: list[int] = Field(default_factory=list)
+    unstable_lines: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _item_ids_unique(self) -> Self:
+        duplicated = _duplicates([test.item_id for test in self.tests])
+        if duplicated:
+            raise ValueError(
+                f"duplicate item_id within one lab report: {duplicated}. "
+                "item_id must be unique within its parent document."
+            )
+        return self
+
+    @property
+    def item_ids(self) -> frozenset[str]:
+        return frozenset(test.item_id for test in self.tests)
+
+
 class Prescription(_Base):
     """A prescription document and everything extracted from it."""
 

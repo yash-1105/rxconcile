@@ -5,6 +5,7 @@ from rxconcile.models.schema import (
     BilledTest,
     CanonicalMatch,
     Finding,
+    LabReport,
     MatchedPair,
     PharmacyBill,
     PrescribedItem,
@@ -14,6 +15,7 @@ from rxconcile.models.schema import (
     ReimbursementCategory,
     ReimbursementLine,
     ReimbursementSummary,
+    ReportedTest,
     ReviewSummary,
     Severity,
     Submission,
@@ -21,6 +23,8 @@ from rxconcile.models.schema import (
 )
 
 __all__ = [
+    "LabReport",
+    "ReportedTest",
     "BilledItem",
     "CanonicalMatch",
     "BilledTest",
