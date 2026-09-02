@@ -145,3 +145,41 @@ class EmployeeAllowance(SQLModel, table=True):
         default=Decimal("12000.00"), max_digits=12, decimal_places=2,
         description="The yearly limit. Configurable per employee.",
     )
+
+
+class ScanPage(SQLModel, table=True):
+    """One rendered page of one uploaded document.
+
+    A row per page, not a column per document. The two BLOB columns on
+    `ScanRecord` could hold exactly one page each of exactly two documents,
+    which was the right shape while a PDF meant its own first page and lab
+    documents were never kept. Neither is true now: four documents arrive, any
+    of them can be a multi-page PDF, and a reviewer deciding a rejection needs
+    to look at the page the finding came from.
+
+    Stretching the old columns would have meant a naming convention encoding
+    page numbers into column names, and a schema change every time a document
+    type was added. A table costs one join and grows in the direction the data
+    actually grows.
+
+    The PREPROCESSED page is stored, exactly as the model saw it. Bounding boxes
+    are normalised against these dimensions, so a highlight only lands correctly
+    on this image and not on the original upload.
+    """
+
+    __tablename__ = "scan_page"
+
+    id: int | None = Field(default=None, primary_key=True)
+    scan_id: int = Field(foreign_key="scan_record.id", index=True)
+    #: Which document. Matches `readability.DocumentSlot`, deliberately: a
+    #: reviewer looking at a page and a submitter reading why it was unreadable
+    #: are talking about the same thing.
+    slot: str = Field(index=True)
+    #: 1-based, in document order.
+    page_no: int = Field(default=1)
+    data: bytes
+    media_type: str = Field(default="image/jpeg")
+    #: Kept so the viewer can size a page before the bytes arrive, and so a
+    #: bounding box can be resolved without decoding the image.
+    width: int = Field(default=0)
+    height: int = Field(default=0)

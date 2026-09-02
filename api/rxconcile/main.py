@@ -44,7 +44,7 @@ from rxconcile.extract.errors import (
     ImageTooLargeError,
     UnreadableImageError,
 )
-from rxconcile.extract.preprocess import prepare_image
+from rxconcile.extract.preprocess import prepare_document
 from rxconcile.gcp import health_snapshot
 from rxconcile.gcp.client import resolve_credentials
 from rxconcile.gcp.errors import ModelResolutionError, VertexUnavailableError
@@ -66,11 +66,19 @@ from rxconcile.reconcile.history import (
     PriorScan,
 )
 from rxconcile.reconcile.readability import (
+    SLOT_LABEL,
     DocumentReadability,
     readability_of,
     unavailable,
 )
-from rxconcile.store import EmployeeAllowance, ScanRecord, engine, get_session, summarise
+from rxconcile.store import (
+    EmployeeAllowance,
+    ScanPage,
+    ScanRecord,
+    engine,
+    get_session,
+    summarise,
+)
 from rxconcile.store.allowance import AllowanceView, view_for, year_label
 from rxconcile.store.review import complete_review, open_review, record_decisions
 
@@ -720,20 +728,54 @@ def _summary(record: ScanRecord) -> ScanSummary:
 
 
 def _prepared(raw: bytes | None) -> bytes | None:
-    """Preprocess a page the same way extraction did, or give up quietly.
+    """Page 1 of a document, for the two legacy image columns.
 
-    The PREPROCESSED bytes are what gets stored: bounding boxes are normalised
-    against those dimensions, so a highlight only lands correctly on the image
-    the model actually saw. A page that will not preprocess must never cost a
-    caller their saved result, so failure returns None.
+    Those columns predate multi-page storage and are kept so records written
+    before `scan_page` existed still open. New pages go to `scan_page`; this
+    keeps the first page where the old readers look for it.
     """
     if not raw:
         return None
     try:
-        return prepare_image(raw).data
+        return prepare_document(raw).first.data
     except Exception:  # noqa: BLE001 - storing pages is best-effort
         logger.warning("could not preprocess a page for storage", exc_info=True)
         return None
+
+
+def _store_pages(
+    session: Session, scan_id: int, documents: dict[str, bytes | None]
+) -> int:
+    """Persist every rendered page of every supplied document.
+
+    Best-effort per document: a page that will not render must never cost a
+    submitter their saved claim, so a failure is logged and the rest proceed.
+    What is NOT done is storing a partial document silently -- if a document
+    renders at all, all of its pages are stored together.
+    """
+    stored = 0
+    for slot, raw in documents.items():
+        if not raw:
+            continue
+        try:
+            prepared = prepare_document(raw)
+        except Exception:  # noqa: BLE001 - storing pages is best-effort
+            logger.warning("could not render %s for storage", slot, exc_info=True)
+            continue
+        for number, page in enumerate(prepared.pages, start=1):
+            session.add(
+                ScanPage(
+                    scan_id=scan_id,
+                    slot=slot,
+                    page_no=number,
+                    data=page.data,
+                    media_type=page.mime_type,
+                    width=page.width,
+                    height=page.height,
+                )
+            )
+            stored += 1
+    return stored
 
 
 @app.post("/api/scans")
@@ -741,6 +783,8 @@ async def create_scan(
     payload_json: str = Form(..., alias="payload"),
     prescription: UploadFile | None = File(default=None),
     bill: UploadFile | None = File(default=None),
+    lab_report: UploadFile | None = File(default=None),
+    lab_bill: UploadFile | None = File(default=None),
     sample_id: str | None = Form(default=None),
     user: DemoUser = Depends(current_user),
     session: Session = Depends(get_session),
@@ -764,6 +808,8 @@ async def create_scan(
 
     rx_bytes = await prescription.read() if prescription is not None else None
     bill_bytes = await bill.read() if bill is not None else None
+    report_bytes = await lab_report.read() if lab_report is not None else None
+    lab_bill_bytes = await lab_bill.read() if lab_bill is not None else None
     if sample_id and not (rx_bytes or bill_bytes):
         sample = next((s for s in SAMPLES if s.sample_id == sample_id), None)
         if sample is not None:
@@ -802,6 +848,17 @@ async def create_scan(
     session.add(record)
     session.commit()
     session.refresh(record)
+
+    # After the commit, because a page row needs the scan's id.
+    pages = _store_pages(session, record.id or 0, {
+        "prescription": rx_bytes,
+        "pharmacy_bill": bill_bytes,
+        "lab_report": report_bytes,
+        "lab_bill": lab_bill_bytes,
+    })
+    if pages:
+        session.commit()
+        logger.info("stored %d page(s) for scan %s", pages, record.id)
     return _summary(record)
 
 
@@ -1133,6 +1190,113 @@ def _owned_scan(scan_id: int, user: DemoUser, session: Session) -> ScanRecord:
     return record
 
 
+#: Slot labels keyed by plain str. `SLOT_LABEL` is keyed by the DocumentSlot
+#: Literal, and a slot read back out of the database is a str -- narrowing it
+#: would mean trusting stored data to still be one of the four, which is exactly
+#: the assumption a schema change breaks.
+_SLOT_LABELS: Final[dict[str, str]] = {str(k): v for k, v in SLOT_LABEL.items()}
+
+
+class ScanPageRef(BaseModel):
+    """One stored page, without its bytes."""
+
+    slot: str
+    label: str
+    page_no: int
+    width: int
+    height: int
+
+
+class ScanPages(BaseModel):
+    """Every stored page of every document on one scan."""
+
+    pages: list[ScanPageRef] = Field(default_factory=list)
+    #: True when this scan predates per-page storage. The viewer then says the
+    #: pages were not kept, rather than showing an empty document as though the
+    #: upload had been blank.
+    legacy_only: bool = False
+
+
+@app.get("/api/scans/{scan_id}/pages")
+async def scan_pages(
+    scan_id: int,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> ScanPages:
+    """What pages are stored for this scan.
+
+    Same access rule as the images themselves: a submitter sees their own
+    documents, a reviewer sees any. Neither is told anything about the
+    comparison here -- this is a list of pages.
+    """
+    record = _owned_scan(scan_id, user, session)
+    rows = session.exec(
+        select(ScanPage)
+        .where(ScanPage.scan_id == scan_id)
+        .order_by(col(ScanPage.slot), col(ScanPage.page_no))
+    ).all()
+    if rows:
+        return ScanPages(
+            pages=[
+                ScanPageRef(
+                    slot=row.slot,
+                    label=_SLOT_LABELS.get(row.slot, row.slot),
+                    page_no=row.page_no,
+                    width=row.width,
+                    height=row.height,
+                )
+                for row in rows
+            ]
+        )
+
+    # Nothing in `scan_page`. A record written before it existed may still have
+    # the two legacy columns, which are page 1 of two documents and nothing else.
+    legacy = [
+        ScanPageRef(slot=slot, label=_SLOT_LABELS.get(slot, slot), page_no=1, width=0, height=0)
+        for slot, data in (
+            ("prescription", record.prescription_image),
+            ("pharmacy_bill", record.bill_image),
+        )
+        if data is not None
+    ]
+    return ScanPages(pages=legacy, legacy_only=True)
+
+
+@app.get("/api/scans/{scan_id}/page/{slot}/{page_no}")
+async def scan_page_image(
+    scan_id: int,
+    slot: str,
+    page_no: int,
+    user: DemoUser = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> Response:
+    """One stored page, as the extractor saw it after preprocessing."""
+    record = _owned_scan(scan_id, user, session)
+    row = session.exec(
+        select(ScanPage)
+        .where(ScanPage.scan_id == scan_id)
+        .where(ScanPage.slot == slot)
+        .where(ScanPage.page_no == page_no)
+    ).first()
+    if row is not None:
+        return Response(content=row.data, media_type=row.media_type)
+
+    # Fall back to the legacy columns, which only ever held page 1.
+    legacy = {
+        "prescription": record.prescription_image,
+        "pharmacy_bill": record.bill_image,
+    }.get(slot)
+    if page_no == 1 and legacy is not None:
+        return Response(content=legacy, media_type=record.image_media_type)
+
+    raise ApiError(
+        status_code=404,
+        error_code="PAGE_NOT_STORED",
+        message=f"Page {page_no} of the {slot} was not stored with this scan.",
+        hint="Scans recorded before source pages were kept have no image to show.",
+    )
+
+
 @app.get("/api/scans/{scan_id}/image/{which}")
 async def scan_image(
     scan_id: int,
@@ -1142,8 +1306,14 @@ async def scan_image(
 ) -> Response:
     """A stored source page, as the extractor saw it after preprocessing."""
     record = _owned_scan(scan_id, user, session)
-    data = record.prescription_image if which == "prescription" else record.bill_image
-    if which not in {"prescription", "bill"} or data is None:
+    # A dict, not a ternary. The ternary returned the BILL image for any slot
+    # that was not "prescription", and only the membership guard below stopped
+    # `which=lab_report` serving somebody the wrong document.
+    data = {
+        "prescription": record.prescription_image,
+        "bill": record.bill_image,
+    }.get(which)
+    if data is None:
         raise ApiError(
             status_code=404,
             error_code="IMAGE_NOT_STORED",

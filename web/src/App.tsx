@@ -218,7 +218,13 @@ export default function App() {
       labReport: string
       labBill: string
     },
-    pages: { prescription?: File | null; bill?: File | null; sampleId?: string | null },
+    pages: {
+      prescription?: File | null
+      bill?: File | null
+      labReport?: File | null
+      labBill?: File | null
+      sampleId?: string | null
+    },
   ) => {
     setError(null)
     setReadOnly(false)
@@ -297,7 +303,13 @@ export default function App() {
         labReport: docs.labReport?.name ?? '',
         labBill: docs.labBill?.name ?? '',
       },
-      { prescription: prescriptionFile, bill: billFile },
+      // All four are stored now, so a reviewer can look at any of them.
+      {
+        prescription: prescriptionFile,
+        bill: billFile,
+        labReport: docs.labReport,
+        labBill: docs.labBill,
+      },
     )
   }
 

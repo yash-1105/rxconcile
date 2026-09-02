@@ -1,4 +1,5 @@
 import type {
+  ScanPages,
   AllowanceView,
   ApiErrorBody,
   DemoSession,
@@ -203,12 +204,21 @@ export interface ScanCreate {
  */
 export async function saveScan(
   payload: ScanCreate,
-  pages?: { prescription?: File | null; bill?: File | null; sampleId?: string | null },
+  pages?: {
+    prescription?: File | null
+    bill?: File | null
+    labReport?: File | null
+    labBill?: File | null
+    sampleId?: string | null
+  },
 ): Promise<ScanSummary> {
   const form = new FormData()
   form.append('payload', JSON.stringify(payload))
   if (pages?.prescription) form.append('prescription', pages.prescription)
   if (pages?.bill) form.append('bill', pages.bill)
+  // All four are stored now, not just the two the reviewer used to see.
+  if (pages?.labReport) form.append('lab_report', pages.labReport)
+  if (pages?.labBill) form.append('lab_bill', pages.labBill)
   if (pages?.sampleId) form.append('sample_id', pages.sampleId)
   return unwrap<ScanSummary>(
     await fetch(`${BASE_URL}/api/scans`, {
@@ -249,6 +259,33 @@ export async function downloadExport(
  * `<img src>` cannot carry one. Returns null when the scan predates stored
  * pages, which is a normal outcome, not an error.
  */
+/** What pages are stored for a scan: slot, page number, dimensions. */
+export async function fetchScanPages(scanId: number): Promise<ScanPages | null> {
+  const response = await fetch(`${BASE_URL}/api/scans/${scanId}/pages`, {
+    headers: authHeaders(),
+  })
+  if (!response.ok) return null
+  return (await response.json()) as ScanPages
+}
+
+/**
+ * One stored page as an object URL.
+ *
+ * Fetched rather than linked: the endpoint needs the bearer token and an
+ * `<img src>` cannot carry one.
+ */
+export async function fetchScanPage(
+  scanId: number,
+  slot: string,
+  pageNo: number,
+): Promise<string | null> {
+  const response = await fetch(`${BASE_URL}/api/scans/${scanId}/page/${slot}/${pageNo}`, {
+    headers: authHeaders(),
+  })
+  if (!response.ok) return null
+  return URL.createObjectURL(await response.blob())
+}
+
 export async function fetchScanImage(
   scanId: number,
   which: 'prescription' | 'bill',

@@ -24,6 +24,7 @@ import {
 } from '../lib/grouping'
 import type { DocSide, Finding, ReconciliationResult } from '../types/api'
 import { AuditPanel } from './Audit'
+import { DocumentViewer } from './DocumentViewer'
 import { UNCHECKED_CODES } from '../lib/rowStatus'
 import { STATUS_LABEL } from '../lib/spineStatus'
 import { SpineLegend, SpineMark, type SpineState } from './Spine'
@@ -514,6 +515,10 @@ export function Result({
           }}
         />
       </div>
+
+      {/* The uploaded pages themselves. Folded away by default: a reviewer
+          wants them when deciding a rejection, not on every glance. */}
+      <DocumentViewer scanId={scanId} />
 
       {/* 2 — ANALYSIS, folded away. The tiles and tables answer the question;
           this is for the reader who wants the reasoning. */}

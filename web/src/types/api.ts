@@ -576,3 +576,23 @@ export interface AllowanceView {
   scans_counted: number
   balance: string
 }
+
+
+export interface ScanPageRef {
+  slot: string
+  label: string
+  page_no: number
+  width: number
+  height: number
+}
+
+export interface ScanPages {
+  pages: ScanPageRef[]
+  /**
+   * True when the scan predates per-page storage.
+   *
+   * The viewer then says the pages were not kept, rather than rendering an
+   * empty document as though the upload had been blank.
+   */
+  legacy_only: boolean
+}
