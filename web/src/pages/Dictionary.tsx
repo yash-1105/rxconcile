@@ -80,10 +80,9 @@ export function Dictionary() {
     <>
       <PageHeader
         title="Medicine dictionary"
-        lede="The lists the engine matches against: brands to salts, so a generic substitution is recognised rather than reported as a missing item, and lab panels to the analytes a bill itemises them into."
+        lede="Medicine brands, their salts, and the lab panels used for matching."
       />
 
-      <p className="t-small text-muted">Reference data for demonstration.</p>
       {error ? <p className="t-small mt-6 text-flag">{error}</p> : null}
 
       {data ? (

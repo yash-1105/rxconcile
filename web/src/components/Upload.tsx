@@ -37,20 +37,24 @@ export function DropZone({
 
   // A PDF has to be rendered before it can be shown, so it arrives later than
   // an image preview does. Null until it lands, and null forever if it fails.
-  const [pdfPreview, setPdfPreview] = useState<string | null>(null)
+  //
+  // The rendered page is stored WITH the file it came from rather than cleared
+  // at the top of the effect. Clearing there sets state synchronously during a
+  // render pass and starts another one; pairing it instead means a stale
+  // thumbnail is simply not matched, which is the same guarantee for free.
+  const [pdfPreview, setPdfPreview] = useState<{ file: File; url: string } | null>(null)
   useEffect(() => {
-    setPdfPreview(null)
     if (!file || file.type !== 'application/pdf') return
     let cancelled = false
-    void pdfFirstPageThumbnail(file).then((thumb) => {
-      if (!cancelled) setPdfPreview(thumb)
+    void pdfFirstPageThumbnail(file).then((url) => {
+      if (!cancelled && url) setPdfPreview({ file, url })
     })
     return () => {
       cancelled = true
     }
   }, [file])
 
-  const shown = preview ?? pdfPreview
+  const shown = preview ?? (file && pdfPreview?.file === file ? pdfPreview.url : null)
 
   const accept = useCallback(
     (candidate: File | undefined) => {

@@ -38,8 +38,7 @@ export function Login({ onSignIn }: { onSignIn: (session: Session) => void }) {
           <section className="flex flex-col justify-center md:pr-12">
             <h1 className="t-display text-ink">rxconcile</h1>
             <p className="t-body mt-3 max-w-sm text-muted">
-              Compares a pharmacy bill against the prescription it was dispensed from, and
-              reports exactly where the two documents disagree.
+              Medical claim verification.
             </p>
           </section>
 

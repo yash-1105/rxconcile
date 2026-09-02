@@ -3,19 +3,20 @@
  *
  * Written for someone who will never open the code. No extraction runs, no
  * confidence scores, no agreement ratios — the five things that happen, in
- * order, and what each one is for.
+ * order. The sentence that used to sit under each stage was removed in a copy
+ * pass; the diagram is the numbered sequence and nothing more.
  *
  * Laid out as a row on a wide screen and a column on a narrow one, with the
  * connector rotating to match. Every stage keeps its number, so the sequence
  * survives even when the arrows do not.
  */
 
-const STAGES: readonly { title: string; body: string }[] = [
-  { title: 'Upload', body: 'A prescription and the bill it was dispensed against.' },
-  { title: 'Read', body: 'Both pages are turned into structured data — names, strengths, quantities, prices.' },
-  { title: 'Match', body: 'Each billed item is paired with the prescribed item it corresponds to.' },
-  { title: 'Check', body: 'Fixed rules compare the pairs and the totals, and record what disagrees.' },
-  { title: 'Report', body: 'A plain-language result, with the evidence for every finding.' },
+const STAGES: readonly { title: string }[] = [
+  { title: 'Upload' },
+  { title: 'Read' },
+  { title: 'Match' },
+  { title: 'Check' },
+  { title: 'Report' },
 ]
 
 function Arrow({ className = '' }: { className?: string }) {
@@ -42,7 +43,6 @@ export function Pipeline() {
           <div className="flex-1 rounded border border-ink-200 bg-surface px-5 py-4">
             <span className="t-micro text-muted">Step {index + 1}</span>
             <h3 className="t-title mt-1 text-ink">{stage.title}</h3>
-            <p className="t-small mt-1.5 text-muted">{stage.body}</p>
           </div>
           {index < STAGES.length - 1 ? (
             <span className="flex items-center justify-center px-2" aria-hidden="true">

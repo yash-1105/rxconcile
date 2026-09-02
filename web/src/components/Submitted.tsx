@@ -435,11 +435,6 @@ export function Submitted({
       {submission.content ? (
         <section>
           <h2 className="t-title text-ink">What we read off your documents</h2>
-          <p className="t-small mt-1 max-w-2xl text-muted">
-            Everything below came off the pages you uploaded. Check it against the paper —
-            if something was misread, a clearer photo will fix it. Nothing here compares
-            one document to another; that is done at review.
-          </p>
           <div className="mt-3">
             <ExtractedSections content={submission.content} />
           </div>
@@ -455,7 +450,7 @@ export function Submitted({
               {submission.certified_at
                 ? ` on ${new Date(submission.certified_at).toLocaleString()}`
                 : ''}
-              . Nothing further is needed from you.
+              .
             </p>
             <div className="mt-4">
               <button
