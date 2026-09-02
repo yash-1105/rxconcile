@@ -25,6 +25,7 @@ import {
   type MedRow,
   type RowFilter,
   type TestRow,
+  itemLabel,
   testLabel,
 } from '../lib/rows'
 import type {
@@ -602,12 +603,12 @@ export function MedicinesTable({
                 <RemarkCell text={remark(row.codes, row.findings)} />
                 <td className="border-l border-ink-200 px-4 py-5">
                   <span className={at('drug')}>
-                    <Val muted={quiet}>{row.prescribed?.drug_name}</Val>
+                    <Val muted={quiet}>{itemLabel(row.prescribed)}</Val>
                   </span>
                 </td>
                 <td className="px-4 py-5">
                   <span className={at('drug')}>
-                    <Val muted={quiet}>{row.billed?.drug_name}</Val>
+                    <Val muted={quiet}>{itemLabel(row.billed)}</Val>
                   </span>
                 </td>
                 <td className="max-w-[13rem] border-l border-ink-200 px-4 py-5 break-words">

@@ -268,6 +268,16 @@ export function medicineRowsOf(result: ReconciliationResult): MedRow[] {
  * `raw_text` is never nulled. It is the line as it appears on the document, so
  * it is always the honest fallback.
  */
+export function itemLabel(
+  item: { drug_name?: string | null; raw_text?: string | null } | null | undefined,
+): string | null {
+  if (!item) return null
+  const name = item.drug_name?.trim()
+  if (name) return name
+  const raw = item.raw_text?.trim()
+  return raw || null
+}
+
 export function testLabel(
   test: { test_name?: string | null; raw_text?: string | null } | null | undefined,
 ): string | null {

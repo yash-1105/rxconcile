@@ -58,6 +58,20 @@ TINT: Final[dict[RowState, str]] = {
 }
 
 
+def item_label(item: PrescribedItem | BilledItem | None) -> str | None:
+    """The medicines mirror of `test_label`. Same rule, same reason.
+
+    A prescribed line the extractor read but could not name -- "Lifestyle
+    modification" is not a drug -- rendered as an em-dash in every column.
+    """
+    if item is None:
+        return None
+    name = (item.drug_name or "").strip()
+    if name:
+        return name
+    return (item.raw_text or "").strip() or None
+
+
 def test_label(test: PrescribedTest | BilledTest | None) -> str | None:
     """What to show for a test line. Mirrors `testLabel` in web/src/lib/rows.ts.
 
