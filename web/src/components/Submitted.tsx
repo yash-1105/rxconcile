@@ -17,7 +17,6 @@ import { useState } from 'react'
 import { certifyScan } from '../api/client'
 import { DOCUMENT_SLOTS } from '../lib/documents'
 import type {
-  DocumentReadability,
   EmployeeScanDetail,
   ExtractedContent,
 } from '../types/api'
@@ -28,14 +27,6 @@ const STATUS_LABEL: Record<string, string> = {
   reviewed: 'Reviewed',
 }
 
-/** How a readability state is drawn. Grey where nothing is claimed. */
-const STATE_STYLE: Record<DocumentReadability['state'], { tint: string; word: string }> = {
-  read: { tint: 'bg-tint-clean', word: 'Read' },
-  partly_unreadable: { tint: 'bg-tint-substitution', word: 'Partly unreadable' },
-  unreadable: { tint: 'bg-tint-problem', word: 'Could not read' },
-  not_assessed: { tint: 'bg-tint-neutral', word: 'Not read' },
-  not_supplied: { tint: 'bg-tint-neutral', word: 'Not uploaded' },
-}
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -46,18 +37,6 @@ function Field({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ReadabilityRow({ doc }: { doc: DocumentReadability }) {
-  const style = STATE_STYLE[doc.state]
-  return (
-    <li className={`rounded-lg px-4 py-3 ${style.tint}`}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="t-body font-medium text-ink">{doc.label}</span>
-        <span className="t-colhead text-ink">{style.word}</span>
-      </div>
-      {doc.message ? <p className="t-small mt-1 text-muted">{doc.message}</p> : null}
-    </li>
-  )
-}
 
 
 /**
@@ -341,12 +320,6 @@ export function Submitted({
   const [confirmed, setConfirmed] = useState(false)
 
   const certified = submission.certified_by_employee
-  // Only the documents that were actually uploaded. A slot nobody filled is
-  // not a problem and does not need a line on this screen.
-  const documents = submission.readability.filter((doc) => doc.supplied)
-  const needsAttention = documents.filter(
-    (doc) => doc.state === 'unreadable' || doc.state === 'partly_unreadable',
-  )
 
   const certify = async () => {
     setSaving(true)
@@ -387,9 +360,7 @@ export function Submitted({
           </h1>
           <p className="t-body mt-2 max-w-2xl text-muted">
             {certified
-              ? 'Your claim is with the reviewer. You will not see the comparison — ' +
-                'that is their job — but anything we could not read off your documents ' +
-                'is below, while you can still do something about it.'
+              ? 'Your claim is with the reviewer.'
               : 'Your documents have been read. Check what we made of them below, then ' +
                 'confirm and submit at the foot of the page.'}
           </p>
@@ -460,21 +431,6 @@ export function Submitted({
           </p>
         </section>
       ) : null}
-
-      <section>
-        <h2 className="t-title text-ink">What we could read</h2>
-        <p className="t-small mt-1 max-w-2xl text-muted">
-          {needsAttention.length > 0
-            ? 'Please replace the documents marked below. A claim reviewed from an ' +
-              'unreadable photo has to come back to you anyway.'
-            : 'Nothing here needs a better photograph.'}
-        </p>
-        <ul className="mt-3 space-y-2">
-          {documents.map((doc) => (
-            <ReadabilityRow key={doc.slot} doc={doc} />
-          ))}
-        </ul>
-      </section>
 
       {submission.content ? (
         <section>

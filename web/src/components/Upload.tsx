@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { pdfFirstPageThumbnail } from '../lib/pdfThumbnail'
 import { CONDITIONS, DOCUMENT_SLOTS, type DocumentSlot } from '../lib/documents'
 import type { SampleSummary } from '../types/api'
 
@@ -23,7 +24,8 @@ export function DropZone({
   const [rejected, setRejected] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Derived during render; the effect exists only to release the object URL.
+  // Images preview straight from an object URL. Derived during render; the
+  // effect exists only to release it.
   const preview = useMemo(
     () => (file && file.type !== 'application/pdf' ? URL.createObjectURL(file) : null),
     [file],
@@ -32,6 +34,23 @@ export function DropZone({
     if (!preview) return
     return () => URL.revokeObjectURL(preview)
   }, [preview])
+
+  // A PDF has to be rendered before it can be shown, so it arrives later than
+  // an image preview does. Null until it lands, and null forever if it fails.
+  const [pdfPreview, setPdfPreview] = useState<string | null>(null)
+  useEffect(() => {
+    setPdfPreview(null)
+    if (!file || file.type !== 'application/pdf') return
+    let cancelled = false
+    void pdfFirstPageThumbnail(file).then((thumb) => {
+      if (!cancelled) setPdfPreview(thumb)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [file])
+
+  const shown = preview ?? pdfPreview
 
   const accept = useCallback(
     (candidate: File | undefined) => {
@@ -75,15 +94,10 @@ export function DropZone({
           </button>
         </div>
         <div className="mt-3 flex h-40 items-center justify-center overflow-hidden rounded border border-ink-200 bg-ink-50">
-          {preview ? (
-            <img src={preview} alt={`${label} preview`} className="max-h-40 object-contain" />
+          {shown ? (
+            <img src={shown} alt={`${label} preview`} className="max-h-40 object-contain" />
           ) : (
-            // Was "page 1 will be used", which stopped being true when
-            // multi-page extraction shipped. No page count is shown because
-            // reading one here would mean parsing the PDF in the browser, and a
-            // wrong count is worse than none — the server reports the real
-            // figure back on the confirmation screen.
-            <span className="font-mono text-xs text-ink-500">PDF · every page will be read</span>
+            <span className="font-mono text-xs text-ink-500" />
           )}
         </div>
       </div>
