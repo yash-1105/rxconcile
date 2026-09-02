@@ -502,13 +502,18 @@ export function remark(codes: string[], findings: Finding[]): string {
 const SOFTENED_TEST_NOT_BILLED: Record<string, string> = {
   no_lab_bill: 'Not assessed — no lab bill supplied',
   lab_bill_unreadable: 'Not assessed — no test line on the lab bill could be read',
-  unidentified_billed_lines: 'Not assessed — some billed lab lines could not be read',
+  // "identified", not "read": a line may be unidentified because the photo was
+  // poor or because the text would not parse, and nothing here knows which.
+  unidentified_billed_lines: 'Not assessed — some billed lab lines could not be identified',
 }
 
 const SOFTENED_TEST_NOT_PRESCRIBED: Record<string, string> = {
   orders_unreadable: 'Billed — the ordered tests could not be read',
   orders_unconfirmed: 'Billed — no investigations section could be confirmed',
-  unidentified_orders: 'Billed — some ordered tests could not be read',
+  // NOT "could not be read". This fires when an ordered test's name did not
+  // match our reference data — the page was read fine. Different failure,
+  // different remedy: a sharper photo fixes one, a better dictionary the other.
+  unidentified_orders: 'Billed — some ordered tests were not recognised',
 }
 
 export function testRemark(codes: string[], findings: Finding[]): string {

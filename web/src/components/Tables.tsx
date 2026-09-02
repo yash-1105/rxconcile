@@ -25,6 +25,7 @@ import {
   type MedRow,
   type RowFilter,
   type TestRow,
+  testLabel,
 } from '../lib/rows'
 import type {
   BilledItem,
@@ -840,11 +841,11 @@ export function LabTestsTable({
                       <span className="t-data text-muted">{row.coveredBy}</span>
                     </span>
                   ) : (
-                    <Val muted={quiet}>{row.prescribed?.test_name}</Val>
+                    <Val muted={quiet}>{testLabel(row.prescribed)}</Val>
                   )}
                 </td>
                 <td className="px-4 py-5">
-                  <Val muted={quiet}>{row.billed?.test_name}</Val>
+                  <Val muted={quiet}>{testLabel(row.billed)}</Val>
                 </td>
                 <td className="border-l border-ink-200 px-4 py-5">
                   <Val muted>{panelOf(row)}</Val>

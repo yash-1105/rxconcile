@@ -58,6 +58,22 @@ TINT: Final[dict[RowState, str]] = {
 }
 
 
+def test_label(test: PrescribedTest | BilledTest | None) -> str | None:
+    """What to show for a test line. Mirrors `testLabel` in web/src/lib/rows.ts.
+
+    `test_name` is null whenever the extractor read the line but could not
+    isolate a name from it. `raw_text` is never nulled, so it is always the
+    honest fallback -- without it a perfectly readable line renders as an
+    em-dash in every column.
+    """
+    if test is None:
+        return None
+    name = (test.test_name or "").strip()
+    if name:
+        return name
+    return (test.raw_text or "").strip() or None
+
+
 def status_of(findings: list[Finding], *, paired: bool) -> tuple[RowState, bool]:
     """A row's state and whether a check on it could not be concluded.
 
@@ -194,7 +210,7 @@ def test_rows(result: ReconciliationResult) -> list[TestRow]:
     covering: dict[str, str] = {}
     for pair in result.matched_tests:
         ordered = rx.get(pair.prescribed_id)
-        name = ordered.test_name if ordered else None
+        name = test_label(ordered)
         for billed_id in pair.covers:
             if name:
                 covering[billed_id] = name

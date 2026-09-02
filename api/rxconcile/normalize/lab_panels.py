@@ -141,6 +141,13 @@ _REPORT_FORMS: Final[dict[str, str]] = {
     "plasma glucose fasting": "Glucose Fasting",
     "fbs": "Glucose Fasting",
     "glucose pp": "Glucose Post Prandial",
+    # Exact forms so a line naming ONE half does not fuzzy-match the pair.
+    # An order for PP alone must not read as ordering fasting too, or the
+    # unbilled half becomes a TEST_NOT_BILLED nobody ordered.
+    "plasma glucose pp": "Glucose Post Prandial",
+    "plasma glucose f": "Glucose Fasting",
+    "blood sugar pp": "Glucose Post Prandial",
+    "blood sugar f": "Glucose Fasting",
     "glucose post prandial": "Glucose Post Prandial",
     "post prandial glucose": "Glucose Post Prandial",
     "ppbs": "Glucose Post Prandial",
@@ -229,6 +236,28 @@ TEST_ALIASES: Final[dict[str, str]] = {
     "25 oh vit d": "Vitamin D",
 }
 
+#: A trailing instruction, not part of the test's name.
+#:
+#: A prescriber writes WHAT to test and WHEN in one line: "Plasma Glucose F/PP
+#: after a month". The timing belongs in `urgency`; leaving it in the name means
+#: the name never matches anything, and an ordered test that resolves to nothing
+#: takes the whole ordered-versus-billed comparison down with it.
+#:
+#: Anchored to the END and limited to timing words, so nothing that could be
+#: part of a test name is ever removed.
+_TRAILING_INSTRUCTION: Final[re.Pattern[str]] = re.compile(
+    r"\s*\b(?:"
+    r"after\s+(?:a|an|\d+)\s+(?:day|days|week|weeks|month|months|year|years)"
+    r"|after\s+(?:breakfast|lunch|dinner|food|meals?)"
+    r"|in\s+(?:a|an|\d+)\s+(?:day|days|week|weeks|month|months)"
+    r"|(?:x|for)\s+\d+\s+(?:day|days|week|weeks|month|months)"
+    r"|repeat(?:\s+(?:after|in)\s+\S+)?"
+    r"|on\s+review|if\s+required|s\s*o\s*s|prn|stat|urgent|asap|today|tomorrow"
+    r"|next\s+(?:visit|week|month)|follow\s*up|f\s*/\s*u"
+    r")\b\s*$",
+    re.IGNORECASE,
+)
+
 #: A parenthetical component list: "Thyroid Profile (T3, T4, TSH)".
 #:
 #: Removed WHOLE before lookup. ``normalise`` only strips the bracket
@@ -298,7 +327,9 @@ def normalise(raw: str) -> str:
     text = raw.strip().lower()
     for token in ("test for ", "test:", "investigation:", "inv:", "adv:"):
         text = text.replace(token, " ")
-    for char in "()[]{}.,;:*#":
+    # "<" and ">" are the brace a prescriber draws to group two tests under one
+    # instruction -- "Plasma Glucose < F / PP". Never part of a test name.
+    for char in "()[]{}.,;:*#<>":
         text = text.replace(char, " ")
     text = text.replace("&", " and ")
     return " ".join(text.split())
@@ -381,6 +412,20 @@ def resolve(raw: str | None) -> LabMatch:
     direct = _lookup(normalise(raw))
     if direct.resolved:
         return direct
+
+    # Timing stripped from the END. "Plasma Glucose F/PP after a month" is an
+    # order for glucose F/PP; "after a month" is when, not what. Repeated so a
+    # doubled instruction ("repeat after a month") comes off in full.
+    trimmed = raw
+    for _ in range(3):
+        shorter = _TRAILING_INSTRUCTION.sub("", trimmed).strip()
+        if shorter == trimmed:
+            break
+        trimmed = shorter
+    if trimmed and trimmed != raw:
+        timed = _lookup(normalise(trimmed))
+        if timed.resolved:
+            return timed.model_copy(update={"method": f"{timed.method}_untimed"})
 
     without_parens = _PARENTHETICAL.sub(" ", raw)
     if without_parens != raw:

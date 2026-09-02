@@ -78,7 +78,12 @@ export function DropZone({
           {preview ? (
             <img src={preview} alt={`${label} preview`} className="max-h-40 object-contain" />
           ) : (
-            <span className="font-mono text-xs text-ink-500">PDF · page 1 will be used</span>
+            // Was "page 1 will be used", which stopped being true when
+            // multi-page extraction shipped. No page count is shown because
+            // reading one here would mean parsing the PDF in the browser, and a
+            // wrong count is worse than none — the server reports the real
+            // figure back on the confirmation screen.
+            <span className="font-mono text-xs text-ink-500">PDF · every page will be read</span>
           )}
         </div>
       </div>

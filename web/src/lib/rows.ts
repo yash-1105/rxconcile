@@ -200,7 +200,7 @@ function testRows(result: ReconciliationResult): TestRow[] {
   // Which ordered test each covering line belongs to, as the engine reported it.
   const coveringPanel = new Map<string, string>()
   for (const pair of result.matched_tests ?? []) {
-    const orderedName = rx.get(pair.prescribed_id)?.test_name
+    const orderedName = testLabel(rx.get(pair.prescribed_id))
     for (const billedId of pair.covers ?? []) {
       if (orderedName) coveringPanel.set(billedId, orderedName)
     }
@@ -254,6 +254,28 @@ function withSubstitution<T extends { findings: Finding[]; status: SpineState }>
 
 export function medicineRowsOf(result: ReconciliationResult): MedRow[] {
   return medicineRows(result).map(withSubstitution)
+}
+
+/**
+ * What to show for a test line.
+ *
+ * `test_name` is null whenever the extractor read the line but could not
+ * isolate a name from it — "Plasma Glucose < F / PP after a month" came back
+ * exactly that way. Rendering only `test_name` then produced a row that was an
+ * em-dash in every column: a row about nothing, on a page that had been read
+ * perfectly.
+ *
+ * `raw_text` is never nulled. It is the line as it appears on the document, so
+ * it is always the honest fallback.
+ */
+export function testLabel(
+  test: { test_name?: string | null; raw_text?: string | null } | null | undefined,
+): string | null {
+  if (!test) return null
+  const name = test.test_name?.trim()
+  if (name) return name
+  const raw = test.raw_text?.trim()
+  return raw || null
 }
 
 export function testRowsOf(result: ReconciliationResult): TestRow[] {

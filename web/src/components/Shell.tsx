@@ -92,14 +92,10 @@ export function Shell({
               >
                 Sign out
               </button>
-              {/* One quiet line, per the amended hard rule 8. Dropped from the
-                  submitter's sidebar, which is the screen a client is walked
-                  through; the reviewer's keeps it. The rule makes the marker
-                  optional, and rule 8's real requirement is untouched: nothing
-                  anywhere describes this login as secure. */}
-              {session.role === 'admin' ? (
-                <p className="t-small mt-4 text-muted">Demo access</p>
-              ) : null}
+              {/* The "Demo access" marker is gone from both roles now. Hard
+                  rule 8's amendment makes the marker optional; what it does NOT
+                  make optional is that nothing anywhere may describe this login
+                  as secure, and nothing does. */}
             </div>
           ) : (
             <button

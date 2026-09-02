@@ -84,15 +84,25 @@ def _written(test: PrescribedTest | BilledTest) -> str:
     return test.test_name or test.raw_text
 
 
-def _legible(test: PrescribedTest | BilledTest) -> bool:
-    """Whether the PAGE was read, which is not whether the DICTIONARY knew it.
+def _identified(test: PrescribedTest | BilledTest) -> bool:
+    """Whether we know WHICH test this line is -- enough to rule it out.
 
-    The distinction this project keeps having to relearn. `resolved` is a
-    lookup in lab_panels; `legible` is whether a test name came off the
-    document at all. "Vitamin D (25-OH)" is perfectly legible and simply not in
-    our reference data — reporting that as a line that could not be read blames
-    the extraction for a gap in our own tables, and worse, treats a known
-    different test as a possible match for the one that is missing.
+    Named `_legible` once, which was wrong twice over. It does not measure
+    whether the page was read, and it is not the lookup either. It answers one
+    question: can this line be ruled out as a counterpart for a test we cannot
+    find?
+
+    * "~~ smudge ~~" with no name -- could be anything, including the missing
+      CBC. Not ruled out, so an accusation about the CBC is softened.
+    * "Vitamin D (25-OH)" -- a name we read perfectly and simply do not hold in
+      lab_panels. A known, DIFFERENT test, so it cannot be the missing one and
+      nothing is softened on its account.
+
+    A parsed name is what separates those, which is why this tests `test_name`.
+    Nothing here knows WHY a name is absent -- a poor photograph and a string
+    that would not parse look identical from here. So findings built on this
+    say "could not be identified", never "could not be read": the second picks
+    one cause, and picks the one that blames the submitter's photograph.
     """
     return bool(test.test_name)
 
@@ -176,7 +186,7 @@ def reconcile_tests(
     # counting it softened two genuinely unbilled tests into warnings under the
     # wording "some billed lab lines could not be read", which was false about
     # a bill every line of which had been read perfectly.
-    unreadable_bills = [billed for billed in bill_tests if not _legible(billed)]
+    unreadable_bills = [billed for billed in bill_tests if not _identified(billed)]
 
     # Whether an ordered test CAN be checked is a property of the documents, not
     # of which upload slot a file was dropped into.
@@ -216,7 +226,10 @@ def reconcile_tests(
 
         if not match.resolved:
             # Never expand to zero components and treat that as "covers
-            # nothing". Say the line could not be read and stop.
+            # nothing". Say the line was not RECOGNISED -- not that it could not
+            # be read, which is a different failure with a different remedy: a
+            # sharper photograph fixes one, and only a better dictionary fixes
+            # the other.
             unmatched_rx.append(test.item_id)
             findings.append(
                 finding(
@@ -267,9 +280,14 @@ def reconcile_tests(
                 )
             elif unreadable_bills:
                 uncertain_code = "unidentified_billed_lines"
+                # "could not be IDENTIFIED", not "could not be read". A line may
+                # be unidentified because the photograph was poor or because the
+                # text would not parse into a name, and this code cannot tell
+                # which. Saying "could not be read" picks one and blames the
+                # submitter's photograph for what may be our own parse.
                 uncertain = (
-                    f"{len(unreadable_bills)} billed lab line(s) could not be read, "
-                    "so one of them may be this test"
+                    f"{len(unreadable_bills)} billed lab line(s) could not be "
+                    "identified, so one of them may be this test"
                 )
             unmatched_rx.append(test.item_id)
             findings.append(
@@ -344,7 +362,7 @@ def reconcile_tests(
                     detail={
                         "written": _written(billed),
                         "side": "bill",
-                        "legible": _legible(billed),
+                        "legible": _identified(billed),
                     },
                 )
             )
@@ -353,7 +371,7 @@ def reconcile_tests(
         # MATCH a test to an ordered panel; it is not needed to observe that a
         # line appears on the bill and not on the prescription. Skipping this
         # meant a legible, unordered test was silently never reported.
-        if not _legible(billed):
+        if not _identified(billed):
             # Nothing was read off this line, so nothing can be said about it.
             findings.append(
                 unavailable(
