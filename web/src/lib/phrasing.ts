@@ -141,7 +141,7 @@ export function phrase(
         return `${nameOf(rx)} was not assessed — this bill carries no medicines`
       }
       if (detail['legible'] === false) {
-        return 'A prescribed line could not be read, so whether it was dispensed is unknown'
+        return 'A prescribed line could not be identified, so whether it was dispensed is unknown'
       }
       // The engine softens this to a warning when a billed line it could not
       // identify might be the counterpart. Wording it as a confident absence
@@ -155,7 +155,7 @@ export function phrase(
       return `${nameOf(rx)} was prescribed but does not appear on the bill`
     case 'BILL_NOT_PRESCRIBED': {
       if (detail['legible'] === false) {
-        return 'A billed line could not be read, so whether it was prescribed is unknown'
+        return 'A billed line could not be identified, so whether it was prescribed is unknown'
       }
       const unknownRx = unidentifiedCount(detail, 'unidentified_prescribed_lines')
       if (unknownRx > 0) {
@@ -440,29 +440,32 @@ export function remark(codes: string[], findings: Finding[]): string {
   const detail = found?.detail ?? {}
   const total = sayable.length
 
-  // `identified` is the dictionary lookup; `legible` is whether the page was
-  // read. A cosmetic is legible and unidentified, and saying "could not be
-  // read" blamed the extraction for a gap in our reference data.
+  // `detail.legible` is `bool(drug_name)` on the engine side — whether a NAME
+  // was parsed, not whether the page was read. Nothing here knows whether a
+  // name is missing because the photograph was poor or because the line is not
+  // a drug at all: "(5) Lifestyle modification" reads perfectly and has no
+  // drug name. So these say "could not be identified", which is true either
+  // way, rather than blaming the submitter's photograph for our parse.
   if (code === 'BILL_NOT_PRESCRIBED' && detail['legible'] === false) {
-    return withCount('Billed line could not be read', total)
+    return withCount('Billed line could not be identified', total)
   }
   if (code === 'RX_NOT_BILLED') {
     if (detail['lab_only_bill'] === true) {
       return withCount('Not assessed — no pharmacy bill supplied', total)
     }
     if (detail['legible'] === false) {
-      return withCount('Prescribed line could not be read', total)
+      return withCount('Prescribed line could not be identified', total)
     }
     // Softened by the engine because an unreadable billed line may be this
     // medicine. "Prescribed but not dispensed" would be an accusation the
     // engine refused to make.
     if (unidentifiedCount(detail, 'unidentified_billed_lines') > 0) {
-      return withCount('Not found on the bill — some billed lines are unreadable', total)
+      return withCount('Not found on the bill — some billed lines were not identified', total)
     }
   }
   if (code === 'BILL_NOT_PRESCRIBED' && detail['non_medicine'] !== true) {
     if (unidentifiedCount(detail, 'unidentified_prescribed_lines') > 0) {
-      return withCount('Not found on the prescription — some lines are unreadable', total)
+      return withCount('Not found on the prescription — some lines were not identified', total)
     }
   }
   if (code === 'STRENGTH_MISMATCH') {
