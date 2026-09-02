@@ -74,9 +74,26 @@ PANELS: Final[dict[str, tuple[str, ...]]] = {
     "HbA1c": ("HbA1c",),
     # Commonly ordered standalone, and billed under several names.
     "Vitamin D": ("Vitamin D",),
+    "Vitamin B12": ("Vitamin B12",),
+    "Cortisol": ("Cortisol",),
+    # Ordered as one instruction ("Plasma glucose F/PP") and REPORTED as two
+    # results on two different pages. Treating it as a panel of two is what
+    # lets one order account for both results.
+    "Glucose Fasting and Post Prandial": ("Glucose Fasting", "Glucose Post Prandial"),
 }
 
 #: How a panel is written on a real prescription.
+#: How the F/PP pair is actually written on a prescription.
+_GLUCOSE_PANEL_FORMS: Final[dict[str, str]] = {
+    "plasma glucose f / pp": "Glucose Fasting and Post Prandial",
+    "plasma glucose f pp": "Glucose Fasting and Post Prandial",
+    "glucose f / pp": "Glucose Fasting and Post Prandial",
+    "glucose f pp": "Glucose Fasting and Post Prandial",
+    "glucose fasting f and post prandial pp": "Glucose Fasting and Post Prandial",
+    "blood sugar f / pp": "Glucose Fasting and Post Prandial",
+    "bsl f pp": "Glucose Fasting and Post Prandial",
+}
+
 PANEL_ALIASES: Final[dict[str, str]] = {
     "lft": "Liver Function Test",
     "liver function test": "Liver Function Test",
@@ -108,6 +125,27 @@ PANEL_ALIASES: Final[dict[str, str]] = {
 }
 
 #: How an individual analyte is written on a lab bill.
+#: Forms a laboratory REPORT prints, as distinct from a bill or a prescription.
+#: A report names the analyte and its method -- "Vitamin B12; Cyanocobalamin",
+#: "CORTISOL, MORNING, SERUM" -- where a bill prints a short billing name.
+_REPORT_FORMS: Final[dict[str, str]] = {
+    "vitamin b12 cyanocobalamin": "Vitamin B12",
+    "vitamin b12": "Vitamin B12",
+    "cyanocobalamin": "Vitamin B12",
+    "b12": "Vitamin B12",
+    "cortisol morning serum": "Cortisol",
+    "cortisol serum": "Cortisol",
+    "cortisol": "Cortisol",
+    "glucose fasting": "Glucose Fasting",
+    "fasting glucose": "Glucose Fasting",
+    "plasma glucose fasting": "Glucose Fasting",
+    "fbs": "Glucose Fasting",
+    "glucose pp": "Glucose Post Prandial",
+    "glucose post prandial": "Glucose Post Prandial",
+    "post prandial glucose": "Glucose Post Prandial",
+    "ppbs": "Glucose Post Prandial",
+}
+
 TEST_ALIASES: Final[dict[str, str]] = {
     "sgpt": "SGPT",
     "alt": "SGPT",
@@ -246,6 +284,13 @@ class LabMatch(BaseModel):
 
 
 UNRESOLVED: Final[LabMatch] = LabMatch()
+
+
+# Folded in rather than typed into the literals above so the additions stay
+# visibly separate from the hand-compiled originals, and so the caveat at the
+# top of this module keeps applying to both equally.
+TEST_ALIASES.update(_REPORT_FORMS)
+PANEL_ALIASES.update(_GLUCOSE_PANEL_FORMS)
 
 
 def normalise(raw: str) -> str:

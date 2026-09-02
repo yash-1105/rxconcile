@@ -32,6 +32,9 @@ const PINNED = 'SCHEDULE_H_UNBACKED'
  */
 const SPECIFICITY: readonly string[] = [
   PINNED,
+  // A charge with no result behind it outranks a pairing failure: it says
+  // something specific about THIS line rather than that it went unmatched.
+  'TEST_BILLED_NOT_REPORTED',
   'SALT_DIFFERENT_CLASS',
   'STRENGTH_MISMATCH',
   'DUPLICATE_THERAPY',
@@ -41,6 +44,7 @@ const SPECIFICITY: readonly string[] = [
   'QUANTITY_SHORT',
   'QUANTITY_EXCESS',
   'BRAND_SUBSTITUTION',
+  'TEST_REPORTED_NOT_ORDERED',
   'TEST_NOT_PRESCRIBED',
   'TEST_NOT_BILLED',
   'BILL_NOT_PRESCRIBED',

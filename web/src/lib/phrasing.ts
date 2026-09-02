@@ -44,6 +44,10 @@ const DISCREPANCY_CODES = new Set([
   'POSSIBLE_RESUBMISSION',
   'EARLY_REPEAT',
   'LICENCE_INCONSISTENT',
+  'TEST_BILLED_NOT_REPORTED',
+  'TEST_REPORTED_NOT_ORDERED',
+  'REPORT_PATIENT_MISMATCH',
+  'REPORT_DATE_ANOMALY',
 ])
 
 /** Findings that say a check was attempted but could not conclude. */
@@ -63,6 +67,9 @@ export const NOTED_CODES = new Set([
   'NON_MEDICINE_ITEM',
   'GSTIN_STATE_MISMATCH',
   'TAX_INCLUSIVE_PRICING',
+  // A laboratory routinely reports more than a bill itemises. Worth saying,
+  // not a problem.
+  'TEST_REPORTED_NOT_BILLED',
 ])
 
 export interface Grouped {
@@ -391,6 +398,11 @@ const REMARKS: ReadonlyArray<readonly [string, string]> = [
   ['NON_MEDICINE_ITEM', 'Not a medicine — outside reimbursement scope'],
   ['SALT_DIFFERENT_CLASS', 'Different kind of medicine to the one prescribed'],
   ['EXPIRED_ITEM', 'Dispensed after it expired'],
+  ['TEST_BILLED_NOT_REPORTED', 'Charged, but no result on the report'],
+  ['REPORT_PATIENT_MISMATCH', 'Report names a different patient'],
+  ['REPORT_DATE_ANOMALY', 'Sample collected before the prescription'],
+  ['TEST_REPORTED_NOT_ORDERED', 'Reported but not on the prescription'],
+  ['TEST_REPORTED_NOT_BILLED', 'Reported but not charged for'],
   ['SCHEDULE_H_UNBACKED', 'Prescription-only medicine with nothing backing it'],
   ['STRENGTH_MISMATCH', 'Strength differs'],
   ['BILL_NOT_PRESCRIBED', 'Not on the prescription'],

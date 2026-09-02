@@ -171,9 +171,15 @@ _SINGULAR_CONTAINERS: Final[frozenset[str]] = frozenset(
 )
 
 #: Words for counted dosage units, e.g. "10 TAB", "15 CAPS".
+#:
+#: "t" and "c" are the single-letter forms Indian invoices actually print in a
+#: narrow PACK column -- "10T" is ten tablets. Without them the pack size is
+#: unresolvable, and an unresolvable pack is what turns a correctly priced
+#: per-pack line into a false LINE_TOTAL_MISMATCH. "l" is deliberately NOT here:
+#: it is litres.
 _COUNT_UNITS: Final[frozenset[str]] = frozenset(
     {"tab", "tabs", "tablet", "tablets", "cap", "caps", "capsule", "capsules",
-     "pcs", "pc", "piece", "pieces", "nos", "no", "s"}
+     "t", "tb", "c", "pcs", "pc", "piece", "pieces", "nos", "no", "s"}
 )
 
 _PACK_APOSTROPHE_RE: Final[re.Pattern[str]] = re.compile(r"^(\d+)\s*'?\s*S$", re.IGNORECASE)

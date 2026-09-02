@@ -30,6 +30,7 @@ from decimal import Decimal
 from typing import Final
 
 from rxconcile.models import BilledItem, BilledTest, Finding, PharmacyBill
+from rxconcile.normalize import parse_pack_size
 from rxconcile.reconcile._findings import finding, unavailable
 
 #: Per-line tolerance. Absorbs rupee rounding; far below any pack-size factor.
@@ -63,6 +64,27 @@ def _name(line: BilledItem | BilledTest) -> str:
     )
 
 
+def _pack_reading_balances(
+    line: BilledItem | BilledTest, discount: Decimal
+) -> bool:
+    """Whether the line balances with the rate read as a PACK price.
+
+    Only consulted when the per-unit reading did not balance and the document
+    did not state which basis it uses. A line that balances either way is not a
+    discrepancy; it is a page that does not say, and that is not the same thing.
+    """
+    if getattr(line, "units_basis", None) == "unit":
+        return False  # The document said per-unit. Take it at its word.
+    pack = parse_pack_size(getattr(line, "pack_size", None))
+    if pack is None or pack.units_per_pack is None or pack.units_per_pack <= 0:
+        return False
+    if line.quantity is None or line.unit_price is None or line.line_total is None:
+        return False
+    packs = Decimal(str(line.quantity)) / Decimal(pack.units_per_pack)
+    expected = (packs * line.unit_price).quantize(Decimal("0.01")) - discount
+    return _close(expected, line.line_total, LINE_TOLERANCE)
+
+
 def _line_findings(bill: PharmacyBill) -> list[Finding]:
     findings: list[Finding] = []
     unpriced: list[str] = []
@@ -78,6 +100,18 @@ def _line_findings(bill: PharmacyBill) -> list[Finding]:
         discount = getattr(item, "discount", None) or Decimal("0")
         expected = gross - discount
         if _close(expected, item.line_total, LINE_TOLERANCE):
+            continue
+
+        # The rate may be PER PACK rather than per unit. "BUSPIN-5MG TAB, QTY 10,
+        # PACK 10T, RATE 41.95, AMOUNT 41.95" is ten tablets -- one pack -- at
+        # the pack rate, and reading the rate per tablet computes 419.50 for a
+        # line that is correctly charged 41.95.
+        #
+        # `units_basis` says which reading applies when the document states it.
+        # Where it does not, both readings are permitted by the page, and
+        # asserting a mismatch means ruling out every reading the document
+        # allows. If the pack reading balances, this line is consistent.
+        if _pack_reading_balances(item, discount):
             continue
 
         overcharge = item.line_total - expected
@@ -144,6 +178,14 @@ def _subtotal_findings(bill: PharmacyBill) -> list[Finding]:
     if _close(expected, bill.subtotal, TOTAL_TOLERANCE):
         return []
 
+    # Indian invoices print the discount BELOW a gross subtotal at least as
+    # often as they net it off above: "GROSS AMT 41.95 / DISC. AMT 4.20 /
+    # TOTAL AMT 37.75". There the subtotal is the line sum before any discount,
+    # and netting it off first reports a correct bill as wrong. Both layouts are
+    # legitimate, so both are accepted.
+    if discount and _close(summed, bill.subtotal, TOTAL_TOLERANCE):
+        return []
+
     # A subtotal below the line sum, with no discount printed, USED TO BE
     # swallowed as an unitemised discount. That silently accepted any subtotal
     # error up to 30% of the bill -- a 190-rupee gap passed unreported. A bill
@@ -189,7 +231,13 @@ def _tax_is_inclusive(bill: PharmacyBill) -> bool:
         return False
     if bill.tax_total <= 0:
         return False
-    return _close(bill.subtotal, bill.grand_total, TOTAL_TOLERANCE)
+    # Net of any discount. Comparing the GROSS subtotal against the payable
+    # amount missed inclusive pricing on every discounted bill, because the
+    # discount made the two differ by more than the tolerance -- and the bill
+    # was then reported as an arithmetic error for printing its prices the way
+    # most Indian pharmacies print them.
+    payable_before_tax = bill.subtotal - (bill.discount_total or Decimal("0"))
+    return _close(payable_before_tax, bill.grand_total, TOTAL_TOLERANCE)
 
 
 def _grand_total_findings(bill: PharmacyBill) -> list[Finding]:
@@ -229,13 +277,15 @@ def _grand_total_findings(bill: PharmacyBill) -> list[Finding]:
             )
         ]
 
-    expected = bill.subtotal + bill.tax_total
+    expected = bill.subtotal - (bill.discount_total or Decimal("0")) + bill.tax_total
     if _close(expected, bill.grand_total, TOTAL_TOLERANCE):
         return []
     return [
         finding(
             "GRAND_TOTAL_MISMATCH", "warning",
-            f"Subtotal {bill.subtotal} plus tax {bill.tax_total} comes to {expected}, "
+            f"Subtotal {bill.subtotal}"
+            + (f" less {bill.discount_total} discount" if bill.discount_total else "")
+            + f" plus tax {bill.tax_total} comes to {expected}, "
             f"but the amount payable is printed as {bill.grand_total}.",
             detail={
                 "subtotal": str(bill.subtotal),

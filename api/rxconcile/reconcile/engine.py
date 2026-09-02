@@ -64,6 +64,7 @@ from rxconcile.reconcile.arithmetic import check_arithmetic
 from rxconcile.reconcile.history import HistoryScope, PriorScan, check_history
 from rxconcile.reconcile.lab import reconcile_tests
 from rxconcile.reconcile.reimbursement import assess
+from rxconcile.reconcile.report import reconcile_report
 from rxconcile.validate import check_gstin, check_licence
 from rxconcile.validate.gstin import state_in_address
 
@@ -1398,6 +1399,17 @@ def reconcile(
     # critical test finding exactly as they treat a critical medicine finding.
     lab = reconcile_tests(prescription, bill, submission)
     findings.extend(lab.findings)
+
+    # The third axis: what the laboratory says it actually performed. Absent a
+    # report this contributes nothing at all -- see `reconcile_report`, a
+    # missing report is not applicable rather than a gap.
+    report_outcome = reconcile_report(
+        prescription,
+        bill,
+        submission.lab_report if submission is not None else None,
+        lab_bill_supplied=bool(submission and submission.lab_bill_supplied),
+    )
+    findings.extend(report_outcome.findings)
 
     findings.extend(_document_rules(prescription, bill, bill_by_id))
     if priors is not None:

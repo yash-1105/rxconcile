@@ -837,6 +837,14 @@ class Submission(_Base):
         "that have been renumbered into somebody else's bill. Null on records written "
         "before this was kept, which is not the same as a lab bill with nothing on it.",
     )
+    lab_report: LabReport | None = Field(
+        default=None,
+        description="The lab report exactly as it was transcribed. Null when none was "
+        "uploaded -- which is NOT a gap. Nobody is obliged to supply a report, and "
+        "reporting its absence as a shortfall would invent a requirement this product "
+        "does not have. Also null on every record written before reports were read, "
+        "which is likewise not the same as a report with nothing on it.",
+    )
     lab_bill_merged_ids: list[str] = Field(
         default_factory=list,
         description="The ids those tests were re-issued as inside the merged pharmacy "

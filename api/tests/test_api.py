@@ -18,6 +18,7 @@ from rxconcile.config import settings
 from rxconcile.extract import _runner
 from rxconcile.extract.dto import (
     BilledItemDTO,
+    LabReportDTO,
     PharmacyBillDTO,
     PrescribedItemDTO,
     PrescriptionDTO,
@@ -90,7 +91,25 @@ class StubExtractor:
         self.calls.append(kwargs["doc_type"])
         if self.fail_next:
             raise self.fail_next.pop(0)
-        return rx_dto() if dto_type is PrescriptionDTO else bill_dto()
+        if dto_type is PrescriptionDTO:
+            return rx_dto()
+        if dto_type is LabReportDTO:
+            return report_dto()
+        return bill_dto()
+
+
+def report_dto() -> LabReportDTO:
+    """A minimal lab report. Reports are extracted now, so the stub must
+    answer for them too or a four-document request hands the report call a
+    bill schema."""
+    return LabReportDTO(
+        lab_name="Test Labs",
+        report_number="R-1",
+        patient_name="Test Patient",
+        tests=[],
+        page_count=1,
+        overall_legibility=0.9,
+    )
 
 
 @pytest.fixture

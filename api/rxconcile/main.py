@@ -34,7 +34,11 @@ from starlette.responses import Response
 from rxconcile.config import samples_dir, settings
 from rxconcile.demo_auth import DemoUser, issue_token, user_from_token, verify_credentials
 from rxconcile.export import ExportContext, build_json, build_pdf, build_xlsx
-from rxconcile.extract import extract_bill_async, extract_prescription_async
+from rxconcile.extract import (
+    extract_bill_async,
+    extract_prescription_async,
+    extract_report_async,
+)
 from rxconcile.extract.errors import (
     ExtractionError,
     ImageTooLargeError,
@@ -1234,11 +1238,13 @@ async def _reconcile_bytes(
     history: tuple[list[PriorScan], HistoryScope] | None = None,
     lab_bill_bytes: bytes | None = None,
     submission: Submission | None = None,
+    lab_report_bytes: bytes | None = None,
 ) -> ReconciliationResult:
-    """Extract both documents concurrently, then reconcile.
+    """Extract every supplied document concurrently, then reconcile.
 
-    ``asyncio.gather`` over two documents, each itself gathering N runs, so all
-    ``2 x N`` calls are in flight together.
+    ``asyncio.gather`` over the documents, each itself gathering N runs, so all
+    ``documents x N`` calls are in flight together. A six-page report is still
+    one call per run, not six.
     """
     started = time.monotonic()
     jobs: list[Any] = [
@@ -1247,8 +1253,11 @@ async def _reconcile_bytes(
     ]
     if lab_bill_bytes is not None:
         jobs.append(extract_bill_async(lab_bill_bytes, runs=runs))
+    if lab_report_bytes is not None:
+        jobs.append(extract_report_async(lab_report_bytes, runs=runs))
     extracted = await asyncio.gather(*jobs)
     prescription, bill = extracted[0], extracted[1]
+    lab_report = extracted[-1] if lab_report_bytes is not None else None
     _guard_disagreement(prescription, "prescription")
     _guard_disagreement(bill, "bill")
 
@@ -1277,6 +1286,14 @@ async def _reconcile_bytes(
             "lab_bill": lab_bill,
             "lab_bill_merged_ids": merged_ids,
         })
+    if lab_report is not None:
+        # Carried on the submission the way the lab bill is, so the engine and
+        # the submitter's transcription both read it from one place.
+        submission = (submission or Submission()).model_copy(update={
+            "lab_report_supplied": True,
+            "lab_report": lab_report,
+        })
+
     elapsed_ms = int((time.monotonic() - started) * 1000)
     priors, scope = history if history is not None else (None, None)
     return reconcile(
@@ -1482,12 +1499,11 @@ async def reconcile_endpoint(
     prescription_bytes = await read_upload(prescription)
     bill_bytes = await read_upload(bill)
     lab_bill_bytes = await read_upload(lab_bill) if lab_bill is not None else None
-    # Lab reports are kept with the scan for the record. Nothing is extracted
-    # from them: no rule reads a report, and inventing one here would be a
-    # behaviour nobody asked for.
+    # Lab reports ARE read now. They used to be validated and discarded, which
+    # made "charged for but never performed" unanswerable -- the report is the
+    # only document that proves a test happened.
     lab_report_supplied = lab_report is not None
-    if lab_report is not None:
-        await read_upload(lab_report)
+    lab_report_bytes = await read_upload(lab_report) if lab_report is not None else None
 
     submission = Submission(
         condition=(condition or "").strip() or None,
@@ -1500,6 +1516,7 @@ async def reconcile_endpoint(
     history = _load_history(user, session) if user is not None else None
     return await _reconcile_bytes(
         prescription_bytes, bill_bytes, run_count, history, lab_bill_bytes, submission,
+        lab_report_bytes,
     )
 
 
