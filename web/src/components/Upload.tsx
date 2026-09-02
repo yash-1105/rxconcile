@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { pdfFirstPageThumbnail } from '../lib/pdfThumbnail'
 import { CONDITIONS, DOCUMENT_SLOTS, type DocumentSlot } from '../lib/documents'
 import type { SampleSummary } from '../types/api'
 
@@ -24,8 +23,19 @@ export function DropZone({
   const [rejected, setRejected] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Images preview straight from an object URL. Derived during render; the
-  // effect exists only to release it.
+  // Images preview from an object URL. A PDF gets no preview.
+  //
+  // Two ways of drawing one were tried and both removed. pdf.js loads a
+  // document fine but its RENDERER never completes here -- every documented
+  // call shape hangs, with no error, on a fresh page each time -- and 1.5 MB of
+  // assets for a preview that never appears is worse than none. The browser's
+  // own viewer via <object> draws its dark viewer background rather than the
+  // page at this size, which looks like a fault.
+  //
+  // So: filename and size, and an empty frame. The descriptive line that used
+  // to sit here said "page 1 will be used", which stopped being true when
+  // multi-page reading shipped; nothing replaced it, because there is nothing
+  // true and useful to say in one line that the filename does not already say.
   const preview = useMemo(
     () => (file && file.type !== 'application/pdf' ? URL.createObjectURL(file) : null),
     [file],
@@ -34,27 +44,6 @@ export function DropZone({
     if (!preview) return
     return () => URL.revokeObjectURL(preview)
   }, [preview])
-
-  // A PDF has to be rendered before it can be shown, so it arrives later than
-  // an image preview does. Null until it lands, and null forever if it fails.
-  //
-  // The rendered page is stored WITH the file it came from rather than cleared
-  // at the top of the effect. Clearing there sets state synchronously during a
-  // render pass and starts another one; pairing it instead means a stale
-  // thumbnail is simply not matched, which is the same guarantee for free.
-  const [pdfPreview, setPdfPreview] = useState<{ file: File; url: string } | null>(null)
-  useEffect(() => {
-    if (!file || file.type !== 'application/pdf') return
-    let cancelled = false
-    void pdfFirstPageThumbnail(file).then((url) => {
-      if (!cancelled && url) setPdfPreview({ file, url })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [file])
-
-  const shown = preview ?? (file && pdfPreview?.file === file ? pdfPreview.url : null)
 
   const accept = useCallback(
     (candidate: File | undefined) => {
@@ -98,8 +87,8 @@ export function DropZone({
           </button>
         </div>
         <div className="mt-3 flex h-40 items-center justify-center overflow-hidden rounded border border-ink-200 bg-ink-50">
-          {shown ? (
-            <img src={shown} alt={`${label} preview`} className="max-h-40 object-contain" />
+          {preview ? (
+            <img src={preview} alt={`${label} preview`} className="max-h-40 object-contain" />
           ) : (
             <span className="font-mono text-xs text-ink-500" />
           )}
