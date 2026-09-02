@@ -226,6 +226,42 @@ Both criticals downgrade to **warning** whenever the counterpart document
 cannot support a confident claim — the same counterpart-confidence rule the
 medicine side already applies to `RX_NOT_BILLED`.
 
+### 8d. The third document: what was actually performed
+
+The prescription **orders** a test, the lab bill **charges** for it, the report
+**proves** it was performed. Two of those could always be compared; the report
+adds the third, and it is the only one that can answer *charged for, but never
+done*.
+
+`reconcile/report.py`, panel decomposition reusing `lab_panels.resolve` — not a
+second path, because drift there means the same test resolving differently
+depending on which document named it.
+
+| Code | Severity | Fires when |
+| --- | --- | --- |
+| `TEST_BILLED_NOT_REPORTED` | critical | a charge with no result behind it |
+| `TEST_REPORTED_NOT_BILLED` | info | performed but not charged for |
+| `TEST_REPORTED_NOT_ORDERED` | warning | a result exists for a test nobody ordered |
+| `REPORT_PATIENT_MISMATCH` | warning | the report names a different patient |
+| `REPORT_DATE_ANOMALY` | warning | the sample predates the prescription by more than a day |
+
+**No rule here reads a result.** They compare which tests appear on which
+document — names, not numbers. That is what makes this document reconciliation
+rather than clinical judgement, and hard rule 10 forbids it being otherwise.
+`tests/test_report_rules.py::test_no_rule_reads_a_result` pins it: two reports
+identical but for their values must produce identical findings.
+
+Two asymmetries that matter:
+
+* **A missing report is not applicable** — no findings at all, not a softened
+  warning. Nobody is obliged to upload one.
+* **A missing lab bill is a check that could not run** — `CHECK_UNAVAILABLE`,
+  because there genuinely was something to compare against and it is absent.
+
+`TEST_REPORTED_NOT_ORDERED` is suppressed entirely when the prescription's
+investigations section could not be read. Otherwise an unreadable page turns
+every result into an accusation manufactured from a document nobody could read.
+
 ### 8c. Absence of tests is not a discrepancy
 
 A document with no tests on either side produces no test findings at all, no
@@ -579,6 +615,8 @@ which document is which, so there is nothing left to infer.
 | no lab bill, no tests ordered | **not applicable** — no finding at all |
 | no lab bill, tests ordered | `TEST_NOT_BILLED` softened, `softened_code: no_lab_bill` |
 | no pharmacy bill | `RX_NOT_BILLED` softened rather than accusing |
+| lab report uploaded | the report axis runs; results transcribed, never read by a rule |
+| no lab report | **not applicable** — no finding at all, not a softened one |
 
 An absent lab report or lab bill is a legitimate choice, not a gap. Only a
 prescription that ordered tests with no lab bill behind it is a missing
@@ -589,9 +627,17 @@ comparison sees one set of billed tests. Its ids are re-issued to stay unique
 within the merged document, as the identity rule requires; raw text is
 untouched.
 
-Lab reports are kept with the scan for the record. Nothing is extracted from
-them — no rule reads a report, and inventing one would be behaviour nobody
-asked for.
+**Lab reports ARE extracted now.** They were deliberately not, and the reason
+that decision was cleanly reversible is that nothing had been guessed in the
+meantime: the file was kept with the scan and never read.
+
+What made it worth reversing is the middle axis. Without a report, *charged for
+but never performed* cannot be asked at all — the bill and the prescription
+together simply do not contain the answer. See §8d.
+
+What has not changed is the boundary. Results are transcribed and never
+interpreted (hard rule 10), and the extracted content is shown to the submitter
+as transcription while the three-way comparison stays with the reviewer.
 
 `submission` is optional on `reconcile()`. Omit it and the engine falls back to
 the old inference, so a direct caller still behaves sensibly.

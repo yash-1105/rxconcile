@@ -158,7 +158,7 @@ function DocumentPanel({
 }
 
 function ExtractedSections({ content }: { content: ExtractedContent }) {
-  const { prescription, pharmacy_bill: bill, lab_bill: lab } = content
+  const { prescription, pharmacy_bill: bill, lab_bill: lab, lab_report: report } = content
   return (
     <div className="space-y-4">
       <DocumentPanel title="From your prescription">
@@ -273,6 +273,54 @@ function ExtractedSections({ content }: { content: ExtractedContent }) {
           )}
         </DocumentPanel>
       ) : null}
+
+      {report ? (
+        <DocumentPanel title="From your lab report">
+          <Header
+            pairs={[
+              ['Laboratory', report.lab_name],
+              ['Report number', report.report_number],
+              ['Patient', report.patient_name],
+              ['Referred by', report.referred_by],
+              ['Collected', report.collected_date],
+              ['Reported', report.reported_date],
+            ]}
+          />
+          {report.tests.length > 0 ? (
+            <>
+              {/* Result, unit, range and the lab's own flag, side by side and
+                  exactly as printed. Deliberately NOT coloured, sorted or
+                  badged by whether a value falls inside its range: that would
+                  be this system judging a result, which hard rule 10 forbids.
+                  The reader draws the conclusion. */}
+              <Rows heads={['Test', 'Result', 'Unit', 'Reference range', 'Flag']}>
+                {report.tests.map((line, index) => (
+                  <tr key={`${line.raw_text}-${index}`} className="border-b border-ink-100">
+                    <Cell
+                      value={
+                        line.panel && line.panel !== line.test
+                          ? `${line.test ?? '—'} · ${line.panel}`
+                          : line.test
+                      }
+                      mono
+                    />
+                    <Cell value={line.result} mono />
+                    <Cell value={line.unit} mono />
+                    <Cell value={line.reference_range} mono />
+                    <Cell value={line.flag} mono />
+                  </tr>
+                ))}
+              </Rows>
+              <p className="t-small mt-3 text-muted">
+                Transcribed exactly as your laboratory printed them, including its own
+                flags. Nothing here is an interpretation of your results.
+              </p>
+            </>
+          ) : (
+            <p className="t-small text-muted">No result line was read off this report.</p>
+          )}
+        </DocumentPanel>
+      ) : null}
     </div>
   )
 }
@@ -378,7 +426,7 @@ export function Submitted({
                       failure, and neutral so it does not read as a warning. */}
                   {row.key === 'labReport' && row.filename ? (
                     <span className="t-small ml-2 text-muted">
-                      Received and filed with your claim.
+                      Received, read and filed with your claim.
                     </span>
                   ) : null}
                 </li>

@@ -132,6 +132,33 @@ disagree the system reports `QUANTITY_AMBIGUOUS` and asserts nothing. This is a
 property of what such a bill records, not a gap in the implementation — the
 information needed to decide is not on the page.
 
+**Pack notation is recognised by pattern, and ten known forms are not.** The
+pack size decides whether a billed quantity counts tablets or packs, so a pack
+size that will not parse takes quantity checking with it — and, until it was
+found on a real bill, took a correctly priced per-pack line and reported it as a
+`LINE_TOTAL_MISMATCH`.
+
+Handled: `10'S` `10S` `10 TAB` `10TAB` `10T` `15T` `10C` `30CAP` `10 NOS`
+`1x10` `10X1` `10*10` `STRIP OF 10` `PACK OF 15` `BOX OF 10` `1 VIAL` `1 TUBE`
+`1 KIT` `100ML` `1L` `60ml syrup` `10 ML VIAL` `5 ML SUSP`.
+
+**Not handled, and each one silently disables quantity checking on its line:**
+
+| Notation | What it means | Why it fails |
+| --- | --- | --- |
+| `2X10T` | 2 strips of 10 tablets | the multiplier pattern allows no trailing unit |
+| `10 x 1x10` | nested multiplier | only one multiplier is parsed |
+| `10/1`, `10-1` | multiplier with another separator | only `x`, `X`, `×`, `*` split |
+| `5 GM`, `30 GM` | weight packs — ointments, powders | no weight basis exists; only count and volume |
+| `STRIP`, `1 STRIP` | a strip of unstated size | the count genuinely is not on the page |
+| `1 BOX OF 10` | leading count before `BOX OF` | the pattern anchors at `BOX` |
+| `10 UNITS` | 10 dosage units | `units` is not in the count-word list |
+
+Most are a pattern away from working. They are listed rather than fixed because
+each one needs a real bill to confirm the reading, and guessing at pack notation
+is how a quantity check starts inventing shortfalls. `STRIP` and `5 GM` are
+different: for those the page does not carry the information at all.
+
 **Self-consistency catches instability, never a stable wrong answer.** Three
 identical misreadings score agreement 1.0 and pass unchallenged. Agreement
 measures whether the model agrees with itself, not whether it is right.

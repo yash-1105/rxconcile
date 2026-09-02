@@ -613,8 +613,12 @@ class TestTheEmployeeShapeIsAnAllowList:
         for key in self.COMPARISON_KEYS:
             assert f'"{key}"' not in body, f"{key!r} reached the submitter"
         detail = json.loads(body)
+        # `lab_report` joins the allow-list because reports are transcribed now.
+        # Exact equality is kept on purpose: this test exists to fail when the
+        # shape widens, and it just did.
         assert set(detail["content"]) == {
-            "prescription", "pharmacy_bill", "lab_bill", "billed_total", "currency",
+            "prescription", "pharmacy_bill", "lab_bill", "lab_report",
+            "billed_total", "currency",
         }
         assert set(detail["content"]["prescription"]) == {
             "prescriber", "clinic", "date", "patient_name", "patient_age",

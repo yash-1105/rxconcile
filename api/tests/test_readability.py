@@ -12,9 +12,11 @@ from decimal import Decimal
 
 from rxconcile.models import (
     BilledItem,
+    LabReport,
     PharmacyBill,
     PrescribedItem,
     Prescription,
+    ReportedTest,
     Submission,
 )
 from rxconcile.reconcile import engine, readability
@@ -149,20 +151,74 @@ class TestTheLabDocuments:
         result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
         assert _states(result)["lab_bill"] == "read"
 
-    def test_a_lab_report_is_not_in_the_readability_list_at_all(self) -> None:
-        """It was never assessed for legibility, so it is not reported as if it
-        had been.
+    def test_a_lab_report_is_in_the_list_now_that_it_is_read(self) -> None:
+        """This test used to assert the exact opposite, and was right to.
 
-        Nothing is extracted from a lab report — no rule consumes one — so
-        listing it in a section about photo quality would invite a submitter to
-        re-take a photograph that has nothing wrong with it. It is acknowledged
-        among the documents received instead.
+        While nothing was extracted from a report it had never been assessed,
+        so listing it in a section about photo quality would have invited a
+        submitter to re-take a photograph with nothing wrong with it. Reports
+        are read now, so the read state is real and belongs here. The exclusion
+        was reversed deliberately, not by drift.
         """
         rx, bill = clean_pair()
-        stated = Submission(lab_report_supplied=True)
+        report = LabReport(
+            tests=[ReportedTest(
+                item_id="reptest-01", raw_text="Vitamin D", test_name="Vitamin D",
+                result_value="33.16", confidence=0.9,
+            )],
+            page_count=6,
+        )
+        stated = Submission(lab_report_supplied=True, lab_report=report)
         result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
-        slots: list[str] = [d.slot for d in readability_of(result)]
-        assert "lab_report" not in slots
+        assert _states(result)["lab_report"] == "read"
+
+    def test_an_unsupplied_report_is_not_supplied_not_unreadable(self) -> None:
+        rx, bill = clean_pair()
+        result = engine.reconcile(rx, bill, processing_ms=0, submission=Submission())
+        assert _states(result)["lab_report"] == "not_supplied"
+
+    def test_a_report_from_before_reports_were_read_says_so(self) -> None:
+        """Supplied, but nothing kept. Not the same as unreadable."""
+        rx, bill = clean_pair()
+        stated = Submission(lab_report_supplied=True, lab_report=None)
+        result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
+        assert _states(result)["lab_report"] == "not_assessed"
+
+    def test_an_unreadable_page_is_named_by_its_number(self) -> None:
+        """The reason per-page reporting exists.
+
+        "We could not read your lab report" sends someone back to
+        re-photograph six pages. "We could not read page 4" sends them to the
+        one that needs it.
+        """
+        rx, bill = clean_pair()
+        report = LabReport(
+            tests=[ReportedTest(
+                item_id="reptest-01", raw_text="Vitamin D", test_name="Vitamin D",
+                result_value="33.16", confidence=0.9,
+            )],
+            page_count=6,
+            unreadable_pages=[4],
+        )
+        stated = Submission(lab_report_supplied=True, lab_report=report)
+        result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
+        entry = next(d for d in readability_of(result) if d.slot == "lab_report")
+        assert entry.state == "partly_unreadable"
+        assert entry.unreadable_pages == [4]
+        assert entry.page_count == 6
+        assert "page 4" in (entry.message or ""), entry.message
+        assert "6 pages" in (entry.message or "")
+
+    def test_several_unreadable_pages_read_as_a_list(self) -> None:
+        rx, bill = clean_pair()
+        report = LabReport(
+            tests=[ReportedTest(item_id="reptest-01", raw_text="x", confidence=0.9)],
+            page_count=6, unreadable_pages=[2, 4, 5],
+        )
+        stated = Submission(lab_report_supplied=True, lab_report=report)
+        result = engine.reconcile(rx, bill, processing_ms=0, submission=stated)
+        entry = next(d for d in readability_of(result) if d.slot == "lab_report")
+        assert "pages 2, 4 and 5" in (entry.message or ""), entry.message
 
 
 def test_a_record_that_no_longer_validates_says_nothing_rather_than_ok() -> None:
@@ -173,9 +229,9 @@ def test_a_record_that_no_longer_validates_says_nothing_rather_than_ok() -> None
 
 
 def test_every_document_that_is_read_is_answered_for() -> None:
-    """The three the system actually reads. The lab report is not one."""
+    """All four, in upload-form order. The lab report is one of them now."""
     rx, bill = clean_pair()
     result = engine.reconcile(rx, bill, processing_ms=0)
     assert [d.slot for d in readability_of(result)] == [
-        "prescription", "pharmacy_bill", "lab_bill",
+        "prescription", "pharmacy_bill", "lab_bill", "lab_report",
     ]

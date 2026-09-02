@@ -331,7 +331,11 @@ export interface DemoSession {
 /** Whether one uploaded document could be READ. Never a finding. */
 export interface DocumentReadability {
   /** The lab report is absent by design — nothing is extracted from it. */
-  slot: 'prescription' | 'pharmacy_bill' | 'lab_bill'
+  slot: 'prescription' | 'pharmacy_bill' | 'lab_bill' | 'lab_report'
+  /** Pages rendered. Null when not measured — not one page. */
+  page_count: number | null
+  /** 1-based pages that yielded nothing, so a submitter is told which. */
+  unreadable_pages: number[]
   label: string
   supplied: boolean
   state: 'read' | 'partly_unreadable' | 'unreadable' | 'not_assessed' | 'not_supplied'
@@ -433,10 +437,40 @@ export interface LabBillContent {
   currency: string
 }
 
+export interface ReportedLine {
+  test: string | null
+  panel: string | null
+  result: string | null
+  unit: string | null
+  reference_range: string | null
+  /**
+   * The flag THE LAB printed, or null.
+   *
+   * Null is not "normal". Nothing in this app may derive a flag by comparing a
+   * result to its range — that is clinical judgement, and hard rule 10 puts it
+   * permanently out of scope.
+   */
+  flag: string | null
+  page: number | null
+  raw_text: string
+}
+
+export interface LabReportContent {
+  lab_name: string | null
+  report_number: string | null
+  patient_name: string | null
+  referred_by: string | null
+  collected_date: string | null
+  reported_date: string | null
+  tests: ReportedLine[]
+  page_count: number | null
+}
+
 export interface ExtractedContent {
   prescription: PrescriptionContent
   pharmacy_bill: BillContent
   lab_bill: LabBillContent | null
+  lab_report: LabReportContent | null
   /** The total on their documents. Never a reimbursable figure. */
   billed_total: string | null
   currency: string

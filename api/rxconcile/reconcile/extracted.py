@@ -26,11 +26,13 @@ from pydantic import BaseModel, Field
 from rxconcile.models import (
     BilledItem,
     BilledTest,
+    LabReport,
     PharmacyBill,
     PrescribedItem,
     PrescribedTest,
     Prescription,
     ReconciliationResult,
+    ReportedTest,
 )
 
 
@@ -252,12 +254,73 @@ def billed_total(result: ReconciliationResult) -> str | None:
     return str(pharmacy + lab_total)
 
 
+class ReportedLine(BaseModel):
+    """One result line, transcribed.
+
+    Result, unit, range and the lab's own flag, exactly as printed. There is no
+    field here for whether a value is high or low, and there must not be:
+    hard rule 10 puts that out of scope, and a submitter reading their own
+    results must see the laboratory's words, not this system's opinion of them.
+    """
+
+    test: str | None = None
+    panel: str | None = None
+    result: str | None = None
+    unit: str | None = None
+    reference_range: str | None = None
+    #: The flag THE LAB printed, or null. Null is not "normal".
+    flag: str | None = None
+    page: int | None = None
+    raw_text: str = ""
+
+
+class LabReportContent(BaseModel):
+    lab_name: str | None = None
+    report_number: str | None = None
+    patient_name: str | None = None
+    referred_by: str | None = None
+    collected_date: str | None = None
+    reported_date: str | None = None
+    tests: list[ReportedLine] = Field(default_factory=list)
+    page_count: int | None = None
+
+
+def _reported_line(test: ReportedTest) -> ReportedLine:
+    return ReportedLine(
+        test=test.test_name,
+        panel=test.panel,
+        result=test.result_value,
+        unit=test.unit,
+        reference_range=test.reference_range,
+        flag=test.lab_flag,
+        page=test.page,
+        raw_text=test.raw_text,
+    )
+
+
+def lab_report_content(report: LabReport) -> LabReportContent:
+    return LabReportContent(
+        lab_name=report.lab_name,
+        report_number=report.report_number,
+        patient_name=report.patient_name,
+        referred_by=report.referred_by,
+        collected_date=str(report.collected_date) if report.collected_date else None,
+        reported_date=str(report.reported_date) if report.reported_date else None,
+        tests=[_reported_line(test) for test in report.tests],
+        page_count=report.page_count,
+    )
+
+
 class ExtractedContent(BaseModel):
     """Everything a submitter is shown about their own documents."""
 
     prescription: PrescriptionContent
     pharmacy_bill: BillContent
     lab_bill: LabBillContent | None = None
+    #: What was read off the lab report. Null when none was uploaded. Carries
+    #: no comparison: which tests were ordered or charged for is a reviewer's
+    #: question, and this is the submitter's own document read back to them.
+    lab_report: LabReportContent | None = None
     #: The total on their documents. See `billed_total` for why this is not a
     #: reimbursable figure and never becomes one.
     billed_total: str | None = None
@@ -266,11 +329,13 @@ class ExtractedContent(BaseModel):
 
 def extracted_content(result: ReconciliationResult) -> ExtractedContent:
     lab = result.submission.lab_bill
+    report = result.submission.lab_report
     merged = set(result.submission.lab_bill_merged_ids)
     return ExtractedContent(
         prescription=prescription_content(result.prescription),
         pharmacy_bill=bill_content(result.bill, exclude_tests=merged),
         lab_bill=lab_bill_content(lab) if lab is not None else None,
+        lab_report=lab_report_content(report) if report is not None else None,
         billed_total=billed_total(result),
         currency=result.bill.currency,
     )

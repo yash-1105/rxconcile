@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from rxconcile.models import ReconciliationResult
 
-DocumentSlot = Literal["prescription", "pharmacy_bill", "lab_bill"]
+DocumentSlot = Literal["prescription", "pharmacy_bill", "lab_bill", "lab_report"]
 
 #: What we are able to say about one uploaded document.
 #:
@@ -44,6 +44,7 @@ SLOT_LABEL: Final[dict[DocumentSlot, str]] = {
     "prescription": "Prescription",
     "pharmacy_bill": "Pharmacy bill",
     "lab_bill": "Lab bill",
+    "lab_report": "Lab report",
 }
 
 #: The one code that names a document rather than a line.
@@ -57,6 +58,12 @@ class DocumentReadability(BaseModel):
     label: str
     supplied: bool
     state: ReadState
+    #: Pages rendered from this document. Null when it was not measured, which
+    #: is every record written before multi-page reading -- **not one page**.
+    page_count: int | None = None
+    #: 1-based pages that yielded nothing. A submitter with a blurry page 4 of 6
+    #: should be told it was page 4, not that "the document" failed.
+    unreadable_pages: list[int] = Field(default_factory=list)
     #: What the employee should do about it, or None when there is nothing to do.
     message: str | None = None
     #: The extractor's own words, when it had any. Never a reconciliation
@@ -200,6 +207,72 @@ def _lab_bill(result: ReconciliationResult) -> DocumentReadability:
     )
 
 
+def _pages_phrase(pages: list[int]) -> str:
+    if len(pages) == 1:
+        return f"page {pages[0]}"
+    return "pages " + ", ".join(str(p) for p in pages[:-1]) + f" and {pages[-1]}"
+
+
+def _lab_report(result: ReconciliationResult) -> DocumentReadability:
+    """The lab report, now that one is actually read.
+
+    It used to be excluded from this list on the grounds that nothing was
+    extracted from it, so it had never been assessed and saying anything would
+    have been a check reported as passed when it never ran. That reasoning was
+    correct then and is obsolete now: the report IS read, so its read state is
+    real and belongs here with the others.
+    """
+    submission = result.submission
+    if not submission.lab_report_supplied:
+        return DocumentReadability(
+            slot="lab_report", label=SLOT_LABEL["lab_report"], supplied=False,
+            state="not_supplied",
+        )
+
+    report = submission.lab_report
+    if report is None:
+        # Supplied, but nothing was kept. Every record written before reports
+        # were read looks like this, and "we could not read it" would be a lie.
+        return DocumentReadability(
+            slot="lab_report", label=SLOT_LABEL["lab_report"], supplied=True,
+            state="not_assessed",
+            message="This claim was submitted before lab reports were read, so nothing "
+                    "here says whether it could be read.",
+        )
+
+    pages = sorted(report.unreadable_pages)
+
+    def described(state: ReadState, message: str | None = None) -> DocumentReadability:
+        return DocumentReadability(
+            slot="lab_report",
+            label=SLOT_LABEL["lab_report"],
+            supplied=True,
+            state=state,
+            message=message,
+            page_count=report.page_count,
+            unreadable_pages=pages,
+            detail=list(report.warnings),
+        )
+
+    if not report.tests and not pages:
+        return described(
+            "unreadable",
+            "We could not read any result off the lab report. Please upload a sharper "
+            "copy -- flat, square on, and in even light.",
+        )
+    if pages:
+        # The whole point of reading page by page: name the page.
+        total = f" ({report.page_count} pages in total)" if report.page_count else ""
+        which = "that page" if len(pages) == 1 else "those pages"
+        return described(
+            "partly_unreadable",
+            f"We could not read {_pages_phrase(pages)} of your lab report{total}. "
+            f"The rest was read. A sharper copy of {which} would complete it.",
+        )
+    return described("read")
+
+
+
 def readability_of(result: ReconciliationResult) -> list[DocumentReadability]:
     """The documents that were READ, in the order the upload form shows them.
 
@@ -213,6 +286,7 @@ def readability_of(result: ReconciliationResult) -> list[DocumentReadability]:
         _prescription(result),
         _pharmacy_bill(result),
         _lab_bill(result),
+        _lab_report(result),
     ]
 
 
